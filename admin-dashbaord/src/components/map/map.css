@@ -1,0 +1,142 @@
+.card {
+  width: 200px;
+  border-radius: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 5px solid #dadada;
+  /* background-color: whitesmoke; */
+}
+.stat {
+  box-sizing: border-box;
+  background: whitesmoke;
+  border: 5px solid #dadada;
+  border-radius: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.map {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f5f5f5; /* Adjust for light/dark mode */
+}
+.mapdiv {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+}
+.mapdiv svg {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+.mapdiv a {
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+.mapdiv a path,
+.mapdiv a polygon {
+  fill: var(--map-inactive-color, #bdbdbd);
+  stroke: var(--map-stroke-color, #fff);
+  stroke-linecap: round;
+  stroke-width: 0.75;
+  transition: all 0.3s ease;
+}
+.mapdiv a:hover path,
+.mapdiv a:hover polygon {
+  fill: var(--map-hover-color, #1976d2);
+  filter: brightness(1.1);
+}
+.mapdiv a[href] path,
+.mapdiv a[href] polygon {
+  fill: var(--map-active-color, #1976d2);
+}
+.mapdiv a:not([href]) path,
+.mapdiv a:not([href]) polygon {
+  fill: var(--map-disabled-color, #e0e0e0);
+  cursor: default;
+}
+/* Tooltip */
+.mapdiv a:hover::after {
+  content: attr(title);
+  position: absolute;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 1000;
+}
+.top {
+  box-sizing: border-box;
+  width: 200px;
+  top: 1200px;
+  border: 2px solid #000000;
+  color: white;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.m {
+  top: 12px;
+  background: #36a3ebab;
+}
+.f {
+  top: 277px;
+  background: #ff6384ab;
+}
+.bar {
+  width: 100%;
+  height: 20px;
+  border-radius: 15px;
+  margin: 5px;
+  border: 1px solid #000000;
+}
+.Skills {
+  margin-top: 10px;
+  height: auto;
+  width: auto;
+  border-radius: 15px;
+  text-align: center;
+  font-size: 20px;
+}
+.s {
+  height: 20px;
+  border-radius: 15px;
+  display: flex;
+  justify-content: center;
+}
+.bg-p {
+  background-color: #ff6384;
+}
+.bg-b {
+  background-color: #36a2eb;
+}
+.wilayaP {
+  display: flex;
+  align-items: center;
+  align-content: flex-start;
+}
+.wilayaP label {
+  width: 80px;
+}
+.wilayaP .bar {
+  width: 160px;
+}
+.card label {
+  background-color: #bdbdbd;
+  font-size: x-large;
+  border-radius: 20px;
+  padding: 10px;
+}

@@ -1,5 +1,5 @@
-import * as React from "react";
-import { Route, Routes, Outlet } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Route, Routes } from "react-router-dom";
 import {
   styled,
   useTheme,
@@ -8,7 +8,6 @@ import {
 } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import CssBaseline from "@mui/material/CssBaseline";
-// import Typography from "@mui/material/Typography";
 import TopBar from "./components/TopBar";
 import Drawer from "./components/Drawer";
 import Dashboard from "./pages/dashboard/Dashboard";
@@ -24,8 +23,9 @@ import LineChart from "./pages/line-chart/LineChart";
 import UserDetails from "./pages/users/UserDetails";
 import AddUser from "./pages/users/AddUser";
 import NotFound from "./pages/NotFound";
+import PivotTable from "./pages/pivot-table/PivotTable";
 
-// @ts-ignore
+// Drawer header component
 const DrawerHeader = styled("div")(({ theme }) => ({
   display: "flex",
   alignItems: "center",
@@ -34,12 +34,13 @@ const DrawerHeader = styled("div")(({ theme }) => ({
   ...theme.mixins.toolbar,
 }));
 
+// Define drawer width for consistency
 const drawerWidth = 240;
 
 function App() {
   const theme = useTheme();
-  const [open, setOpen] = React.useState(false);
-  const [isDarkMode, setIsDarkMode] = React.useState(() => {
+  const [open, setOpen] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
     // Check local storage for theme preference
     const savedTheme = localStorage.getItem("theme");
     if (savedTheme) {
@@ -51,6 +52,34 @@ function App() {
       window.matchMedia("(prefers-color-scheme: dark)").matches
     );
   });
+
+  // Update theme when system preference changes
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (e) => {
+      // Only update if no user preference is saved
+      if (!localStorage.getItem("theme")) {
+        setIsDarkMode(e.matches);
+      }
+    };
+
+    // Add event listener
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", handleChange);
+    } else {
+      // Fallback for older browsers
+      mediaQuery.addListener(handleChange);
+    }
+
+    // Cleanup
+    return () => {
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener("change", handleChange);
+      } else {
+        mediaQuery.removeListener(handleChange);
+      }
+    };
+  }, []);
 
   const handleDrawerClose = () => {
     setOpen(false);
@@ -68,11 +97,21 @@ function App() {
     palette: {
       mode: isDarkMode ? "dark" : "light",
     },
+    // Pass drawer width to theme to make it available throughout the app
+    components: {
+      MuiDrawer: {
+        styleOverrides: {
+          paper: {
+            width: drawerWidth,
+          },
+        },
+      },
+    },
   });
 
   return (
     <ThemeProvider theme={appliedTheme}>
-      <Box sx={{ display: "flex" }}> 
+      <Box sx={{ display: "flex" }}>
         <CssBaseline />
         <TopBar
           open={open}
@@ -90,19 +129,31 @@ function App() {
           sx={{
             flexGrow: 1,
             p: 3,
-            mt: 5,
+            pt: { xs: 8, sm: 9 }, // Responsive top padding
+            width: {
+              xs: "100%",
+              sm: `calc(100% - ${open ? drawerWidth : 0}px)`,
+            },
+            transition: theme.transitions.create(["width", "margin"], {
+              easing: theme.transitions.easing.sharp,
+              duration: theme.transitions.duration.leavingScreen,
+            }),
+            minHeight: "100vh", // Use min-height instead of fixed height
             display: "flex",
             flexDirection: "column",
-            height: "calc(100vh - 64px)",
           }}
         >
+          <DrawerHeader /> {/* Spacer for fixed header */}
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/manage-users" element={<ManageUsers />}>
               <Route path="details" element={<UserDetails />} />
               <Route path="add" element={<AddUser />} />
             </Route>
-            <Route path="/contacts-information" element={<ContactsInformation />} />
+            <Route
+              path="/contacts-information"
+              element={<ContactsInformation />}
+            />
             <Route path="/invoices" element={<InvoiceBalance />} />
             <Route path="/form" element={<ProfileForm />} />
             <Route path="/calendar" element={<Calendar />} />
@@ -110,9 +161,9 @@ function App() {
             <Route path="/bar" element={<BarChart />} />
             <Route path="/pie" element={<PieChart />} />
             <Route path="/line" element={<LineChart />} />
+            <Route path="/pivot-table" element={<PivotTable />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
-          <Outlet />
         </Box>
       </Box>
     </ThemeProvider>

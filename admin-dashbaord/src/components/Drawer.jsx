@@ -28,6 +28,7 @@ import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
 import TimelineOutlinedIcon from "@mui/icons-material/TimelineOutlined";
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
+import TableChartIcon from "@mui/icons-material/TableChart";
 
 const drawerWidth = 240;
 
@@ -62,30 +63,32 @@ const DrawerHeader = styled("div")(({ theme }) => ({
 
 const StyledDrawer = styled(MuiDrawer, {
   shouldForwardProp: (prop) => prop !== "open",
-})(({ theme, open }) => ({
-  width: drawerWidth,
-  flexShrink: 0,
-  whiteSpace: "nowrap",
-  boxSizing: "border-box",
-  maxHeight: "100vh",
-  overflowY: "auto",
-  ...(open && {
-    ...openedMixin(theme),
-    "& .MuiDrawer-paper": {
-      ...openedMixin(theme),
-      maxHeight: "100vh",
-      overflowY: "auto",
-    },
-  }),
-  ...(!open && {
-    ...closedMixin(theme),
-    "& .MuiDrawer-paper": closedMixin(theme),
-  }),
-  [theme.breakpoints.down("sm")]: {
-    width: "100%", // Full width on small screens
+})(({ theme, open }) => {
+  return {
+    width: drawerWidth,
     flexShrink: 0,
-  },
-}));
+    whiteSpace: "nowrap",
+    boxSizing: "border-box",
+    maxHeight: "100vh",
+    overflowY: "auto",
+    ...(open && {
+      ...openedMixin(theme),
+      "& .MuiDrawer-paper": {
+        ...openedMixin(theme),
+        maxHeight: "100vh",
+        overflowY: "auto",
+      },
+    }),
+    ...(!open && {
+      ...closedMixin(theme),
+      "& .MuiDrawer-paper": closedMixin(theme),
+    }),
+    [theme.breakpoints.down("sm")]: {
+      width: "100%", // Full width on small screens
+      flexShrink: 0,
+    },
+  };
+});
 
 const Array1 = [
   {
@@ -145,6 +148,11 @@ const Array2 = [
     text: "Geography Chart",
     icon: <MapOutlinedIcon />,
     path: "/geography",
+  },
+  {
+    text: "Pivot Table",
+    icon: <TableChartIcon />,
+    path: "/pivot-table",
   },
 ];
 
