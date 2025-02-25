@@ -11,6 +11,8 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import AccountCircle from "@mui/icons-material/AccountCircle";
 import Brightness4Icon from "@mui/icons-material/Brightness4";
 import Brightness7Icon from "@mui/icons-material/Brightness7";
+import { useNavigate } from "react-router-dom";
+import LogoutIcon from "@mui/icons-material/Logout";
 
 const drawerWidth = 240;
 
@@ -83,6 +85,15 @@ export default function TopBar({ open, setOpen, toggleTheme, isDarkMode }) {
     }),
   }));
 
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    // Clear authentication
+    localStorage.removeItem("isAuthenticated");
+    // Redirect to login
+    navigate("/login");
+  };
+
   return (
     <StyledAppBar
       position="fixed"
@@ -129,6 +140,9 @@ export default function TopBar({ open, setOpen, toggleTheme, isDarkMode }) {
           </IconButton>
           <IconButton color="inherit">
             <AccountCircle />
+          </IconButton>
+          <IconButton color="inherit" onClick={handleLogout} title="Logout">
+            <LogoutIcon />
           </IconButton>
         </Stack>
       </Toolbar>
