@@ -7,7 +7,7 @@ import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import FormControl from "@mui/material/FormControl";
 import InputLabel from "@mui/material/InputLabel";
-import { Stack, CircularProgress } from "@mui/material";
+import { Stack, CircularProgress, Typography, Grid } from "@mui/material";
 import Snackbar from "@mui/material/Snackbar";
 import MuiAlert from "@mui/material/Alert";
 import { useAuth } from "../../context/AuthContext";
@@ -38,6 +38,8 @@ const ProfileForm = () => {
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
   const [snackbarSeverity, setSnackbarSeverity] = useState("success");
+  // Add missing newUserErrors state
+  const [newUserErrors, setNewUserErrors] = useState({});
 
   // State for new user creation
   const [newUserData, setNewUserData] = useState({
@@ -108,7 +110,8 @@ const ProfileForm = () => {
         country: data.country,
         birthday: data.dateOfBirth,
         role: data.role,
-        ...(data.password ? { password: data.password } : {}),
+        // Only include password if it's provided
+        ...(data.password && data.password.trim() !== "" ? { password: data.password } : {}),
       });
 
       setSnackbarMessage("Profile updated successfully!");
@@ -135,25 +138,25 @@ const ProfileForm = () => {
   };
 
   const validateNewUser = () => {
-    const newErrors = {};
+    const errors = {};
     if (!newUserData.email) {
-      newErrors.email = "Email is required";
+      errors.email = "Email is required";
     } else if (!/\S+@\S+\.\S+/.test(newUserData.email)) {
-      newErrors.email = "Email is invalid";
+      errors.email = "Email is invalid";
     }
     if (!newUserData.password) {
-      newErrors.password = "Password is required";
+      errors.password = "Password is required";
     } else if (newUserData.password.length < 8) {
-      newErrors.password = "Password must be at least 8 characters long";
+      errors.password = "Password must be at least 8 characters long";
     }
     if (!newUserData.first_name) {
-      newErrors.first_name = "First name is required";
+      errors.first_name = "First name is required";
     }
     if (!newUserData.last_name) {
-      newErrors.last_name = "Last name is required";
+      errors.last_name = "Last name is required";
     }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    setNewUserErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleNewUserSubmit = async (e) => {
@@ -172,6 +175,8 @@ const ProfileForm = () => {
           password: "",
           role: ROLES.USER,
         });
+        // Clear any errors
+        setNewUserErrors({});
       } catch (error) {
         console.error("Error creating user:", error);
         setSnackbarMessage(
@@ -212,7 +217,7 @@ const ProfileForm = () => {
       <Box
         component="form"
         onSubmit={handleSubmit(onSubmit)}
-        sx={{ display: "flex", flexDirection: "column", gap: 2 }}
+        sx={{ display: "flex", flexDirection: "column", gap: 2, mb: 6 }}
         noValidate
         autoComplete="off"
       >
@@ -330,11 +335,11 @@ const ProfileForm = () => {
 
         <TextField
           sx={{ flex: 1 }}
-          label="Password"
+          label="Password (leave blank to keep current)"
           variant="outlined"
           type="password"
           {...register("password", {
-            required: VALIDATION_MESSAGES.REQUIRED,
+            required: false, // Make password optional for updates
             minLength: {
               value: 8,
               message: VALIDATION_MESSAGES.PASSWORD_LENGTH,
@@ -354,94 +359,100 @@ const ProfileForm = () => {
             {isLoading ? "Updating..." : "Update Profile"}
           </Button>
         </Box>
+      </Box>
 
-        <Box component="form" onSubmit={handleNewUserSubmit} noValidate>
-          <Typography variant="h5" component="h2" gutterBottom>
-            Add New User
-          </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                required
-                fullWidth
-                label="Email"
-                name="email"
-                value={newUserData.email}
-                onChange={handleNewUserChange}
-                error={!!errors.email}
-                helperText={errors.email}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                required
-                fullWidth
-                label="Password"
-                name="password"
-                type="password"
-                value={newUserData.password}
-                onChange={handleNewUserChange}
-                error={!!errors.password}
-                helperText={errors.password}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                required
-                fullWidth
-                label="First Name"
-                name="first_name"
-                value={newUserData.first_name}
-                onChange={handleNewUserChange}
-                error={!!errors.first_name}
-                helperText={errors.first_name}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                required
-                fullWidth
-                label="Last Name"
-                name="last_name"
-                value={newUserData.last_name}
-                onChange={handleNewUserChange}
-                error={!!errors.last_name}
-                helperText={errors.last_name}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <FormControl fullWidth>
-                <InputLabel id="role-label">Role</InputLabel>
-                <Select
-                  labelId="role-label"
-                  id="role"
-                  name="role"
-                  value={newUserData.role}
-                  onChange={handleNewUserChange}
-                  label="Role"
-                >
-                  <MenuItem value={ROLES.USER}>User</MenuItem>
-                  <MenuItem value={ROLES.EDITOR}>Editor</MenuItem>
-                  <MenuItem value={ROLES.ADMIN}>Admin</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid
-              item
-              xs={12}
-              sx={{ display: "flex", justifyContent: "flex-end" }}
-            >
-              <Button
-                variant="contained"
-                color="primary"
-                type="submit"
-                disabled={isLoading}
-              >
-                {isLoading ? "Creating..." : "Create User"}
-              </Button>
-            </Grid>
+      {/* Separate form for new user creation */}
+      <Box 
+        component="form" 
+        onSubmit={handleNewUserSubmit} 
+        noValidate
+        sx={{ mt: 4, display: "flex", flexDirection: "column", gap: 2 }}
+      >
+        <Typography variant="h5" component="h2" gutterBottom>
+          Add New User
+        </Typography>
+        <Grid container spacing={3}>
+          <Grid item xs={12} sm={6}>
+            <TextField
+              required
+              fullWidth
+              label="Email"
+              name="email"
+              value={newUserData.email}
+              onChange={handleNewUserChange}
+              error={!!newUserErrors.email}
+              helperText={newUserErrors.email}
+            />
           </Grid>
-        </Box>
+          <Grid item xs={12} sm={6}>
+            <TextField
+              required
+              fullWidth
+              label="Password"
+              name="password"
+              type="password"
+              value={newUserData.password}
+              onChange={handleNewUserChange}
+              error={!!newUserErrors.password}
+              helperText={newUserErrors.password}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <TextField
+              required
+              fullWidth
+              label="First Name"
+              name="first_name"
+              value={newUserData.first_name}
+              onChange={handleNewUserChange}
+              error={!!newUserErrors.first_name}
+              helperText={newUserErrors.first_name}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <TextField
+              required
+              fullWidth
+              label="Last Name"
+              name="last_name"
+              value={newUserData.last_name}
+              onChange={handleNewUserChange}
+              error={!!newUserErrors.last_name}
+              helperText={newUserErrors.last_name}
+            />
+          </Grid>
+          <Grid item xs={12}>
+            <FormControl fullWidth>
+              <InputLabel id="new-role-label">Role</InputLabel>
+              <Select
+                labelId="new-role-label"
+                id="new-role"
+                name="role"
+                value={newUserData.role}
+                onChange={handleNewUserChange}
+                label="Role"
+              >
+                <MenuItem value={ROLES.USER}>User</MenuItem>
+                <MenuItem value={ROLES.EDITOR}>Editor</MenuItem>
+                <MenuItem value={ROLES.ADMIN}>Admin</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid
+            item
+            xs={12}
+            sx={{ display: "flex", justifyContent: "flex-end" }}
+          >
+            <Button
+              variant="contained"
+              color="secondary"
+              type="submit"
+              disabled={isLoading}
+            >
+              {isLoading ? "Creating..." : "Create User"}
+            </Button>
+          </Grid>
+        </Grid>
       </Box>
 
       <Snackbar

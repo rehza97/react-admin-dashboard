@@ -313,13 +313,11 @@ const Dashboard = () => {
     setSelectedListVisible((prev) => !prev);
   };
 
-  // Set CSS variables for map colors based on theme
+  // Update the useEffect for map colors
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--map-inactive-color",
-      theme.palette.mode === "dark"
-        ? theme.palette.grey[700]
-        : theme.palette.grey[300]
+      theme.palette.mode === "dark" ? theme.palette.grey[800] : theme.palette.grey[300]
     );
     document.documentElement.style.setProperty(
       "--map-active-color",
@@ -331,17 +329,13 @@ const Dashboard = () => {
     );
     document.documentElement.style.setProperty(
       "--map-disabled-color",
-      theme.palette.mode === "dark"
-        ? theme.palette.grey[800]
-        : theme.palette.grey[200]
+      theme.palette.mode === "dark" ? theme.palette.grey[900] : theme.palette.grey[200]
     );
     document.documentElement.style.setProperty(
       "--map-stroke-color",
-      theme.palette.mode === "dark"
-        ? theme.palette.grey[900]
-        : theme.palette.common.white
+      theme.palette.mode === "dark" ? theme.palette.grey[100] : theme.palette.grey[900]
     );
-  }, [theme]);
+  }, [theme.palette.mode]);
 
   const dashboardData = [
     { region: "Nord", sales: 12361, users: 8000, growth: 14 },
@@ -373,9 +367,12 @@ const Dashboard = () => {
           width: "100%",
           height: "400px",
           maxWidth: "800px",
-          backgroundColor: "background.paper",
+          backgroundColor: theme.palette.background.paper,
+          color: theme.palette.text.primary,
           borderRadius: 2,
-          boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+          boxShadow: theme.palette.mode === "dark" 
+            ? "0 4px 20px rgba(0,0,0,0.3)" 
+            : "0 4px 20px rgba(0,0,0,0.1)",
           display: "flex",
           overflow: "hidden",
           margin: "20px auto",

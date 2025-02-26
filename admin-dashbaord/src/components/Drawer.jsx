@@ -29,6 +29,7 @@ import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutl
 import TimelineOutlinedIcon from "@mui/icons-material/TimelineOutlined";
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import TableChartIcon from "@mui/icons-material/TableChart";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 
 const drawerWidth = 240;
 
@@ -64,24 +65,39 @@ const DrawerHeader = styled("div")(({ theme }) => ({
 const StyledDrawer = styled(MuiDrawer, {
   shouldForwardProp: (prop) => prop !== "open",
 })(({ theme, open }) => {
-  return {
+  const baseStyles = {
     width: drawerWidth,
     flexShrink: 0,
     whiteSpace: "nowrap",
     boxSizing: "border-box",
     maxHeight: "100vh",
     overflowY: "auto",
+    backgroundColor: theme.palette.background.default,
+    color: theme.palette.text.primary,
+  };
+
+  const paperBaseStyles = {
+    maxHeight: "100vh",
+    overflowY: "auto",
+    backgroundColor: theme.palette.background.default,
+    color: theme.palette.text.primary,
+  };
+
+  return {
+    ...baseStyles,
     ...(open && {
       ...openedMixin(theme),
       "& .MuiDrawer-paper": {
         ...openedMixin(theme),
-        maxHeight: "100vh",
-        overflowY: "auto",
+        ...paperBaseStyles,
       },
     }),
     ...(!open && {
       ...closedMixin(theme),
-      "& .MuiDrawer-paper": closedMixin(theme),
+      "& .MuiDrawer-paper": {
+        ...closedMixin(theme),
+        ...paperBaseStyles,
+      },
     }),
     [theme.breakpoints.down("sm")]: {
       width: "100%", // Full width on small screens
@@ -125,6 +141,11 @@ const Array1 = [
     text: "FAQ Page",
     icon: <HelpOutlineOutlinedIcon />,
     path: "/faq",
+  },
+  {
+    text: "File Upload",
+    icon: <CloudUploadIcon />,
+    path: "/file-upload",
   },
 ];
 
@@ -180,6 +201,19 @@ const Array3 = [
 ];
 
 export default function Drawer({ open, handleDrawerClose, theme }) {
+  const listItemButtonStyles = {
+    minHeight: 48,
+    px: 2.5,
+    justifyContent: open ? "initial" : "center",
+    "&.active": {
+      backgroundColor: theme.palette.primary.main,
+      color: theme.palette.primary.contrastText,
+    },
+    "&:hover": {
+      backgroundColor: theme.palette.action.hover,
+    },
+  };
+
   return (
     <StyledDrawer variant="permanent" open={open}>
       <DrawerHeader>
@@ -193,13 +227,15 @@ export default function Drawer({ open, handleDrawerClose, theme }) {
       </DrawerHeader>
       <Divider />
 
-      <ListItem>
+      <ListItem sx={{ justifyContent: open ? "flex-start" : "center" }}>
         <Avatar alt="User Name" src="/path/to/avatar.jpg" />
-        <ListItemText
-          primary="User Name"
-          secondary="user@example.com"
-          sx={{ marginLeft: 2 }}
-        />
+        {open && (
+          <ListItemText
+            primary="User Name"
+            secondary="user@example.com"
+            sx={{ marginLeft: 2 }}
+          />
+        )}
       </ListItem>
 
       <Divider />
@@ -209,20 +245,7 @@ export default function Drawer({ open, handleDrawerClose, theme }) {
             <ListItemButton
               component={NavLink}
               to={item.path}
-              sx={{
-                minHeight: 48,
-                px: 2.5,
-                justifyContent: open ? "initial" : "center",
-                "&.active": {
-                  backgroundColor: theme.palette.primary.main,
-                  color: theme.palette.getContrastText(
-                    theme.palette.primary.main
-                  ),
-                },
-                "&:hover": {
-                  backgroundColor: theme.palette.action.hover,
-                },
-              }}
+              sx={listItemButtonStyles}
             >
               <ListItemIcon
                 sx={{
@@ -248,18 +271,7 @@ export default function Drawer({ open, handleDrawerClose, theme }) {
             <ListItemButton
               component={NavLink}
               to={item.path}
-              sx={{
-                minHeight: 48,
-                px: 2.5,
-                justifyContent: open ? "initial" : "center",
-                "&.active": {
-                  backgroundColor: theme.palette.primary.main,
-                  color: theme.palette.common.white,
-                },
-                "&:hover": {
-                  backgroundColor: theme.palette.action.hover,
-                },
-              }}
+              sx={listItemButtonStyles}
             >
               <ListItemIcon
                 sx={{
@@ -285,18 +297,7 @@ export default function Drawer({ open, handleDrawerClose, theme }) {
             <ListItemButton
               component={NavLink}
               to={item.path}
-              sx={{
-                minHeight: 48,
-                px: 2.5,
-                justifyContent: open ? "initial" : "center",
-                "&.active": {
-                  backgroundColor: theme.palette.primary.main,
-                  color: theme.palette.common.white,
-                },
-                "&:hover": {
-                  backgroundColor: theme.palette.action.hover,
-                },
-              }}
+              sx={listItemButtonStyles}
             >
               <ListItemIcon
                 sx={{

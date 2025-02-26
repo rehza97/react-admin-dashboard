@@ -13,16 +13,22 @@ import Brightness4Icon from "@mui/icons-material/Brightness4";
 import Brightness7Icon from "@mui/icons-material/Brightness7";
 import { useNavigate } from "react-router-dom";
 import LogoutIcon from "@mui/icons-material/Logout";
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from "../context/AuthContext";
 
 const drawerWidth = 240;
 
 const Search = styled("div")(({ theme }) => ({
   position: "relative",
   borderRadius: theme.shape.borderRadius,
-  backgroundColor: alpha(theme.palette.common.white, 0.15),
+  backgroundColor:
+    theme.palette.mode === "dark"
+      ? alpha(theme.palette.common.white, 0.15)
+      : alpha(theme.palette.common.black, 0.05),
   "&:hover": {
-    backgroundColor: alpha(theme.palette.common.white, 0.25),
+    backgroundColor:
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.common.white, 0.25)
+        : alpha(theme.palette.common.black, 0.1),
   },
   marginRight: theme.spacing(2),
   marginLeft: 0,
@@ -56,6 +62,33 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
   },
 }));
 
+// Define AppBar outside of component to avoid re-creation on each render
+const StyledAppBar = styled(MuiAppBar, {
+  shouldForwardProp: (prop) => prop !== "open",
+})(({ theme, open }) => ({
+  backgroundColor:
+    theme.palette.mode === "dark"
+      ? theme.palette.background.paper
+      : theme.palette.primary.main,
+  color:
+    theme.palette.mode === "dark"
+      ? theme.palette.text.primary
+      : theme.palette.primary.contrastText,
+  zIndex: theme.zIndex.drawer + 1,
+  transition: theme.transitions.create(["width", "margin"], {
+    easing: theme.transitions.easing.sharp,
+    duration: theme.transitions.duration.leavingScreen,
+  }),
+  ...(open && {
+    marginLeft: drawerWidth,
+    width: `calc(100% - ${drawerWidth}px)`,
+    transition: theme.transitions.create(["width", "margin"], {
+      easing: theme.transitions.easing.sharp,
+      duration: theme.transitions.duration.enteringScreen,
+    }),
+  }),
+}));
+
 export default function TopBar({ open, setOpen, toggleTheme, isDarkMode }) {
   const handleDrawerOpen = () => {
     setOpen(true);
@@ -67,39 +100,16 @@ export default function TopBar({ open, setOpen, toggleTheme, isDarkMode }) {
     setSearchQuery(event.target.value);
   };
 
-  const StyledAppBar = styled(MuiAppBar, {
-    shouldForwardProp: (prop) => prop !== "open",
-    // @ts-ignore
-  })(({ theme, open }) => ({
-    zIndex: theme.zIndex.drawer + 1,
-    transition: theme.transitions.create(["width", "margin"], {
-      easing: theme.transitions.easing.sharp,
-      duration: theme.transitions.duration.leavingScreen,
-    }),
-    ...(open && {
-      marginLeft: drawerWidth,
-      width: `calc(100% - ${drawerWidth}px)`,
-      transition: theme.transitions.create(["width", "margin"], {
-        easing: theme.transitions.easing.sharp,
-        duration: theme.transitions.duration.enteringScreen,
-      }),
-    }),
-  }));
-
   const { logout } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate("/login");
   };
 
   return (
-    <StyledAppBar
-      position="fixed"
-      // @ts-ignore
-      open={open}
-    >
+    <StyledAppBar position="fixed" open={open}>
       <Toolbar>
         <IconButton
           color="inherit"
@@ -127,21 +137,31 @@ export default function TopBar({ open, setOpen, toggleTheme, isDarkMode }) {
         </Search>
 
         <Stack direction="row" spacing={2} sx={{ marginLeft: "auto" }}>
-          <IconButton color="inherit" onClick={toggleTheme}>
+          <IconButton
+            color="inherit"
+            onClick={toggleTheme}
+            aria-label={
+              isDarkMode ? "Switch to light mode" : "Switch to dark mode"
+            }
+          >
             {isDarkMode ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>
-          <IconButton color="inherit">
+          <IconButton color="inherit" aria-label="notifications">
             <Badge badgeContent={4} color="error">
               <NotificationsIcon />
             </Badge>
           </IconButton>
-          <IconButton color="inherit">
+          <IconButton color="inherit" aria-label="settings">
             <SettingsIcon />
           </IconButton>
-          <IconButton color="inherit">
+          <IconButton color="inherit" aria-label="profile">
             <AccountCircle />
           </IconButton>
-          <IconButton color="inherit" onClick={handleLogout} title="Logout">
+          <IconButton
+            color="inherit"
+            onClick={handleLogout}
+            aria-label="logout"
+          >
             <LogoutIcon />
           </IconButton>
         </Stack>

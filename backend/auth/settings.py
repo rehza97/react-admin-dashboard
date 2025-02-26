@@ -69,7 +69,10 @@ MIDDLEWARE = [
 # Set CORS settings based on environment
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug mode
 if not DEBUG:
-    CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:5173",  # Your React dev server
+        # Add your production domain when deploying
+    ]
 
 # Add these additional CORS settings for better control
 CORS_ALLOW_CREDENTIALS = True

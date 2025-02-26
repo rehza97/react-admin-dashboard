@@ -28,6 +28,10 @@ import Login from "./pages/auth/Login";
 import ResetPassword from "./pages/auth/ResetPassword";
 import SetNewPassword from "./pages/auth/SetNewPassword";
 import { AuthProvider } from "./context/AuthContext";
+import FileUpload from "./pages/file-upload/FileUpload";
+
+// Define drawer width for consistency
+const drawerWidth = 240;
 
 // Drawer header component
 const DrawerHeader = styled("div")(({ theme }) => ({
@@ -37,9 +41,6 @@ const DrawerHeader = styled("div")(({ theme }) => ({
   padding: theme.spacing(0, 1),
   ...theme.mixins.toolbar,
 }));
-
-// Define drawer width for consistency
-const drawerWidth = 240;
 
 // Protected Route component to handle authentication
 const ProtectedRoute = ({ children }) => {
@@ -57,32 +58,12 @@ const ProtectedRoute = ({ children }) => {
 };
 
 // Layout component for authenticated pages
-const DashboardLayout = ({ children }) => {
+const DashboardLayout = ({ children, isDarkMode, toggleTheme }) => {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    // Check local storage for theme preference
-    const savedTheme = localStorage.getItem("theme");
-    if (savedTheme) {
-      return savedTheme === "dark";
-    }
-    // Check system preference
-    return (
-      window.matchMedia &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches
-    );
-  });
 
   const handleDrawerClose = () => {
     setOpen(false);
-  };
-
-  const toggleTheme = () => {
-    setIsDarkMode((prev) => {
-      const newTheme = !prev;
-      localStorage.setItem("theme", newTheme ? "dark" : "light"); // Save to local storage
-      return newTheme;
-    });
   };
 
   return (
@@ -104,6 +85,10 @@ const DashboardLayout = ({ children }) => {
             xs: "100%",
             sm: `calc(100% - ${open ? drawerWidth : 0}px)`,
           },
+          marginLeft: {
+            xs: 0,
+            sm: open ? `${drawerWidth}px` : 0,
+          },
           transition: theme.transitions.create(["width", "margin"], {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.leavingScreen,
@@ -121,7 +106,18 @@ const DashboardLayout = ({ children }) => {
 };
 
 function App() {
-  const theme = useTheme();
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    // Check local storage for theme preference
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme) {
+      return savedTheme === "dark";
+    }
+    // Check system preference
+    return (
+      window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches
+    );
+  });
 
   // Update theme when system preference changes
   useEffect(() => {
@@ -129,8 +125,7 @@ function App() {
     const handleChange = (e) => {
       // Only update if no user preference is saved
       if (!localStorage.getItem("theme")) {
-        // Update theme preference
-        localStorage.setItem("theme", e.matches ? "dark" : "light");
+        setIsDarkMode(e.matches);
       }
     };
 
@@ -152,10 +147,6 @@ function App() {
     };
   }, []);
 
-  const handleDrawerClose = () => {
-    setOpen(false);
-  };
-
   const toggleTheme = () => {
     setIsDarkMode((prev) => {
       const newTheme = !prev;
@@ -164,9 +155,10 @@ function App() {
     });
   };
 
+  // Create theme based on dark mode state
   const appliedTheme = createTheme({
     palette: {
-      mode: localStorage.getItem("theme") === "dark" ? "dark" : "light",
+      mode: isDarkMode ? "dark" : "light",
     },
     // Pass drawer width to theme to make it available throughout the app
     components: {
@@ -199,7 +191,10 @@ function App() {
               path="/"
               element={
                 <ProtectedRoute>
-                  <DashboardLayout>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
                     <Dashboard />
                   </DashboardLayout>
                 </ProtectedRoute>
@@ -209,20 +204,49 @@ function App() {
               path="/manage-users"
               element={
                 <ProtectedRoute>
-                  <DashboardLayout>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
                     <ManageUsers />
                   </DashboardLayout>
                 </ProtectedRoute>
               }
-            >
-              <Route path="details" element={<UserDetails />} />
-              <Route path="add" element={<AddUser />} />
-            </Route>
+            />
+            <Route
+              path="/manage-users/details"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <UserDetails />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-users/add"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <AddUser />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/contacts-information"
               element={
                 <ProtectedRoute>
-                  <DashboardLayout>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
                     <ContactsInformation />
                   </DashboardLayout>
                 </ProtectedRoute>
@@ -232,7 +256,10 @@ function App() {
               path="/invoices"
               element={
                 <ProtectedRoute>
-                  <DashboardLayout>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
                     <InvoiceBalance />
                   </DashboardLayout>
                 </ProtectedRoute>
@@ -242,7 +269,10 @@ function App() {
               path="/form"
               element={
                 <ProtectedRoute>
-                  <DashboardLayout>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
                     <ProfileForm />
                   </DashboardLayout>
                 </ProtectedRoute>
@@ -252,7 +282,10 @@ function App() {
               path="/calendar"
               element={
                 <ProtectedRoute>
-                  <DashboardLayout>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
                     <Calendar />
                   </DashboardLayout>
                 </ProtectedRoute>
@@ -262,7 +295,10 @@ function App() {
               path="/faq"
               element={
                 <ProtectedRoute>
-                  <DashboardLayout>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
                     <FAQ />
                   </DashboardLayout>
                 </ProtectedRoute>
@@ -272,7 +308,10 @@ function App() {
               path="/bar"
               element={
                 <ProtectedRoute>
-                  <DashboardLayout>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
                     <BarChart />
                   </DashboardLayout>
                 </ProtectedRoute>
@@ -282,7 +321,10 @@ function App() {
               path="/pie"
               element={
                 <ProtectedRoute>
-                  <DashboardLayout>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
                     <PieChart />
                   </DashboardLayout>
                 </ProtectedRoute>
@@ -292,7 +334,10 @@ function App() {
               path="/line"
               element={
                 <ProtectedRoute>
-                  <DashboardLayout>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
                     <LineChart />
                   </DashboardLayout>
                 </ProtectedRoute>
@@ -302,8 +347,37 @@ function App() {
               path="/pivot-table"
               element={
                 <ProtectedRoute>
-                  <DashboardLayout>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
                     <PivotTable />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-users/edit/:id"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <UserDetails />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/file-upload"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <FileUpload />
                   </DashboardLayout>
                 </ProtectedRoute>
               }
@@ -311,36 +385,6 @@ function App() {
 
             {/* Catch-all route */}
             <Route path="*" element={<NotFound />} />
-
-            {/* New route for SetNewPassword component */}
-            <Route
-              path="/set-new-password/:token"
-              element={<SetNewPassword />}
-            />
-
-            {/* New route for UserDetails component */}
-            <Route
-              path="/manage-users/edit/:id"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout>
-                    <UserDetails />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-
-            {/* New route for AddUser component */}
-            <Route
-              path="/manage-users/add"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout>
-                    <AddUser />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
           </Routes>
         </Box>
       </ThemeProvider>

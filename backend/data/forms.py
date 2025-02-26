@@ -7,3 +7,6 @@ class UploadExcelForm(forms.Form):
         help_text='Max. 5 megabytes',
         widget=forms.FileInput(attrs={'accept': '.xlsx, .xls'})
     ) 
+    
+    
+   
