@@ -13,6 +13,7 @@ import Brightness4Icon from "@mui/icons-material/Brightness4";
 import Brightness7Icon from "@mui/icons-material/Brightness7";
 import { useNavigate } from "react-router-dom";
 import LogoutIcon from "@mui/icons-material/Logout";
+import { useAuth } from '../context/AuthContext';
 
 const drawerWidth = 240;
 
@@ -85,13 +86,12 @@ export default function TopBar({ open, setOpen, toggleTheme, isDarkMode }) {
     }),
   }));
 
+  const { logout } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    // Clear authentication
-    localStorage.removeItem("isAuthenticated");
-    // Redirect to login
-    navigate("/login");
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
   };
 
   return (

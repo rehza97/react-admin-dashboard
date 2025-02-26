@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import Box from "@mui/material/Box";
 import TextField from "@mui/material/TextField";
@@ -7,9 +7,11 @@ import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import FormControl from "@mui/material/FormControl";
 import InputLabel from "@mui/material/InputLabel";
-import { Stack } from "@mui/material";
+import { Stack, CircularProgress } from "@mui/material";
 import Snackbar from "@mui/material/Snackbar";
 import MuiAlert from "@mui/material/Alert";
+import { useAuth } from "../../context/AuthContext";
+import { authService, userService } from "../../services/api";
 
 // Constants for roles
 const ROLES = {
@@ -30,34 +32,182 @@ const Alert = React.forwardRef(function Alert(props, ref) {
 });
 
 const ProfileForm = () => {
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm();
-
+  const { currentUser } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
   const [snackbarSeverity, setSnackbarSeverity] = useState("success");
 
-  const onSubmit = (data) => {
-    console.log(data);
-    // Handle form submission, e.g., send data to an API
-    setSnackbarMessage("Profile submitted successfully!");
-    setSnackbarSeverity("success");
-    setSnackbarOpen(true);
+  // State for new user creation
+  const [newUserData, setNewUserData] = useState({
+    email: "",
+    first_name: "",
+    last_name: "",
+    password: "",
+    role: ROLES.USER,
+  });
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    reset,
+    setValue,
+  } = useForm();
+
+  // Load user profile data when component mounts
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      if (currentUser) {
+        try {
+          const userData = await authService.getCurrentUser();
+          setValue("firstName", userData.first_name || "");
+          setValue("lastName", userData.last_name || "");
+          setValue("email", userData.email || "");
+          setValue("phone", userData.phone || "");
+          setValue("address", userData.address || "");
+          setValue("city", userData.city || "");
+          setValue("zipcode", userData.zipcode || "");
+          setValue("country", userData.country || "");
+          setValue(
+            "dateOfBirth",
+            userData.birthday
+              ? new Date(userData.birthday).toISOString().split("T")[0]
+              : ""
+          );
+          setValue("role", userData.role || ROLES.USER);
+        } catch (error) {
+          console.error("Error loading profile:", error);
+          setSnackbarMessage("Failed to load profile data");
+          setSnackbarSeverity("error");
+          setSnackbarOpen(true);
+        } finally {
+          setIsLoadingProfile(false);
+        }
+      } else {
+        setIsLoadingProfile(false);
+      }
+    };
+
+    loadUserProfile();
+  }, [currentUser, setValue]);
+
+  const onSubmit = async (data) => {
+    setIsLoading(true);
+    try {
+      // Update user profile
+      await authService.updateProfile({
+        first_name: data.firstName,
+        last_name: data.lastName,
+        email: data.email,
+        phone: data.phone,
+        address: data.address,
+        city: data.city,
+        zipcode: data.zipcode,
+        country: data.country,
+        birthday: data.dateOfBirth,
+        role: data.role,
+        ...(data.password ? { password: data.password } : {}),
+      });
+
+      setSnackbarMessage("Profile updated successfully!");
+      setSnackbarSeverity("success");
+    } catch (error) {
+      console.error("Profile update error:", error);
+      setSnackbarMessage(
+        error.response?.data?.detail ||
+          "Failed to update profile. Please try again."
+      );
+      setSnackbarSeverity("error");
+    } finally {
+      setIsLoading(false);
+      setSnackbarOpen(true);
+    }
   };
 
-  const handleSnackbarClose = (event, reason) => {
-    if (reason === "clickaway") {
-      return;
+  const handleNewUserChange = (e) => {
+    const { name, value } = e.target;
+    setNewUserData({
+      ...newUserData,
+      [name]: value,
+    });
+  };
+
+  const validateNewUser = () => {
+    const newErrors = {};
+    if (!newUserData.email) {
+      newErrors.email = "Email is required";
+    } else if (!/\S+@\S+\.\S+/.test(newUserData.email)) {
+      newErrors.email = "Email is invalid";
     }
+    if (!newUserData.password) {
+      newErrors.password = "Password is required";
+    } else if (newUserData.password.length < 8) {
+      newErrors.password = "Password must be at least 8 characters long";
+    }
+    if (!newUserData.first_name) {
+      newErrors.first_name = "First name is required";
+    }
+    if (!newUserData.last_name) {
+      newErrors.last_name = "Last name is required";
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleNewUserSubmit = async (e) => {
+    e.preventDefault();
+    if (validateNewUser()) {
+      setIsLoading(true);
+      try {
+        await userService.createUser(newUserData);
+        setSnackbarMessage("User created successfully!");
+        setSnackbarSeverity("success");
+        // Reset new user data
+        setNewUserData({
+          email: "",
+          first_name: "",
+          last_name: "",
+          password: "",
+          role: ROLES.USER,
+        });
+      } catch (error) {
+        console.error("Error creating user:", error);
+        setSnackbarMessage(
+          error.response?.data?.detail ||
+            "Failed to create user. Please try again."
+        );
+        setSnackbarSeverity("error");
+      } finally {
+        setIsLoading(false);
+        setSnackbarOpen(true);
+      }
+    }
+  };
+
+  const handleSnackbarClose = () => {
     setSnackbarOpen(false);
   };
 
+  if (isLoadingProfile) {
+    return (
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   return (
     <div style={{ marginTop: "16px", width: "100%", height: "100vh" }}>
-      <h1>Profile Form Page</h1>
+      <h1>Profile Form</h1>
 
       <Box
         component="form"
@@ -71,7 +221,9 @@ const ProfileForm = () => {
             sx={{ flex: 1 }}
             label="First Name"
             variant="outlined"
-            {...register("firstName", { required: VALIDATION_MESSAGES.REQUIRED })}
+            {...register("firstName", {
+              required: VALIDATION_MESSAGES.REQUIRED,
+            })}
             error={!!errors.firstName}
             helperText={errors.firstName ? errors.firstName.message : ""}
           />
@@ -79,7 +231,9 @@ const ProfileForm = () => {
             sx={{ flex: 1 }}
             label="Last Name"
             variant="outlined"
-            {...register("lastName", { required: VALIDATION_MESSAGES.REQUIRED })}
+            {...register("lastName", {
+              required: VALIDATION_MESSAGES.REQUIRED,
+            })}
             error={!!errors.lastName}
             helperText={errors.lastName ? errors.lastName.message : ""}
           />
@@ -191,9 +345,102 @@ const ProfileForm = () => {
         />
 
         <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-          <Button variant="contained" color="primary" type="submit">
-            Submit
+          <Button
+            variant="contained"
+            color="primary"
+            type="submit"
+            disabled={isLoading}
+          >
+            {isLoading ? "Updating..." : "Update Profile"}
           </Button>
+        </Box>
+
+        <Box component="form" onSubmit={handleNewUserSubmit} noValidate>
+          <Typography variant="h5" component="h2" gutterBottom>
+            Add New User
+          </Typography>
+          <Grid container spacing={3}>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                required
+                fullWidth
+                label="Email"
+                name="email"
+                value={newUserData.email}
+                onChange={handleNewUserChange}
+                error={!!errors.email}
+                helperText={errors.email}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                required
+                fullWidth
+                label="Password"
+                name="password"
+                type="password"
+                value={newUserData.password}
+                onChange={handleNewUserChange}
+                error={!!errors.password}
+                helperText={errors.password}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                required
+                fullWidth
+                label="First Name"
+                name="first_name"
+                value={newUserData.first_name}
+                onChange={handleNewUserChange}
+                error={!!errors.first_name}
+                helperText={errors.first_name}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                required
+                fullWidth
+                label="Last Name"
+                name="last_name"
+                value={newUserData.last_name}
+                onChange={handleNewUserChange}
+                error={!!errors.last_name}
+                helperText={errors.last_name}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel id="role-label">Role</InputLabel>
+                <Select
+                  labelId="role-label"
+                  id="role"
+                  name="role"
+                  value={newUserData.role}
+                  onChange={handleNewUserChange}
+                  label="Role"
+                >
+                  <MenuItem value={ROLES.USER}>User</MenuItem>
+                  <MenuItem value={ROLES.EDITOR}>Editor</MenuItem>
+                  <MenuItem value={ROLES.ADMIN}>Admin</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid
+              item
+              xs={12}
+              sx={{ display: "flex", justifyContent: "flex-end" }}
+            >
+              <Button
+                variant="contained"
+                color="primary"
+                type="submit"
+                disabled={isLoading}
+              >
+                {isLoading ? "Creating..." : "Create User"}
+              </Button>
+            </Grid>
+          </Grid>
         </Box>
       </Box>
 

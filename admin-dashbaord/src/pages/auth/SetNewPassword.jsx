@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Button,
@@ -13,15 +13,14 @@ import {
   Container,
 } from "@mui/material";
 import { Visibility, VisibilityOff, Lock } from "@mui/icons-material";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useParams } from "react-router-dom";
+import { authService } from "../../services/api";
 
 const SetNewPassword = () => {
   const theme = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
-  
-  // In a real app, you would get the token from the URL
-  // const token = new URLSearchParams(location.search).get('token');
+  const { token } = useParams(); // Get token from URL params
   
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -31,6 +30,7 @@ const SetNewPassword = () => {
   });
   const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(0);
 
   const handleClickShowPassword = (field) => {
@@ -105,19 +105,34 @@ const SetNewPassword = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (validate()) {
-      // Submit form - replace with your password reset logic
-      console.log("New password set:", formData.password);
-      setSubmitted(true);
-      
-      // In a real app, you would send the new password and token to your backend
-      // After successful reset, redirect to login page after a delay
-      setTimeout(() => {
-        navigate('/login');
-      }, 3000);
+      setIsLoading(true);
+      try {
+        // Call the password reset confirmation API
+        await authService.confirmPasswordReset({
+          token: token,
+          password: formData.password
+        });
+        
+        setSubmitted(true);
+        
+        // After successful reset, redirect to login page after a delay
+        setTimeout(() => {
+          navigate('/login');
+        }, 3000);
+      } catch (error) {
+        console.error("Password reset error:", error);
+        setErrors({
+          ...errors,
+          general: error.response?.data?.detail || 
+            "Failed to reset password. The token may be invalid or expired."
+        });
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -297,6 +312,11 @@ const SetNewPassword = () => {
                 Reset Password
               </Button>
             </Box>
+          )}
+          {errors.general && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {errors.general}
+            </Alert>
           )}
         </Paper>
       </Box>

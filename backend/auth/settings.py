@@ -24,12 +24,14 @@ LOGS_DIR.mkdir(exist_ok=True)
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-%$b=#t*=eh4bx)ta+%09z56vx0a2p5d3+=12^l_=#6vn50doc('
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY', 'django-insecure-%$b=#t*=eh4bx)ta+%09z56vx0a2p5d3+=12^l_=#6vn50doc(')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(
+    ',') if os.getenv('ALLOWED_HOSTS') else []
 
 
 # Application definition
@@ -49,6 +51,7 @@ INSTALLED_APPS = [
     'django_rest_passwordreset',
     # myapps
     'users',
+    'data',
 ]
 
 MIDDLEWARE = [
@@ -63,7 +66,32 @@ MIDDLEWARE = [
     'users.middleware.RoleBasedAccessMiddleware',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+# Set CORS settings based on environment
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug mode
+if not DEBUG:
+    CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
+
+# Add these additional CORS settings for better control
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 AUTH_USER_MODEL = 'users.CustomUser'
 
@@ -168,8 +196,8 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 DEFAULT_FROM_EMAIL = 'users'
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+EMAIL_HOST_USER = 'fethotebib3@gmail.com'
+EMAIL_HOST_PASSWORD = 'airg hvwe qppy jknc'
 
 
 # airg hvwe qppy jknc

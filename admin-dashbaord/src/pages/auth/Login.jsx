@@ -19,6 +19,7 @@ import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
 import GoogleIcon from "@mui/icons-material/Google";
 import FacebookIcon from "@mui/icons-material/Facebook";
 import TwitterIcon from "@mui/icons-material/Twitter";
+import { authService } from "../../services/api";
 
 const Login = () => {
   const theme = useTheme();
@@ -69,17 +70,30 @@ const Login = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setGeneralError("");
+    
     if (validate()) {
-      // Simulate authentication
-      const isAuthenticated = true; // Replace with actual authentication logic
-      if (isAuthenticated) {
+      try {
+        const response = await authService.login({
+          email: formData.email,
+          password: formData.password
+        });
+        
+        // Store token and authentication status
+        localStorage.setItem("token", response.token);
         localStorage.setItem("isAuthenticated", "true");
+        
+        // Redirect to the intended page or dashboard
         const from = location.state?.from?.pathname || "/";
         navigate(from, { replace: true });
-      } else {
-        setGeneralError("Invalid email or password");
+      } catch (error) {
+        console.error("Login error:", error);
+        setGeneralError(
+          error.response?.data?.error || 
+          "Invalid credentials. Please try again."
+        );
       }
     }
   };
@@ -242,11 +256,11 @@ const Login = () => {
             </Divider>
 
             <Box
-              sx={{ 
-                display: "flex", 
-                justifyContent: "center", 
-                gap: { xs: 1, sm: 2 }, 
-                mt: 2 
+              sx={{
+                display: "flex",
+                justifyContent: "center",
+                gap: { xs: 1, sm: 2 },
+                mt: 2,
               }}
             >
               <IconButton

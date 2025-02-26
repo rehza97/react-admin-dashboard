@@ -124,7 +124,7 @@ def password_reset_token_created(reset_password_token, *args, **kwargs):
     """Send password reset email when a token is created."""
     sitelink = "http://localhost:5173/"
     token = "{}".format(reset_password_token.key)
-    full_link = f"{sitelink}password-reset/{token}"
+    full_link = f"{sitelink}reset-password/{token}"
 
     context = {
         "full_link": full_link,

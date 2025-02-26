@@ -4,6 +4,11 @@ from django.contrib import messages
 from .forms import UploadExcelForm
 from .models import FacturationAR
 from datetime import datetime
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from .serializers import FacturationARSerializer
 
 def upload_facturation_file(request):
     if request.method == 'POST':
@@ -71,3 +76,27 @@ def upload_facturation_file(request):
         form = UploadExcelForm()
     
     return render(request, 'upload_facturation.html', {'form': form})
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def facturation_list(request):
+    """
+    List all facturation records.
+    """
+    facturations = FacturationAR.objects.all()
+    serializer = FacturationARSerializer(facturations, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def facturation_detail(request, pk):
+    """
+    Retrieve a facturation record.
+    """
+    try:
+        facturation = FacturationAR.objects.get(pk=pk)
+    except FacturationAR.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = FacturationARSerializer(facturation)
+    return Response(serializer.data)

@@ -27,6 +27,7 @@ import PivotTable from "./pages/pivot-table/PivotTable";
 import Login from "./pages/auth/Login";
 import ResetPassword from "./pages/auth/ResetPassword";
 import SetNewPassword from "./pages/auth/SetNewPassword";
+import { AuthProvider } from "./context/AuthContext";
 
 // Drawer header component
 const DrawerHeader = styled("div")(({ theme }) => ({
@@ -180,135 +181,170 @@ function App() {
   });
 
   return (
-    <ThemeProvider theme={appliedTheme}>
-      <CssBaseline />
-      <Box sx={{ display: "flex" }}>
-        <Routes>
-          {/* Auth routes - outside the dashboard layout */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/set-new-password" element={<SetNewPassword />} />
+    <AuthProvider>
+      <ThemeProvider theme={appliedTheme}>
+        <CssBaseline />
+        <Box sx={{ display: "flex" }}>
+          <Routes>
+            {/* Auth routes - outside the dashboard layout */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route
+              path="/set-new-password/:token"
+              element={<SetNewPassword />}
+            />
 
-          {/* Protected routes - inside the dashboard layout */}
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <Dashboard />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/manage-users"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <ManageUsers />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          >
-            <Route path="details" element={<UserDetails />} />
-            <Route path="add" element={<AddUser />} />
-          </Route>
-          <Route
-            path="/contacts-information"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <ContactsInformation />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/invoices"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <InvoiceBalance />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/form"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <ProfileForm />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/calendar"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <Calendar />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/faq"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <FAQ />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/bar"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <BarChart />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/pie"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <PieChart />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/line"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <LineChart />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/pivot-table"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <PivotTable />
-                </DashboardLayout>
-              </ProtectedRoute>
-            }
-          />
+            {/* Protected routes - inside the dashboard layout */}
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <Dashboard />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-users"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <ManageUsers />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            >
+              <Route path="details" element={<UserDetails />} />
+              <Route path="add" element={<AddUser />} />
+            </Route>
+            <Route
+              path="/contacts-information"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <ContactsInformation />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/invoices"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <InvoiceBalance />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/form"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <ProfileForm />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/calendar"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <Calendar />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/faq"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <FAQ />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/bar"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <BarChart />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pie"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <PieChart />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/line"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <LineChart />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pivot-table"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <PivotTable />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
 
-          {/* Catch-all route */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Box>
-    </ThemeProvider>
+            {/* Catch-all route */}
+            <Route path="*" element={<NotFound />} />
+
+            {/* New route for SetNewPassword component */}
+            <Route
+              path="/set-new-password/:token"
+              element={<SetNewPassword />}
+            />
+
+            {/* New route for UserDetails component */}
+            <Route
+              path="/manage-users/edit/:id"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <UserDetails />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+
+            {/* New route for AddUser component */}
+            <Route
+              path="/manage-users/add"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <AddUser />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </Box>
+      </ThemeProvider>
+    </AuthProvider>
   );
 }
 

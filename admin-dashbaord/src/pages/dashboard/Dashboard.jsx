@@ -21,6 +21,7 @@ import PropTypes from "prop-types";
 import Row1 from "./Row1";
 import Map from "../../components/map/Map";
 import { useTheme } from "@mui/material/styles";
+import ExportButton from "../../components/ExportButton";
 
 // Fixed region definitions - removed duplicate wilayas
 const regions = {
@@ -342,6 +343,14 @@ const Dashboard = () => {
     );
   }, [theme]);
 
+  const dashboardData = [
+    { region: "Nord", sales: 12361, users: 8000, growth: 14 },
+    { region: "Sud", sales: 5000, users: 3200, growth: 10 },
+    { region: "Est", sales: 8500, users: 4100, growth: 7 },
+    { region: "Ouest", sales: 9200, users: 5300, growth: 12 },
+    { region: "Centre", sales: 15000, users: 7800, growth: 20 },
+  ];
+
   return (
     <div style={{ width: "100%", height: "100%" }}>
       <Box
@@ -351,14 +360,10 @@ const Dashboard = () => {
           marginBottom: "16px",
         }}
       >
-        <Button
-          variant="contained"
-          color="primary"
-          aria-label="Download"
-          startIcon={<Download />}
-        >
-          Download
-        </Button>
+        <ExportButton 
+          data={dashboardData} 
+          fileName="dashboard_metrics"
+        />
       </Box>
       <Row1 />
 

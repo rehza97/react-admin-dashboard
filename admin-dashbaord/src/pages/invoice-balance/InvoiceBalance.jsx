@@ -1,6 +1,8 @@
 import React from "react";
 import { Outlet } from "react-router-dom";
 import { DataGrid, GridToolbar } from "@mui/x-data-grid";
+import { Box, Typography } from "@mui/material";
+import ExportButton from "../../components/ExportButton";
 
 // Sample data for the DataGrid
 const rows = [
@@ -108,6 +110,16 @@ const columns = [
   },
 ];
 
+// Export columns configuration
+const exportColumns = [
+  { field: "id", header: "Invoice ID" },
+  { field: "name", header: "Customer Name" },
+  { field: "phone", header: "Phone Number" },
+  { field: "email", header: "Email Address" },
+  { field: "cost", header: "Invoice Amount" },
+  { field: "date", header: "Invoice Date" }
+];
+
 const InvoiceBalance = () => {
   return (
     <div
@@ -121,6 +133,17 @@ const InvoiceBalance = () => {
         justifyContent: "center",
       }}
     >
+      <Box sx={{ width: "99%", mb: 2, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Typography variant="h4" component="h1">
+          Invoice Balance
+        </Typography>
+        <ExportButton 
+          data={rows} 
+          columns={exportColumns} 
+          fileName="invoice_balance"
+        />
+      </Box>
+      
       <div
         style={{
           flex: 1,

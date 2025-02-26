@@ -14,12 +14,14 @@ import {
 import { Email } from "@mui/icons-material";
 import { Link as RouterLink } from "react-router-dom";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import { authService } from "../../services/api";
 
 const ResetPassword = () => {
   const theme = useTheme();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleChange = (e) => {
     setEmail(e.target.value);
@@ -37,14 +39,24 @@ const ResetPassword = () => {
     return true;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (validate()) {
-      // Submit form - replace with your password reset logic
-      console.log("Reset password for:", email);
-      setSubmitted(true);
-      // In a real app, you would send a request to your backend here
+      setIsLoading(true);
+      try {
+        // Call the password reset API
+        await authService.requestPasswordReset({ email });
+        setSubmitted(true);
+      } catch (error) {
+        console.error("Password reset error:", error);
+        setError(
+          error.response?.data?.detail ||
+            "Failed to send reset email. Please try again later."
+        );
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -84,17 +96,18 @@ const ResetPassword = () => {
           </Link>
 
           <Box sx={{ textAlign: "center", mb: 3 }}>
-            <Typography 
-              variant="h4" 
-              component="h1" 
-              gutterBottom 
+            <Typography
+              variant="h4"
+              component="h1"
+              gutterBottom
               fontWeight="bold"
               sx={{ fontSize: { xs: "1.75rem", sm: "2.125rem" } }}
             >
               Reset Password
             </Typography>
             <Typography variant="body1" color="text.secondary">
-              Enter your email address and we'll send you a link to reset your password
+              Enter your email address and we'll send you a link to reset your
+              password
             </Typography>
           </Box>
 
@@ -104,8 +117,9 @@ const ResetPassword = () => {
                 Password reset link has been sent to your email address.
               </Alert>
               <Typography variant="body2" paragraph sx={{ mb: 3 }}>
-                Please check your inbox and follow the instructions to reset your password.
-                If you don't receive an email within a few minutes, check your spam folder.
+                Please check your inbox and follow the instructions to reset
+                your password. If you don't receive an email within a few
+                minutes, check your spam folder.
               </Typography>
               <Button
                 component={RouterLink}
@@ -141,7 +155,7 @@ const ResetPassword = () => {
                 }}
                 sx={{ mb: 2 }}
               />
-              
+
               <Button
                 type="submit"
                 fullWidth
