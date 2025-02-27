@@ -6,7 +6,7 @@ from django.dispatch import receiver
 from django.template.loader import render_to_string
 from django.core.mail import EmailMultiAlternatives
 from django.utils.html import strip_tags
-from django.core.validators import validate_email
+from django.core.validators import validate_email, MinLengthValidator
 from django.core.exceptions import ValidationError
 
 

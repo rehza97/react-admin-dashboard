@@ -17,6 +17,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import { userService } from "../../services/api";
+import PageLayout from "../../components/PageLayout";
 
 const ManageUsers = () => {
   const theme = useTheme();
@@ -62,6 +63,17 @@ const ManageUsers = () => {
     navigate("/manage-users/add");
   };
 
+  const headerAction = (
+    <Button
+      variant="contained"
+      color="primary"
+      startIcon={<AddIcon />}
+      onClick={handleAddUser}
+    >
+      Add User
+    </Button>
+  );
+
   const columns = [
     {
       field: "id",
@@ -100,59 +112,30 @@ const ManageUsers = () => {
     {
       field: "role",
       headerName: "Role",
-      width: 150,
-      headerClassName: "header-center",
       flex: 1,
       align: "center",
       headerAlign: "center",
-      renderCell: (params) => {
-        const isAdmin = params.value === "admin";
-        return (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {isAdmin ? (
-              <AdminIcon
-                style={{ color: theme.palette.success.main, marginRight: 4 }}
-              />
-            ) : (
-              <UserIcon
-                style={{ color: theme.palette.info.main, marginRight: 4 }}
-              />
-            )}
-            <Chip
-              label={params.value}
-              color={isAdmin ? "success" : "default"}
-              style={{
-                backgroundColor: isAdmin
-                  ? theme.palette.success.main
-                  : theme.palette.grey[300],
-                color: theme.palette.getContrastText(
-                  isAdmin ? theme.palette.success.main : theme.palette.grey[300]
-                ),
-              }}
-            />
-          </div>
-        );
-      },
+      renderCell: (params) => (
+        <Chip
+          label={params.value}
+          color={params.value === "admin" ? "primary" : "default"}
+          size="small"
+          sx={{ minWidth: 80 }}
+        />
+      ),
     },
     {
       field: "actions",
       headerName: "Actions",
-      width: 150,
-      headerClassName: "header-center",
+      flex: 1,
       align: "center",
       headerAlign: "center",
       renderCell: (params) => (
         <Box>
           <Tooltip title="Edit User">
             <IconButton
-              color="primary"
               onClick={() => handleEditUser(params.row.id)}
+              color="primary"
               size="small"
             >
               <EditIcon />
@@ -160,8 +143,8 @@ const ManageUsers = () => {
           </Tooltip>
           <Tooltip title="Delete User">
             <IconButton
-              color="error"
               onClick={() => handleDeleteUser(params.row.id)}
+              color="error"
               size="small"
             >
               <DeleteIcon />
@@ -174,75 +157,61 @@ const ManageUsers = () => {
 
   if (loading) {
     return (
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "100vh",
-        }}
-      >
-        <CircularProgress />
-      </Box>
+      <PageLayout title="Manage Users">
+        <Box sx={{ display: "flex", justifyContent: "center", p: 3 }}>
+          <CircularProgress />
+        </Box>
+      </PageLayout>
     );
   }
 
   if (error) {
     return (
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "100vh",
-          flexDirection: "column",
-        }}
-      >
-        <Typography color="error" variant="h6" gutterBottom>
-          {error}
-        </Typography>
-        <Button variant="contained" onClick={() => window.location.reload()}>
-          Retry
-        </Button>
-      </Box>
+      <PageLayout title="Manage Users">
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            height: "100vh",
+            flexDirection: "column",
+          }}
+        >
+          <Typography color="error" variant="h6" gutterBottom>
+            {error}
+          </Typography>
+          <Button variant="contained" onClick={() => window.location.reload()}>
+            Retry
+          </Button>
+        </Box>
+      </PageLayout>
     );
   }
 
   return (
-    <div
-      style={{
-        marginTop: "16px",
-        width: "100%",
-        height: "100vh",
-        display: "flex",
-        flexDirection: "column",
-      }}
+    <PageLayout
+      title="Manage Users"
+      subtitle="Add, edit, and manage user accounts"
+      headerAction={headerAction}
     >
-      <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}>
-        <Typography variant="h4" component="h1">
-          Manage Users
-        </Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddIcon />}
-          onClick={handleAddUser}
-        >
-          Add User
-        </Button>
-      </Box>
-
-      <div style={{ height: "calc(100vh - 180px)", width: "100%" }}>
-        <DataGrid
-          rows={users}
-          columns={columns}
-          pageSize={10}
-          rowsPerPageOptions={[5, 10, 20]}
-          disableSelectionOnClick
-        />
-      </div>
+      <DataGrid
+        rows={users}
+        columns={columns}
+        pageSize={10}
+        rowsPerPageOptions={[5, 10, 20]}
+        disableSelectionOnClick
+        autoHeight
+        sx={{
+          '& .MuiDataGrid-cell:focus': {
+            outline: 'none',
+          },
+          '& .MuiDataGrid-row:hover': {
+            backgroundColor: 'action.hover',
+          },
+        }}
+      />
       <Outlet />
-    </div>
+    </PageLayout>
   );
 };
 

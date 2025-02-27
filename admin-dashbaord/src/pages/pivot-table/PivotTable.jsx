@@ -1,10 +1,14 @@
 import React, { useState } from "react";
-import { Box, Typography, Paper } from "@mui/material";
+import { Box, Typography, Paper, IconButton, Slider, Tooltip } from "@mui/material";
 import PivotTableUI from "react-pivottable/PivotTableUI";
 import "react-pivottable/pivottable.css";
 import TableRenderers from "react-pivottable/TableRenderers";
 import Plot from "react-plotly.js";
 import createPlotlyRenderers from "react-pivottable/PlotlyRenderers";
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import PageLayout from "../../components/PageLayout";
 
 // Create Plotly renderers
 const PlotlyRenderers = createPlotlyRenderers(Plot);
@@ -50,7 +54,8 @@ const PivotTable = () => {
     { Month: "Dec", Category: "Fruits", Region: "South", Sales: 280, Quantity: 45 },
   ];
 
-  // Initial state for the pivot table
+  // State for zoom control
+  const [zoom, setZoom] = useState(100);
   const [state, setState] = useState({
     data: data,
     rows: ["Month"],
@@ -60,28 +65,145 @@ const PivotTable = () => {
     aggregatorName: "Sum",
   });
 
+  // Zoom control handlers
+  const handleZoomIn = () => {
+    setZoom(prev => Math.min(prev + 10, 200));
+  };
+
+  const handleZoomOut = () => {
+    setZoom(prev => Math.max(prev - 10, 50));
+  };
+
+  const handleZoomReset = () => {
+    setZoom(100);
+  };
+
+  const handleZoomChange = (event, newValue) => {
+    setZoom(newValue);
+  };
+
+  // Custom styles for the zoom controls
+  const zoomControlStyles = {
+    position: 'fixed',
+    bottom: 20,
+    right: 20,
+    zIndex: 1000,
+    backgroundColor: 'background.paper',
+    padding: 1,
+    borderRadius: 2,
+    boxShadow: 3,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 1,
+  };
+
   return (
-    <Box sx={{ height: "100%" ,width: "98%" }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Pivot Table
-      </Typography>
-      <Paper 
-        elevation={3} 
+    <PageLayout
+      title="Pivot Table"
+      subtitle="Interactive data analysis tool"
+    >
+      <Box 
         sx={{ 
-          p: 2, 
-          height: "calc(100vh - 180px)", 
-          overflow: "auto",
-          backgroundColor: "background.paper" 
+          position: 'relative',
+          height: 'calc(100vh - 200px)',
+          overflow: 'auto'
         }}
       >
-        <PivotTableUI
-          data={state.data}
-          onChange={s => setState(s)}
-          renderers={Object.assign({}, TableRenderers, PlotlyRenderers)}
-          {...state}
-        />
-      </Paper>
-    </Box>
+        {/* Zoom Controls */}
+        <Paper sx={zoomControlStyles}>
+          <Tooltip title="Zoom Out">
+            <IconButton 
+              onClick={handleZoomOut}
+              disabled={zoom <= 50}
+              size="small"
+            >
+              <ZoomOutIcon />
+            </IconButton>
+          </Tooltip>
+
+          <Box sx={{ width: 100, mx: 2 }}>
+            <Slider
+              value={zoom}
+              onChange={handleZoomChange}
+              min={50}
+              max={200}
+              step={10}
+              valueLabelDisplay="auto"
+              valueLabelFormat={value => `${value}%`}
+            />
+          </Box>
+
+          <Tooltip title="Zoom In">
+            <IconButton 
+              onClick={handleZoomIn}
+              disabled={zoom >= 200}
+              size="small"
+            >
+              <ZoomInIcon />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title="Reset Zoom">
+            <IconButton 
+              onClick={handleZoomReset}
+              disabled={zoom === 100}
+              size="small"
+            >
+              <RestartAltIcon />
+            </IconButton>
+          </Tooltip>
+        </Paper>
+
+        {/* Pivot Table Container */}
+        <Box 
+          sx={{ 
+            transform: `scale(${zoom / 100})`,
+            transformOrigin: 'top left',
+            transition: 'transform 0.2s ease',
+            '& .pvtTable': {
+              // Override default table styles
+              maxWidth: 'none',
+              whiteSpace: 'nowrap',
+            },
+            '& .pvtAxisContainer, & .pvtVals': {
+              // Improve drag and drop areas
+              border: '1px dashed',
+              borderColor: 'divider',
+              borderRadius: 1,
+              padding: 1,
+              margin: 1,
+            },
+            '& .pvtAxisContainer li': {
+              // Improve draggable items
+              padding: '2px 5px',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1,
+              margin: '2px',
+              backgroundColor: 'background.paper',
+            },
+            // Add responsive styles
+            '@media (max-width: 600px)': {
+              '& .pvtTable': {
+                fontSize: '12px',
+              },
+              '& .pvtAxisContainer li': {
+                fontSize: '11px',
+                padding: '1px 3px',
+              },
+            },
+          }}
+        >
+          <PivotTableUI
+            data={state.data}
+            onChange={s => setState(s)}
+            renderers={Object.assign({}, TableRenderers, PlotlyRenderers)}
+            {...state}
+            unusedOrientationCutoff={Infinity}
+          />
+        </Box>
+      </Box>
+    </PageLayout>
   );
 };
 

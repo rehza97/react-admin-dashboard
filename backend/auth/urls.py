@@ -8,7 +8,7 @@ urlpatterns = [
     path('users/' , include('users.urls')),
     path('api/auth/', include('knox.urls')),
     path('users/api/password_reset/', include('django_rest_passwordreset.urls', namespace='password_reset')),
-    path('data/', include('data.urls')),
+    path('data/', include('data.urls')),  # This matches the proxy configuration
 ]
 
 if settings.DEBUG:

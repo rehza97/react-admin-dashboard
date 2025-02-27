@@ -1,29 +1,40 @@
 from rest_framework import serializers
-from .models import FacturationAR, FacturationManuelle
+from .models import Invoice
 
-
-class FacturationARSerializer(serializers.ModelSerializer):
-    upload_date = serializers.DateTimeField(source='created_at', read_only=True)
+class InvoiceSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
     file_size = serializers.SerializerMethodField()
-    
+    uploaded_by = serializers.ReadOnlyField(source='uploaded_by.email')
+
     class Meta:
-        model = FacturationAR
+        model = Invoice
         fields = [
             'id', 
             'invoice_number', 
-            'client_name', 
-            'amount', 
-            'invoice_date', 
-            'status', 
+            'file',
+            'file_url', 
+            'file_size',
+            'uploaded_by',
             'upload_date', 
-            'file_size'
+            'status'
         ]
-    
+        read_only_fields = ['upload_date', 'status', 'uploaded_by']
+
+    def get_file_url(self, obj):
+        if obj.file:
+            return self.context['request'].build_absolute_uri(obj.file.url)
+        return None
+
     def get_file_size(self, obj):
-        # You could implement actual file size calculation here if needed
+        if obj.file:
+            return obj.file.size
         return 0
 
-class FacturationManuelleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = FacturationManuelle
-        fields = '__all__' 
+    def create(self, validated_data):
+        # Set the uploaded_by field to the current user
+        validated_data['uploaded_by'] = self.context['request'].user
+        return super().create(validated_data)
+
+
+
+

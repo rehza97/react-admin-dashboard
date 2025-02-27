@@ -22,6 +22,7 @@ import Row1 from "./Row1";
 import Map from "../../components/map/Map";
 import { useTheme } from "@mui/material/styles";
 import ExportButton from "../../components/ExportButton";
+import PageLayout from "../../components/PageLayout";
 
 // Fixed region definitions - removed duplicate wilayas
 const regions = {
@@ -269,11 +270,11 @@ SelectedWilayasList.propTypes = {
 };
 
 const Dashboard = () => {
-  const [activeLinks, setActiveLinks] = useState({});
-  const [expandedRegion, setExpandedRegion] = useState("");
-  const [panelVisible, setPanelVisible] = useState(true);
-  const [selectedListVisible, setSelectedListVisible] = useState(true);
   const theme = useTheme();
+  const [panelVisible, setPanelVisible] = useState(true);
+  const [expandedRegion, setExpandedRegion] = useState(null);
+  const [activeLinks, setActiveLinks] = useState({});
+  const [selectedListVisible, setSelectedListVisible] = useState(false);
 
   const handleWilayaClick = (wilaya) => {
     setActiveLinks((prev) => ({
@@ -342,115 +343,101 @@ const Dashboard = () => {
     { region: "Sud", sales: 5000, users: 3200, growth: 10 },
     { region: "Est", sales: 8500, users: 4100, growth: 7 },
     { region: "Ouest", sales: 9200, users: 5300, growth: 12 },
-    { region: "Centre", sales: 15000, users: 7800, growth: 20 },
   ];
 
-  return (
-    <div style={{ width: "100%", height: "100%" }}>
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "flex-end",
-          marginBottom: "16px",
-        }}
-      >
-        <ExportButton 
-          data={dashboardData} 
-          fileName="dashboard_metrics"
-        />
-      </Box>
-      <Row1 />
+  const headerAction = (
+    <ExportButton 
+      data={dashboardData}
+      columns={[
+        { field: 'region', header: 'Region' },
+        { field: 'sales', header: 'Sales' },
+        { field: 'users', header: 'Users' },
+        { field: 'growth', header: 'Growth' }
+      ]}
+      fileName="dashboard_metrics"
+    />
+  );
 
-      {/* Map and Panel Container */}
-      <Box
-        sx={{
-          width: "100%",
-          height: "400px",
-          maxWidth: "800px",
-          backgroundColor: theme.palette.background.paper,
-          color: theme.palette.text.primary,
-          borderRadius: 2,
-          boxShadow: theme.palette.mode === "dark" 
-            ? "0 4px 20px rgba(0,0,0,0.3)" 
-            : "0 4px 20px rgba(0,0,0,0.1)",
-          display: "flex",
-          overflow: "hidden",
-          margin: "20px auto",
-          position: "relative",
-        }}
-      >
-        {/* Side Panel - Compact */}
-        {panelVisible && (
+  return (
+    <PageLayout
+      title="Dashboard"
+      subtitle="Welcome to your dashboard overview"
+      headerAction={headerAction}
+    >
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <Row1 />
+        
+        <Box sx={{ display: "flex", gap: 2, position: "relative" }}>
+          {panelVisible && (
+            <Box
+              sx={{
+                width: "250px",
+                borderRight: "1px solid",
+                borderColor: "divider",
+                overflowY: "auto",
+                maxHeight: "400px",
+                position: "relative",
+              }}
+            >
+              <IconButton
+                onClick={togglePanelVisibility}
+                sx={{ position: "absolute", top: 10, right: 10, zIndex: 1 }}
+                aria-label="Close panel"
+              >
+                <Close />
+              </IconButton>
+
+              <RegionList
+                regions={regions}
+                expandedRegion={expandedRegion}
+                setExpandedRegion={setExpandedRegion}
+                activeLinks={activeLinks}
+                onWilayaClick={handleWilayaClick}
+                onRegionDoubleClick={handleRegionDoubleClick}
+              />
+
+              <ListItem
+                component="div"
+                button
+                onClick={handleSelectAllRegions}
+                aria-label="Select or deselect all regions"
+              >
+                <ListItemText primary="Select/Deselect All Regions" />
+              </ListItem>
+            </Box>
+          )}
+
           <Box
             sx={{
-              width: "250px",
-              borderRight: "1px solid",
-              borderColor: "divider",
-              overflowY: "auto",
-              maxHeight: "400px",
+              flex: 1,
               position: "relative",
+              height: "400px",
+              backgroundColor: "background.default",
             }}
           >
-            <IconButton
-              onClick={togglePanelVisibility}
-              sx={{ position: "absolute", top: 10, right: 10, zIndex: 1 }}
-              aria-label="Close panel"
-            >
-              <Close />
-            </IconButton>
+            {!panelVisible && (
+              <IconButton
+                onClick={togglePanelVisibility}
+                sx={{ position: "absolute", top: 10, left: 10, zIndex: 1 }}
+                aria-label="Open panel"
+              >
+                <ChevronRight />
+              </IconButton>
+            )}
 
-            <RegionList
-              regions={regions}
-              expandedRegion={expandedRegion}
-              setExpandedRegion={setExpandedRegion}
-              activeLinks={activeLinks}
-              onWilayaClick={handleWilayaClick}
-              onRegionDoubleClick={handleRegionDoubleClick}
-            />
+            <Map activeLinks={activeLinks} />
 
-            <ListItem
-              component="div"
-              button
-              onClick={handleSelectAllRegions}
-              aria-label="Select or deselect all regions"
-            >
-              <ListItemText primary="Select/Deselect All Regions" />
-            </ListItem>
+            {selectedListVisible && (
+              <SelectedWilayasList
+                activeLinks={activeLinks}
+                onClose={toggleSelectedList}
+                theme={theme}
+              />
+            )}
           </Box>
-        )}
-
-        {/* Map Container */}
-        <Box
-          sx={{
-            flex: 1,
-            position: "relative",
-            transition: "margin-left 0.3s ease",
-            marginLeft: panelVisible ? 0 : 0,
-            backgroundColor: "background.default",
-          }}
-        >
-          {!panelVisible && (
-            <IconButton
-              onClick={togglePanelVisibility}
-              sx={{ position: "absolute", top: 10, left: 10, zIndex: 1 }}
-              aria-label="Open panel"
-            >
-              <ChevronRight />
-            </IconButton>
-          )}
-
-          <Map activeLinks={activeLinks} />
-
-          {selectedListVisible && (
-            <SelectedWilayasList
-              activeLinks={activeLinks}
-              onClose={toggleSelectedList}
-              theme={theme}
-            />
-          )}
         </Box>
       </Box>
-    </div>
+    </PageLayout>
   );
 };
 

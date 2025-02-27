@@ -19,6 +19,7 @@ import {
   TextField,
   Alert,
   CircularProgress,
+  useTheme,
 } from "@mui/material";
 import {
   Upload as UploadIcon,
@@ -29,8 +30,14 @@ import {
 import { useDropzone } from "react-dropzone";
 import axios from "axios";
 import PropTypes from "prop-types";
+import dataService from "../../services/dataService";
+import { useAuth } from "../../context/AuthContext";
+import { fileService } from "../../services/fileService";
+import PageLayout from "../../components/PageLayout";
+import { alpha } from "@mui/material/styles";
 
 const FileUpload = () => {
+  const { currentUser } = useAuth();
   const [files, setFiles] = useState([]);
   const [uploadProgress, setUploadProgress] = useState({});
   const [remainingTime, setRemainingTime] = useState({});
@@ -42,6 +49,13 @@ const FileUpload = () => {
   const [uploadError, setUploadError] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [errorMessages, setErrorMessages] = useState({
+    fileType: "",
+    fileSize: "",
+    uploadError: "",
+  });
+
+  const theme = useTheme();
 
   // API URLs - centralized to make changes easier
   const API_URLS = {
@@ -52,7 +66,11 @@ const FileUpload = () => {
   };
 
   useEffect(() => {
-    // Fetch existing files when component mounts
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError("Please log in to access this feature");
+      return;
+    }
     fetchUploadedFiles();
   }, []);
 
@@ -60,40 +78,50 @@ const FileUpload = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        throw new Error("Authentication token not found");
-      }
-
-      const response = await axios.get(API_URLS.LIST, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      console.log("API Response:", response.data);
-      setUploadedFiles(response.data);
+      const response = await fileService.getFiles();
+      setUploadedFiles(response);
     } catch (error) {
-      console.error("Error fetching files:", error);
-      setError(error.response?.data?.error || "Failed to fetch files");
+      if (error.response?.status === 401) {
+        setError("Please log in to access this feature");
+        // Optionally redirect to login
+        // navigate('/login');
+      } else {
+        setError(error.response?.data?.error || "Failed to fetch files");
+      }
       setUploadedFiles([]);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const validateFile = (file) => {
+    const validTypes = [
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "text/csv",
+    ];
+
+    if (!validTypes.includes(file.type)) {
+      setErrorMessages((prev) => ({
+        ...prev,
+        fileType: "Invalid file type. Please upload Excel or CSV files only.",
+      }));
+      return false;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMessages((prev) => ({
+        ...prev,
+        fileSize: "File size must be less than 5MB",
+      }));
+      return false;
+    }
+
+    return true;
+  };
+
   const onDrop = (acceptedFiles) => {
-    // Add file validation
-    const validFiles = acceptedFiles.filter((file) => {
-      const isValidSize = file.size <= 5 * 1024 * 1024; // 5MB limit
-      if (!isValidSize) {
-        setUploadError((prev) => ({
-          ...prev,
-          [file.name]: "File size must be less than 5MB",
-        }));
-        return false;
-      }
-      return true;
-    });
+    const validFiles = acceptedFiles.filter(validateFile);
     setFiles((prev) => [...prev, ...validFiles]);
   };
 
@@ -109,41 +137,42 @@ const FileUpload = () => {
   });
 
   const handleUpload = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError("Please log in to access this feature");
+      return;
+    }
+
     setIsUploading(true);
     setUploadError({});
 
     for (const file of files) {
-      const formData = new FormData();
-      formData.append("file", file);
-
       try {
-        const token = localStorage.getItem("token");
-        if (!token) {
-          throw new Error("Authentication token not found");
-        }
-
-        const response = await axios.post(API_URLS.UPLOAD, formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-            "Authorization": `Bearer ${token}`,
-          },
-        });
-
-        // Handle success response
-        console.log(response.data);
-        await fetchUploadedFiles();
+        const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        await fileService.uploadFile(file, invoiceNumber);
+        
+        // Update progress
+        setUploadProgress(prev => ({
+          ...prev,
+          [file.name]: 100
+        }));
+        
+        // Clear file from queue after successful upload
+        setFiles(prev => prev.filter(f => f.name !== file.name));
+        
       } catch (error) {
-        console.error(`Error uploading ${file.name}:`, error);
-        setUploadError((prev) => ({
+        setUploadError(prev => ({
           ...prev,
           [file.name]: {
-            type: "error",
-            message: error.response?.data?.error || "Upload failed",
-          },
+            type: 'error',
+            message: error.response?.data?.detail || 'Upload failed'
+          }
         }));
       }
     }
+    
     setIsUploading(false);
+    await fetchUploadedFiles(); // Refresh the list
   };
 
   const handleConfirmDelete = (id) => {
@@ -157,56 +186,28 @@ const FileUpload = () => {
     setOpenDialog(true);
   };
 
-  const handleDownload = async (invoiceNumber) => {
+  const handleDownload = async (id, fileName) => {
     try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        throw new Error("Authentication token not found");
-      }
-
-      const response = await axios.get(
-        API_URLS.DOWNLOAD(invoiceNumber),
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          responseType: "blob",
-        }
-      );
-
-      // Create a URL for the blob
+      const response = await fileService.downloadFile(id);
       const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
+      const link = document.createElement('a');
       link.href = url;
-      link.setAttribute("download", `${invoiceNumber}.xlsx`);
+      link.setAttribute('download', fileName);
       document.body.appendChild(link);
       link.click();
-
-      // Clean up
-      link.parentNode.removeChild(link);
+      link.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error("Error downloading file:", error);
-      setError("Failed to download file. Please try again.");
+      setError('Failed to download file');
     }
   };
 
   const handleDelete = async (id) => {
     try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        throw new Error("Authentication token not found");
-      }
-
-      await axios.delete(API_URLS.DETAIL(id), {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      await dataService.deleteFile(id);
       await fetchUploadedFiles();
       setOpenDialog(false);
     } catch (error) {
-      console.error("Error deleting file:", error);
       setError("Failed to delete file. Please try again.");
     }
   };
@@ -216,17 +217,12 @@ const FileUpload = () => {
       await handleDelete(selectedFile.id);
     } else if (selectedFile.action === "edit") {
       try {
-        const token = localStorage.getItem("token");
-        if (!token) {
-          throw new Error("Authentication token not found");
-        }
-
         await axios.put(
           API_URLS.DETAIL(selectedFile.id),
           { invoice_number: editedFileName },
           {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
               "Content-Type": "application/json",
             },
           }
@@ -278,7 +274,9 @@ const FileUpload = () => {
       <TableRow key={file.id || file.invoice_number}>
         <TableCell>{file.invoice_number}</TableCell>
         <TableCell>{formatBytes(file.file_size || 0)}</TableCell>
-        <TableCell>{new Date(file.created_at || file.invoice_date).toLocaleDateString()}</TableCell>
+        <TableCell>
+          {new Date(file.created_at || file.invoice_date).toLocaleDateString()}
+        </TableCell>
         <TableCell>{file.status || "N/A"}</TableCell>
         <TableCell>
           <IconButton onClick={() => handleEdit(file)}>
@@ -287,7 +285,7 @@ const FileUpload = () => {
           <IconButton onClick={() => handleConfirmDelete(file.id)}>
             <DeleteIcon />
           </IconButton>
-          <IconButton onClick={() => handleDownload(file.invoice_number)}>
+          <IconButton onClick={() => handleDownload(file.id, file.invoice_number)}>
             <DownloadIcon />
           </IconButton>
         </TableCell>
@@ -349,42 +347,69 @@ const FileUpload = () => {
     );
   };
 
+  const dropzoneStyles = {
+    border: `2px dashed ${isDragActive ? theme.palette.primary.main : theme.palette.divider}`,
+    borderRadius: 2,
+    p: 4,
+    mb: 3,
+    backgroundColor: isDragActive ? 
+      alpha(theme.palette.primary.main, 0.05) : 
+      theme.palette.background.default,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease-in-out',
+    '&:hover': {
+      borderColor: theme.palette.primary.main,
+      backgroundColor: alpha(theme.palette.primary.main, 0.05)
+    }
+  };
+
   return (
-    <Box sx={{ p: 3 }}>
+    <PageLayout
+      title="File Upload"
+      subtitle="Upload and manage your invoice files"
+      maxWidth={1200}
+    >
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert 
+          severity="error" 
+          sx={{ mb: 3 }} 
+          onClose={() => setError(null)}
+        >
           {error}
         </Alert>
       )}
 
-      <Typography variant="h4" gutterBottom>
-        File Upload
-      </Typography>
+      {errorMessages.fileType && (
+        <Alert severity="error">{errorMessages.fileType}</Alert>
+      )}
+      {errorMessages.fileSize && (
+        <Alert severity="error">{errorMessages.fileSize}</Alert>
+      )}
 
-      <Paper
-        {...getRootProps()}
-        sx={{
-          p: 3,
-          mb: 3,
-          border: "2px dashed",
-          borderColor: isDragActive ? "primary.main" : "grey.300",
-          backgroundColor: isDragActive ? "action.hover" : "background.paper",
-          cursor: "pointer",
-        }}
-      >
+      <Box {...getRootProps()} sx={dropzoneStyles}>
         <input {...getInputProps()} />
-        <Box sx={{ textAlign: "center" }}>
-          <UploadIcon sx={{ fontSize: 48, color: "primary.main", mb: 1 }} />
-          <Typography>
-            {isDragActive
-              ? "Drop the files here..."
-              : "Drag and drop files here, or click to select files"}
+        <Box sx={{ textAlign: 'center' }}>
+          <UploadIcon 
+            sx={{ 
+              fontSize: 48, 
+              color: 'primary.main', 
+              mb: 2 
+            }} 
+          />
+          <Typography variant="h6" gutterBottom>
+            {isDragActive ? 
+              "Drop the files here..." : 
+              "Drag & drop files here, or click to select files"
+            }
           </Typography>
-          <Typography variant="body2" color="textSecondary">
-            Supported formats: .xlsx, .xls, .csv
+          <Typography 
+            variant="body2" 
+            color="text.secondary"
+          >
+            Supported formats: .xlsx, .xls, .csv (Max size: 5MB)
           </Typography>
         </Box>
-      </Paper>
+      </Box>
 
       {files.length > 0 && (
         <Box sx={{ mb: 3 }}>
@@ -481,7 +506,7 @@ const FileUpload = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </PageLayout>
   );
 };
 

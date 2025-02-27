@@ -2,12 +2,27 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # Web interface route
-    path('upload-facturation-form/', views.upload_facturation_form, name='upload_facturation_form'),
+    # Upload a new invoice file
+    path('upload-facturation/', 
+         views.InvoiceUploadView.as_view(), 
+         name='upload-invoice'),
     
-    # API Routes for React frontend
-    path('data/upload-facturation/', views.upload_facturation_api, name='upload_facturation_api'),
-    path('data/api/facturation/', views.facturation_list, name='facturation-list'),
-    path('data/api/facturation/<int:pk>/', views.facturation_detail, name='facturation-detail'),
-    path('data/api/facturation/<str:invoice_number>/download/', views.download_facturation, name='download-facturation'),
+    # List all invoices for the current user
+    path('api/facturation/', 
+         views.InvoiceListView.as_view(), 
+         name='invoice-list'),
+    
+    # Retrieve or delete a specific invoice
+    path('api/facturation/<int:pk>/', 
+         views.InvoiceDetailView.as_view(), 
+         name='invoice-detail'),
+    
+    # Download a specific invoice file
+    path('api/facturation/<int:pk>/download/', 
+         views.InvoiceDownloadView.as_view(), 
+         name='invoice-download'),
 ]
+
+
+
+
