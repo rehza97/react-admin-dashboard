@@ -29,15 +29,27 @@ import {
 } from "@mui/icons-material";
 import { useDropzone } from "react-dropzone";
 import axios from "axios";
-import PropTypes from "prop-types";
 import dataService from "../../services/dataService";
 import { useAuth } from "../../context/AuthContext";
 import { fileService } from "../../services/fileService";
 import PageLayout from "../../components/PageLayout";
 import { alpha } from "@mui/material/styles";
+import { styled } from "@mui/material/styles";
+
+// Styled components
+const DropzoneArea = styled("div")(({ theme }) => ({
+  border: `2px dashed ${theme.palette.divider}`,
+  borderRadius: theme.shape.borderRadius,
+  padding: theme.spacing(4),
+  textAlign: "center",
+  cursor: "pointer",
+  transition: "all 0.3s ease",
+  "&:hover": {
+    backgroundColor: theme.palette.action.hover,
+  },
+}));
 
 const FileUpload = () => {
-  const { currentUser } = useAuth();
   const [files, setFiles] = useState([]);
   const [uploadProgress, setUploadProgress] = useState({});
   const [remainingTime, setRemainingTime] = useState({});
@@ -66,7 +78,7 @@ const FileUpload = () => {
   };
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem("token");
     if (!token) {
       setError("Please log in to access this feature");
       return;
@@ -83,8 +95,6 @@ const FileUpload = () => {
     } catch (error) {
       if (error.response?.status === 401) {
         setError("Please log in to access this feature");
-        // Optionally redirect to login
-        // navigate('/login');
       } else {
         setError(error.response?.data?.error || "Failed to fetch files");
       }
@@ -137,7 +147,7 @@ const FileUpload = () => {
   });
 
   const handleUpload = async () => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem("token");
     if (!token) {
       setError("Please log in to access this feature");
       return;
@@ -148,29 +158,30 @@ const FileUpload = () => {
 
     for (const file of files) {
       try {
-        const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const invoiceNumber = `INV-${Date.now()}-${Math.random()
+          .toString(36)
+          .substr(2, 9)}`;
         await fileService.uploadFile(file, invoiceNumber);
-        
+
         // Update progress
-        setUploadProgress(prev => ({
+        setUploadProgress((prev) => ({
           ...prev,
-          [file.name]: 100
+          [file.name]: 100,
         }));
-        
+
         // Clear file from queue after successful upload
-        setFiles(prev => prev.filter(f => f.name !== file.name));
-        
+        setFiles((prev) => prev.filter((f) => f.name !== file.name));
       } catch (error) {
-        setUploadError(prev => ({
+        setUploadError((prev) => ({
           ...prev,
           [file.name]: {
-            type: 'error',
-            message: error.response?.data?.detail || 'Upload failed'
-          }
+            type: "error",
+            message: error.response?.data?.detail || "Upload failed",
+          },
         }));
       }
     }
-    
+
     setIsUploading(false);
     await fetchUploadedFiles(); // Refresh the list
   };
@@ -190,21 +201,28 @@ const FileUpload = () => {
     try {
       const response = await fileService.downloadFile(id);
       const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
-      link.setAttribute('download', fileName);
+      link.setAttribute("download", fileName);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      setError('Failed to download file');
+      setError("Failed to download file");
     }
   };
 
   const handleDelete = async (id) => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setError("Please log in to access this feature");
+      return;
+    }
     try {
-      await dataService.deleteFile(id);
+      await dataService.deleteFile(id, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       await fetchUploadedFiles();
       setOpenDialog(false);
     } catch (error) {
@@ -213,6 +231,11 @@ const FileUpload = () => {
   };
 
   const handleConfirmDialog = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setError("Please log in to access this feature");
+      return;
+    }
     if (selectedFile.action === "delete") {
       await handleDelete(selectedFile.id);
     } else if (selectedFile.action === "edit") {
@@ -222,7 +245,7 @@ const FileUpload = () => {
           { invoice_number: editedFileName },
           {
             headers: {
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
+              Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
           }
@@ -285,7 +308,9 @@ const FileUpload = () => {
           <IconButton onClick={() => handleConfirmDelete(file.id)}>
             <DeleteIcon />
           </IconButton>
-          <IconButton onClick={() => handleDownload(file.id, file.invoice_number)}>
+          <IconButton
+            onClick={() => handleDownload(file.id, file.invoice_number)}
+          >
             <DownloadIcon />
           </IconButton>
         </TableCell>
@@ -348,33 +373,31 @@ const FileUpload = () => {
   };
 
   const dropzoneStyles = {
-    border: `2px dashed ${isDragActive ? theme.palette.primary.main : theme.palette.divider}`,
+    border: `2px dashed ${
+      isDragActive ? theme.palette.primary.main : theme.palette.divider
+    }`,
     borderRadius: 2,
     p: 4,
     mb: 3,
-    backgroundColor: isDragActive ? 
-      alpha(theme.palette.primary.main, 0.05) : 
-      theme.palette.background.default,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease-in-out',
-    '&:hover': {
+    backgroundColor: isDragActive
+      ? alpha(theme.palette.primary.main, 0.05)
+      : theme.palette.background.default,
+    cursor: "pointer",
+    transition: "all 0.2s ease-in-out",
+    "&:hover": {
       borderColor: theme.palette.primary.main,
-      backgroundColor: alpha(theme.palette.primary.main, 0.05)
-    }
+      backgroundColor: alpha(theme.palette.primary.main, 0.05),
+    },
   };
 
   return (
     <PageLayout
       title="File Upload"
       subtitle="Upload and manage your invoice files"
-      maxWidth={1200}
+      maxWidth="1200px"
     >
       {error && (
-        <Alert 
-          severity="error" 
-          sx={{ mb: 3 }} 
-          onClose={() => setError(null)}
-        >
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
@@ -388,24 +411,20 @@ const FileUpload = () => {
 
       <Box {...getRootProps()} sx={dropzoneStyles}>
         <input {...getInputProps()} />
-        <Box sx={{ textAlign: 'center' }}>
-          <UploadIcon 
-            sx={{ 
-              fontSize: 48, 
-              color: 'primary.main', 
-              mb: 2 
-            }} 
+        <Box sx={{ textAlign: "center" }}>
+          <UploadIcon
+            sx={{
+              fontSize: 48,
+              color: "primary.main",
+              mb: 2,
+            }}
           />
           <Typography variant="h6" gutterBottom>
-            {isDragActive ? 
-              "Drop the files here..." : 
-              "Drag & drop files here, or click to select files"
-            }
+            {isDragActive
+              ? "Drop the files here..."
+              : "Drag & drop files here, or click to select files"}
           </Typography>
-          <Typography 
-            variant="body2" 
-            color="text.secondary"
-          >
+          <Typography variant="body2" color="text.secondary">
             Supported formats: .xlsx, .xls, .csv (Max size: 5MB)
           </Typography>
         </Box>
@@ -508,10 +527,6 @@ const FileUpload = () => {
       </Dialog>
     </PageLayout>
   );
-};
-
-FileUpload.propTypes = {
-  // Add any props if needed
 };
 
 export default FileUpload;
