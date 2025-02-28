@@ -35,6 +35,7 @@ import {
   AccordionDetails,
   Chip,
   InputLabel,
+  Snackbar,
 } from "@mui/material";
 import {
   Upload as UploadIcon,
@@ -56,6 +57,9 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import SaveIcon from "@mui/icons-material/Save";
 import DataPreviewDialog from "../../components/DataPreviewDialog";
+import FileUploadDropzone from "../../components/FileUploadDropzone";
+import FileListTable from "../../components/FileListTable";
+import ProcessingLogs from "../../components/ProcessingLogs";
 
 const FileUpload = () => {
   const { currentUser } = useAuth();
@@ -96,6 +100,10 @@ const FileUpload = () => {
   const [fileInspection, setFileInspection] = useState(null);
   const [previewData, setPreviewData] = useState([]);
   const [summaryData, setSummaryData] = useState({});
+  const [downloadingFiles, setDownloadingFiles] = useState({});
+  const [processingFiles, setProcessingFiles] = useState({});
+  const [successMessage, setSuccessMessage] = useState("");
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
 
   const theme = useTheme();
 
@@ -141,28 +149,76 @@ const FileUpload = () => {
       "text/csv",
     ];
 
-    if (!validTypes.includes(file.type)) {
+    // Reset error messages first
+    setErrorMessages({
+      fileType: "",
+      fileSize: "",
+      uploadError: "",
+    });
+
+    // Check file type
+    if (
+      !validTypes.includes(file.type) &&
+      !file.name.endsWith(".csv") &&
+      !file.name.endsWith(".xlsx") &&
+      !file.name.endsWith(".xls")
+    ) {
       setErrorMessages((prev) => ({
         ...prev,
         fileType: "Invalid file type. Please upload Excel or CSV files only.",
       }));
+      console.log(`Invalid file type: ${file.type} for file ${file.name}`);
       return false;
     }
 
+    // Check file size
     if (file.size > 5 * 1024 * 1024) {
       setErrorMessages((prev) => ({
         ...prev,
         fileSize: "File size must be less than 5MB",
       }));
+      console.log(`File too large: ${file.size} bytes for file ${file.name}`);
       return false;
     }
 
+    console.log(`File validated successfully: ${file.name}`);
     return true;
   };
 
   const onDrop = (acceptedFiles) => {
-    const validFiles = acceptedFiles.filter(validateFile);
+    console.log("Files dropped in FileUpload:", acceptedFiles);
+    
+    if (!acceptedFiles || acceptedFiles.length === 0) {
+      console.log("No files received in onDrop");
+      setErrorMessages((prev) => ({
+        ...prev,
+        uploadError: "No files were received. Please try again.",
+      }));
+      return;
+    }
+    
+    // Manually validate each file
+    const validFiles = [];
+    for (const file of acceptedFiles) {
+      if (validateFile(file)) {
+        validFiles.push(file);
+      }
+    }
+    
+    console.log("Valid files after validation:", validFiles);
+    
+    if (validFiles.length === 0) {
+      console.log("No valid files found");
+      setErrorMessages((prev) => ({
+        ...prev,
+        uploadError: "No valid files found. Please check file types and sizes.",
+      }));
+      return;
+    }
+    
+    // Add valid files to state
     setFiles((prev) => [...prev, ...validFiles]);
+    console.log("Files added to state:", validFiles);
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -174,6 +230,9 @@ const FileUpload = () => {
       "application/vnd.ms-excel": [".xls"],
       "text/csv": [".csv"],
     },
+    // Remove the validator prop as it's causing issues
+    // multiple: true is the default
+    multiple: true,
   });
 
   const handleUpload = async () => {
@@ -183,40 +242,131 @@ const FileUpload = () => {
       return;
     }
 
+    if (files.length === 0) {
+      setError("No files to upload. Please add files first.");
+      return;
+    }
+
     setIsUploading(true);
     setUploadError({});
+    let uploadedCount = 0;
 
     for (const file of files) {
       try {
+        console.log(`Starting upload for file: ${file.name}`);
+
+        // Generate a unique invoice number
         const invoiceNumber = `INV-${Date.now()}-${Math.random()
           .toString(36)
           .substr(2, 9)}`;
+
+        // Set initial progress
+        setUploadProgress((prev) => ({
+          ...prev,
+          [file.name]: 0,
+        }));
+
+        // Simulate progress updates
+        const progressInterval = setInterval(() => {
+          setUploadProgress((prev) => {
+            const currentProgress = prev[file.name] || 0;
+            if (currentProgress < 90) {
+              return {
+                ...prev,
+                [file.name]: currentProgress + 10,
+              };
+            }
+            return prev;
+          });
+        }, 300);
+
+        // Upload the file
         await fileService.uploadFile(file, invoiceNumber);
 
-        // Update progress
+        // Clear interval and set progress to 100%
+        clearInterval(progressInterval);
         setUploadProgress((prev) => ({
           ...prev,
           [file.name]: 100,
         }));
 
-        // Clear file from queue after successful upload
-        setFiles((prev) => prev.filter((f) => f.name !== file.name));
+        // Show success message
+        setUploadError((prev) => ({
+          ...prev,
+          [file.name]: {
+            type: "success",
+            message: "Upload successful",
+          },
+        }));
+
+        uploadedCount++;
+        console.log(`File uploaded successfully: ${file.name}`);
       } catch (error) {
+        console.error(`Error uploading file ${file.name}:`, error);
+
+        // Set error message based on the error
+        let errorMessage = "Upload failed";
+
+        if (error.response) {
+          if (error.response.status === 400) {
+            errorMessage =
+              error.response.data.detail || "Invalid file format or data";
+          } else if (error.response.status === 401) {
+            errorMessage = "Authentication required. Please log in again.";
+          } else if (error.response.status === 413) {
+            errorMessage = "File too large for server";
+          } else {
+            errorMessage =
+              error.response.data.detail ||
+              `Server error (${error.response.status})`;
+          }
+        } else if (error.request) {
+          errorMessage = "No response from server. Check your connection.";
+        } else {
+          errorMessage = error.message || "Unknown error occurred";
+        }
+
         setUploadError((prev) => ({
           ...prev,
           [file.name]: {
             type: "error",
-            message: error.response?.data?.detail || "Upload failed",
+            message: errorMessage,
           },
+        }));
+
+        // Set progress to indicate error
+        setUploadProgress((prev) => ({
+          ...prev,
+          [file.name]: 0,
         }));
       }
     }
 
+    // Show overall success message if any files were uploaded
+    if (uploadedCount > 0) {
+      showSuccessMessage(`${uploadedCount} file(s) uploaded successfully`);
+
+      // Clear successfully uploaded files from the queue
+      setFiles((prev) =>
+        prev.filter(
+          (file) =>
+            !uploadProgress[file.name] || uploadProgress[file.name] < 100
+        )
+      );
+
+      // Refresh the file list
+      await fetchUploadedFiles();
+    }
+
     setIsUploading(false);
-    await fetchUploadedFiles(); // Refresh the list
   };
 
   const handleConfirmDelete = (id) => {
+    // Make sure id is a number, not an object
+    if (typeof id === "object" && id !== null) {
+      id = id.id; // Extract the ID if an object was passed
+    }
+
     setSelectedFile({ id: id, action: "delete" });
     setOpenDialog(true);
   };
@@ -229,7 +379,15 @@ const FileUpload = () => {
 
   const handleDownload = async (id, fileName) => {
     try {
+      // Set downloading state for this file
+      setDownloadingFiles((prev) => ({
+        ...prev,
+        [id]: true,
+      }));
+
       const response = await fileService.downloadFile(id);
+
+      // Create a blob URL and trigger download
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
@@ -238,36 +396,63 @@ const FileUpload = () => {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+
+      // Show success message
+      showSuccessMessage(`File "${fileName}" downloaded successfully`);
     } catch (error) {
-      setError("Failed to download file");
+      handleDownloadError(error, fileName);
+    } finally {
+      // Clear downloading state for this file
+      setDownloadingFiles((prev) => ({
+        ...prev,
+        [id]: false,
+      }));
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this file?")) {
-      return;
-    }
-
+  const handleDelete = async (file) => {
     try {
       setIsLoading(true);
-      await fileService.deleteFile(id);
+      // Extract the ID from the file object
+      const fileId = file.id;
 
-      // Refresh the file list
-      await fetchUploadedFiles();
+      if (!fileId) {
+        throw new Error("Invalid file ID");
+      }
 
-      setOpenDialog(false);
+      await fileService.deleteFile(fileId);
+
+      // Remove the file from the list
+      setUploadedFiles(uploadedFiles.filter((f) => f.id !== fileId));
+
+      // Show success message
+      showSuccessMessage(`File ${file.invoice_number} deleted successfully`);
     } catch (error) {
-      setError("Failed to delete file. Please try again.");
+      handleDeleteError(error);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleConfirmDialog = async () => {
-    if (selectedFile?.action === "delete") {
-      await handleDelete(selectedFile.id);
-    } else if (selectedFile?.action === "edit") {
-      try {
+    if (!selectedFile) return;
+
+    try {
+      setIsLoading(true);
+
+      if (selectedFile.action === "delete") {
+        const fileId = selectedFile.id;
+
+        // Ensure we have a valid ID
+        if (!fileId || typeof fileId === "object") {
+          throw new Error("Invalid file ID");
+        }
+
+        await fileService.deleteFile(fileId);
+        setUploadedFiles(uploadedFiles.filter((f) => f.id !== fileId));
+        showSuccessMessage("File deleted successfully");
+      } else if (selectedFile.action === "edit") {
+        // Handle edit action
         await fileService.updateFile(selectedFile.id, {
           invoice_number: editedInvoiceNumber,
           status: status,
@@ -277,13 +462,14 @@ const FileUpload = () => {
         await fetchUploadedFiles();
 
         setEditDialogOpen(false);
-      } catch (error) {
-        console.error("Error updating file:", error);
-        setError("Failed to update file. Please try again.");
       }
+
+      setOpenDialog(false);
+    } catch (error) {
+      setError("Failed to delete file. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
-    setOpenDialog(false);
-    setSelectedFile(null);
   };
 
   const handleCancelUpload = (fileName) => {
@@ -412,6 +598,8 @@ const FileUpload = () => {
   };
 
   const handleProcess = (file) => {
+    // Set both selectedFile and selectedFileForProcessing to ensure consistency
+    setSelectedFile(file);
     setSelectedFileForProcessing(file);
     setProcessingStep(0);
     setProcessedPreview(null);
@@ -422,7 +610,6 @@ const FileUpload = () => {
       filters: [],
       transforms: [],
     });
-    setPreviewDialogOpen(true);
 
     // Automatically inspect the file when opening the dialog
     setTimeout(() => {
@@ -431,46 +618,99 @@ const FileUpload = () => {
   };
 
   const inspectFile = async () => {
-    if (!selectedFileForProcessing) return;
-
-    addProcessingLog(
-      "info",
-      `Inspecting file: ${selectedFileForProcessing.invoice_number}`
-    );
-
     try {
-      const result = await fileService.inspectFile(
-        selectedFileForProcessing.id
-      );
-      setFileInspection(result);
+      // Check for either selectedFile or selectedFileForProcessing
+      const fileToInspect = selectedFile || selectedFileForProcessing;
+
+      if (!fileToInspect) {
+        setError("No file selected for inspection");
+        addProcessingLog("error", "No file selected for inspection");
+        return;
+      }
+
+      setProcessingLogs([]);
       addProcessingLog(
-        "success",
-        `File inspection complete. Found ${result.column_count} columns.`
+        "info",
+        `Inspecting file: ${fileToInspect.invoice_number}`
       );
 
-      // Check if expected columns are present
-      const expectedColumns = [
-        "Mois",
-        "Date de Facture",
+      // Call the inspect API endpoint
+      const response = await fileService.inspectFile(fileToInspect.id);
+
+      if (response.error) {
+        addProcessingLog("error", `Inspection failed: ${response.error}`);
+        setError(`File inspection failed: ${response.error}`);
+        return;
+      }
+
+      // Successfully inspected the file
+      setFileInspection(response);
+
+      // Set preview data from the sample data in the response
+      setPreviewData(response.sample_data || []);
+
+      // Set summary data from the response
+      setSummaryData({
+        row_count: response.row_count,
+        column_count: response.column_count,
+        columns: response.columns,
+        header_row: response.header_row,
+      });
+
+      addProcessingLog("success", "File inspection completed successfully");
+      addProcessingLog(
+        "info",
+        `Found ${response.row_count} rows and ${response.column_count} columns`
+      );
+
+      if (response.header_row && response.header_row > 1) {
+        addProcessingLog(
+          "info",
+          `Header detected in row ${response.header_row}`
+        );
+      }
+
+      // Show columns of interest
+      const targetColumns = [
         "Dépts",
-        "N° Factures",
+        "Exercices",
+        "Montant HT",
+        "Montant TTC",
+        "Désignations",
       ];
-      const missingColumns = expectedColumns.filter(
-        (col) => !result.columns.some((c) => c.name === col)
+      const foundColumns = response.columns.filter((col) =>
+        targetColumns.includes(col.name)
       );
 
-      if (missingColumns.length > 0) {
+      if (foundColumns.length > 0) {
+        addProcessingLog(
+          "success",
+          `Found ${foundColumns.length} of ${targetColumns.length} target columns`
+        );
+        foundColumns.forEach((col) => {
+          addProcessingLog(
+            "info",
+            `Column "${col.name}" of type ${col.type} found`
+          );
+        });
+      } else {
         addProcessingLog(
           "warning",
-          `Missing expected columns: ${missingColumns.join(", ")}`
+          "None of the target columns were found in the file"
         );
-      } else {
-        addProcessingLog("info", "All expected columns are present");
+      }
+
+      // Open the preview dialog if not already open
+      if (!previewDialogOpen) {
+        setPreviewDialogOpen(true);
       }
     } catch (error) {
-      const errorMsg = error.response?.data?.error || "Error inspecting file";
-      addProcessingLog("error", `Inspection failed: ${errorMsg}`);
-      console.error("Error inspecting file:", error);
+      console.error("File inspection error:", error);
+      setError(`Error inspecting file: ${error.message || "Unknown error"}`);
+      addProcessingLog(
+        "error",
+        `Inspection failed: ${error.message || "Unknown error"}`
+      );
     }
   };
 
@@ -503,15 +743,23 @@ const FileUpload = () => {
       addProcessingLog("success", "Processing completed successfully");
       addProcessingLog("info", `Processed ${result.summary.row_count} rows`);
 
+      // Show success message
+      showSuccessMessage("File processed successfully");
+
       // Refresh the file list to update statuses
       await fetchUploadedFiles();
     } catch (error) {
-      const errorMsg = error.response?.data?.error || "Error processing file";
-      setProcessingError(errorMsg);
-      addProcessingLog("error", `Processing failed: ${errorMsg}`);
-      console.error("Error processing file:", error);
+      handleProcessError(error);
     } finally {
       setIsProcessing(false);
+
+      // Clear processing state for this file
+      if (selectedFileForProcessing) {
+        setProcessingFiles((prev) => ({
+          ...prev,
+          [selectedFileForProcessing.id]: false,
+        }));
+      }
     }
   };
 
@@ -523,13 +771,13 @@ const FileUpload = () => {
       await fileService.saveToDatabase(selectedFileForProcessing.id);
       setProcessingStep(2); // Move to completed step
 
+      // Show success message
+      showSuccessMessage("Data saved to database successfully");
+
       // Refresh the file list to update statuses
       await fetchUploadedFiles();
     } catch (error) {
-      setProcessingError(
-        error.response?.data?.error || "Error saving to database"
-      );
-      console.error("Error saving to database:", error);
+      handleSaveError(error);
     } finally {
       setIsProcessing(false);
     }
@@ -569,34 +817,21 @@ const FileUpload = () => {
   };
 
   const handlePreviewClick = async (file) => {
+    // Set both variables for consistency
+    setSelectedFile(file);
+    setSelectedFileForProcessing(file);
+
+    // Reset processing state
+    setProcessingLogs([]);
+    setPreviewData([]);
+    setSummaryData({});
+
     try {
-      setIsLoading(true);
-      setError(null);
-
-      console.log(`Processing file for preview: ${file.id}`);
-
-      // First, process the file to get preview data
-      const result = await fileService.processFile(file.id, {
-        processing_options: {
-          remove_duplicates: true,
-          handle_missing: true,
-          filters: [],
-          transforms: [],
-        },
-      });
-
-      // Set the preview data and open the dialog
-      setPreviewData(result.preview || []);
-      setSummaryData(result.summary || {});
-      setProcessingLogs(result.logs || []);
-      setPreviewDialogOpen(true);
+      // Inspect the file
+      await inspectFile();
     } catch (error) {
-      console.error("Error processing file for preview:", error);
-      setError(
-        error.response?.data?.error || "Failed to process file for preview"
-      );
-    } finally {
-      setIsLoading(false);
+      console.error("Error previewing file:", error);
+      setError(`Error previewing file: ${error.message || "Unknown error"}`);
     }
   };
 
@@ -674,63 +909,71 @@ const FileUpload = () => {
     setProcessingLogs((prev) => [...prev, { level, message, timestamp }]);
   };
 
-  // Add this component to your dialog
-  const ProcessingLogs = () => (
-    <Accordion sx={{ mt: 2 }}>
-      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-        <Typography>Processing Logs</Typography>
-      </AccordionSummary>
-      <AccordionDetails>
-        <Box
-          sx={{
-            bgcolor: "background.paper",
-            p: 1,
-            borderRadius: 1,
-            height: 200,
-            overflow: "auto",
-            fontFamily: "monospace",
-            fontSize: "0.85rem",
-          }}
-        >
-          {processingLogs.length === 0 ? (
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ fontStyle: "italic" }}
-            >
-              No logs available
-            </Typography>
-          ) : (
-            processingLogs.map((log, index) => (
-              <Box
-                key={index}
-                sx={{
-                  py: 0.5,
-                  color:
-                    log.level === "error"
-                      ? "error.main"
-                      : log.level === "success"
-                      ? "success.main"
-                      : "text.primary",
-                }}
-              >
-                <span style={{ color: "text.secondary" }}>
-                  [{log.timestamp}]
-                </span>{" "}
-                {log.message}
-              </Box>
-            ))
-          )}
-        </Box>
-      </AccordionDetails>
-    </Accordion>
-  );
+  // Handle process error
+  const handleProcessError = (error) => {
+    const errorMsg = error.response?.data?.error || "Error processing file";
+    setProcessingError(errorMsg);
+    addProcessingLog("error", `Processing failed: ${errorMsg}`);
+    console.error("Error processing file:", error);
+    setError(`Failed to process file: ${errorMsg}`);
+  };
+
+  // Handle save error
+  const handleSaveError = (error) => {
+    const errorMsg = error.response?.data?.error || "Error saving to database";
+    setProcessingError(errorMsg);
+    console.error("Error saving to database:", error);
+    setError(`Failed to save to database: ${errorMsg}`);
+  };
+
+  // Handle download error
+  const handleDownloadError = (error, fileName) => {
+    console.error("Download error:", error);
+
+    if (error.response?.status === 404) {
+      setError(`File "${fileName}" not found on the server`);
+    } else if (error.response?.status === 403) {
+      setError(`You don't have permission to download this file`);
+    } else {
+      setError(
+        `Failed to download file "${fileName}". Please try again later.`
+      );
+    }
+  };
+
+  // Show success message
+  const showSuccessMessage = (message) => {
+    setSuccessMessage(message);
+    setSnackbarOpen(true);
+  };
+
+  // Close snackbar
+  const handleSnackbarClose = () => {
+    setSnackbarOpen(false);
+  };
 
   return (
     <PageLayout
       title="File Upload"
       subtitle="Upload and manage your invoice files"
-      maxWidth={1200}
+      maxWidth="1200"
+      headerAction={
+        <Button
+          variant="contained"
+          startIcon={<UploadIcon />}
+          onClick={handleUpload}
+          disabled={files.length === 0 || isUploading}
+        >
+          {isUploading ? (
+            <>
+              <CircularProgress size={24} color="inherit" sx={{ mr: 1 }} />
+              Uploading...
+            </>
+          ) : (
+            "Upload"
+          )}
+        </Button>
+      }
     >
       {error && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
@@ -739,90 +982,51 @@ const FileUpload = () => {
       )}
 
       {errorMessages.fileType && (
-        <Alert severity="error">{errorMessages.fileType}</Alert>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() =>
+            setErrorMessages((prev) => ({ ...prev, fileType: "" }))
+          }
+        >
+          {errorMessages.fileType}
+        </Alert>
       )}
+
       {errorMessages.fileSize && (
-        <Alert severity="error">{errorMessages.fileSize}</Alert>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() =>
+            setErrorMessages((prev) => ({ ...prev, fileSize: "" }))
+          }
+        >
+          {errorMessages.fileSize}
+        </Alert>
       )}
 
-      <Box {...getRootProps()} sx={dropzoneStyles}>
-        <input {...getInputProps()} />
-        <Box sx={{ textAlign: "center" }}>
-          <UploadIcon
-            sx={{
-              fontSize: 48,
-              color: "primary.main",
-              mb: 2,
-            }}
-          />
-          <Typography variant="h6" gutterBottom>
-            {isDragActive
-              ? "Drop the files here..."
-              : "Drag & drop files here, or click to select files"}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Supported formats: .xlsx, .xls, .csv (Max size: 5MB)
-          </Typography>
-        </Box>
-      </Box>
+      <FileUploadDropzone
+        onDrop={onDrop}
+        files={files}
+        isUploading={isUploading}
+        errorMessages={errorMessages}
+        validateFile={validateFile}
+      />
 
-      {files.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Files to Upload
-          </Typography>
-          {files.map((file) => (
-            <Box key={file.name} sx={{ mb: 2 }}>
-              <Box
-                sx={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <Typography variant="body2">{file.name}</Typography>
-                <Button
-                  size="small"
-                  color="error"
-                  onClick={() => handleCancelUpload(file.name)}
-                >
-                  Cancel
-                </Button>
-              </Box>
-              {renderFileUploadStatus(file)}
-            </Box>
-          ))}
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleUpload}
-            disabled={isUploading}
-            sx={{ mt: 2 }}
-          >
-            {isUploading ? "Uploading..." : "Upload All Files"}
-          </Button>
-        </Box>
-      )}
-
-      <Typography variant="h6" gutterBottom>
-        Uploaded Files
-      </Typography>
-      <TableContainer component={Paper}>
-        <Table stickyHeader size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell sx={{ fontWeight: "bold" }}>Invoice Number</TableCell>
-              <TableCell sx={{ fontWeight: "bold" }}>Upload Date</TableCell>
-              <TableCell sx={{ fontWeight: "bold" }}>Size</TableCell>
-              <TableCell sx={{ fontWeight: "bold" }}>Status</TableCell>
-              <TableCell sx={{ fontWeight: "bold" }} align="center">
-                Actions
-              </TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>{renderFileList()}</TableBody>
-        </Table>
-      </TableContainer>
+      <FileListTable
+        uploadedFiles={uploadedFiles}
+        isUploading={isUploading}
+        handleFileProcess={handleProcess}
+        handleFilePreview={handlePreviewClick}
+        handleEdit={handleEdit}
+        handleDelete={handleDelete}
+        handleDownload={handleDownload}
+        getStatusColor={getStatusColor}
+        formatDate={formatDate}
+        formatFileSize={formatFileSize}
+        downloadingFiles={downloadingFiles}
+        processingFiles={processingFiles}
+      />
 
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>
         <DialogTitle>
@@ -858,7 +1062,6 @@ const FileUpload = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)}>
         <DialogTitle>Edit Invoice Number</DialogTitle>
         <DialogContent>
@@ -896,6 +1099,24 @@ const FileUpload = () => {
         previewData={previewData}
         summaryData={summaryData}
         processingLogs={processingLogs}
+        onProcess={() => {
+          if (selectedFileForProcessing) {
+            processFile();
+          } else if (selectedFile) {
+            setSelectedFileForProcessing(selectedFile);
+            processFile();
+          } else {
+            setError("No file selected for processing");
+          }
+          setPreviewDialogOpen(false);
+        }}
+      />
+
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={6000}
+        onClose={handleSnackbarClose}
+        message={successMessage}
       />
     </PageLayout>
   );
