@@ -55,7 +55,7 @@ import { alpha } from "@mui/material/styles";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import SaveIcon from "@mui/icons-material/Save";
-import DataPreviewDialog from '../../components/DataPreviewDialog';
+import DataPreviewDialog from "../../components/DataPreviewDialog";
 
 const FileUpload = () => {
   const { currentUser } = useAuth();
@@ -572,9 +572,9 @@ const FileUpload = () => {
     try {
       setIsLoading(true);
       setError(null);
-      
+
       console.log(`Processing file for preview: ${file.id}`);
-      
+
       // First, process the file to get preview data
       const result = await fileService.processFile(file.id, {
         processing_options: {
@@ -584,16 +584,17 @@ const FileUpload = () => {
           transforms: [],
         },
       });
-      
+
       // Set the preview data and open the dialog
       setPreviewData(result.preview || []);
       setSummaryData(result.summary || {});
       setProcessingLogs(result.logs || []);
       setPreviewDialogOpen(true);
-      
     } catch (error) {
       console.error("Error processing file for preview:", error);
-      setError(error.response?.data?.error || "Failed to process file for preview");
+      setError(
+        error.response?.data?.error || "Failed to process file for preview"
+      );
     } finally {
       setIsLoading(false);
     }

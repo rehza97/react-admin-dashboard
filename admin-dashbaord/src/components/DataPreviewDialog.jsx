@@ -25,7 +25,14 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import "../styles/dataPreview.css";
 
-const DataPreviewDialog = ({ open, onClose, previewData, summaryData, processingLogs = [], onProcess }) => {
+const DataPreviewDialog = ({
+  open,
+  onClose,
+  previewData,
+  summaryData,
+  processingLogs = [],
+  onProcess,
+}) => {
   const [expanded, setExpanded] = useState(true);
 
   const handleAccordionChange = () => {
@@ -57,10 +64,10 @@ const DataPreviewDialog = ({ open, onClose, previewData, summaryData, processing
           maxHeight: "90vh",
           display: "flex",
           flexDirection: "column",
-          position: 'absolute', // Centering
-          top: '120%', // Center vertically
-          left: '50%', // Center horizontally
-          transform: 'translate(-50%, -50%)', // Adjust position
+          position: "absolute", // Centering
+          top: "120%", // Center vertically
+          left: "50%", // Center horizontally
+          transform: "translate(-50%, -50%)", // Adjust position
         },
       }}
     >
@@ -263,7 +270,12 @@ const DataPreviewDialog = ({ open, onClose, previewData, summaryData, processing
           }}
         >
           <Typography variant="h6" sx={{ mb: 2, flexShrink: 0 }}>
-            Data Preview {previewData?.length > 0 ? `(${Math.min(previewData.length, 10)} of ${previewData.length} rows)` : ''}
+            Data Preview{" "}
+            {previewData?.length > 0
+              ? `(${Math.min(previewData.length, 10)} of ${
+                  previewData.length
+                } rows)`
+              : ""}
           </Typography>
 
           {previewData && previewData.length > 0 ? (
@@ -316,7 +328,7 @@ const DataPreviewDialog = ({ open, onClose, previewData, summaryData, processing
             </Typography>
           )}
         </Box>
-        
+
         {/* Processing Logs Section */}
         {processingLogs && processingLogs.length > 0 && (
           <Box sx={{ px: 3, pb: 3 }}>
@@ -349,7 +361,11 @@ const DataPreviewDialog = ({ open, onClose, previewData, summaryData, processing
                             : "text.primary",
                       }}
                     >
-                      <Typography variant="body2" component="span" sx={{ mr: 1, opacity: 0.7 }}>
+                      <Typography
+                        variant="body2"
+                        component="span"
+                        sx={{ mr: 1, opacity: 0.7 }}
+                      >
                         [{log.timestamp}]
                       </Typography>
                       <Typography variant="body2" component="span">
@@ -362,7 +378,7 @@ const DataPreviewDialog = ({ open, onClose, previewData, summaryData, processing
             </Accordion>
           </Box>
         )}
-        
+
         {/* Process Button */}
         <Box sx={{ p: 2, textAlign: "right" }}>
           <Button variant="contained" color="primary" onClick={onProcess}>

@@ -12,8 +12,11 @@ fullcalendar-examples
 dist
 dist-ssr
 *.local
+./Manil
+Manil
 frontBack
 backend/venv
+*.pyc
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
