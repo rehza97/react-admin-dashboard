@@ -21,8 +21,16 @@ urlpatterns = [
     path('api/facturation/<int:pk>/download/', 
          views.InvoiceDownloadView.as_view(), 
          name='invoice-download'),
+    
+    # Updated action URLs
+    path('api/facturation/<int:pk>/process/', 
+         views.InvoiceProcessView.as_view(), 
+         name='invoice-process'),
+         
+    # View processed data for an invoice
+    path('api/facturation/<int:invoice_id>/processed-data/', 
+         views.ProcessedInvoiceDataListView.as_view(), 
+         name='processed-invoice-data'),
 ]
-
-
 
 

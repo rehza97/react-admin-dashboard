@@ -18,3 +18,4 @@ class InvoiceUploadForm(forms.ModelForm):
                 raise forms.ValidationError("File size must be under 5MB")
         return file
 
+

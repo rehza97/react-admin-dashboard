@@ -89,23 +89,23 @@ const ProfileForm = () => {
   }
 
   return (
-    <PageLayout 
-      title="Profile Settings" 
+    <PageLayout
+      title="Profile Settings"
       subtitle="Manage your account information"
     >
       <form onSubmit={handleSubmit(onSubmit)}>
         <Grid container spacing={3}>
           {/* Profile Picture Section */}
-          <Grid item xs={12} sx={{ textAlign: 'center', mb: 2 }}>
+          <Grid item xs={12} sx={{ textAlign: "center", mb: 2 }}>
             <Avatar
               src={currentUser?.profile_picture}
               sx={{
                 width: 120,
                 height: 120,
-                margin: '0 auto',
+                margin: "0 auto",
                 mb: 2,
-                border: '4px solid',
-                borderColor: 'primary.main'
+                border: "4px solid",
+                borderColor: "primary.main",
               }}
             />
             <Button
@@ -130,7 +130,9 @@ const ProfileForm = () => {
             <TextField
               fullWidth
               label="First Name"
-              {...register("first_name", { required: "First name is required" })}
+              {...register("first_name", {
+                required: "First name is required",
+              })}
               error={!!errors.first_name}
               helperText={errors.first_name?.message}
             />

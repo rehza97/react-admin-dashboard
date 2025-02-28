@@ -35,6 +35,11 @@ export const fileService = {
     return response.data;
   },
 
+  updateFile: async (id, data) => {
+    const response = await axiosInstance.put(`/api/facturation/${id}/`, data);
+    return response.data;
+  },
+
   deleteFile: async (id) => {
     await axiosInstance.delete(`/api/facturation/${id}/`);
   },
@@ -45,5 +50,51 @@ export const fileService = {
       { responseType: 'blob' }
     );
     return response;
+  },
+
+  processFile: async (id, options = {}) => {
+    console.log(`Processing file ${id} with options:`, options);
+    try {
+      const response = await axiosInstance.post(
+        `/api/facturation/${id}/process/`, 
+        options
+      );
+      console.log(`File ${id} processed successfully:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`Error processing file ${id}:`, error);
+      console.error('Response:', error.response?.data);
+      throw error;
+    }
+  },
+
+  saveToDatabase: async (id) => {
+    console.log(`Saving file ${id} to database`);
+    try {
+      const response = await axiosInstance.post(
+        `/api/facturation/${id}/save/`
+      );
+      console.log(`File ${id} saved successfully:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`Error saving file ${id} to database:`, error);
+      console.error('Response:', error.response?.data);
+      throw error;
+    }
+  },
+
+  inspectFile: async (id) => {
+    console.log(`Inspecting file ${id}`);
+    try {
+      const response = await axiosInstance.get(
+        `/api/facturation/${id}/inspect/`
+      );
+      console.log(`File ${id} inspection results:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`Error inspecting file ${id}:`, error);
+      console.error('Response:', error.response?.data);
+      throw error;
+    }
   }
 }; 
