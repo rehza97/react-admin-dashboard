@@ -13,26 +13,29 @@ const FileUploadDropzone = ({
   validateFile,
 }) => {
   const theme = useTheme();
-  
+
   // Define a wrapper for onDrop to ensure proper handling
   const handleOnDrop = (acceptedFiles) => {
     console.log("FileUploadDropzone received files:", acceptedFiles);
     // Call the parent onDrop function
     onDrop(acceptedFiles);
   };
-  
-  const { getRootProps, getInputProps, isDragActive, fileRejections } = useDropzone({
-    onDrop: handleOnDrop,
-    accept: {
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'application/vnd.ms-excel': ['.xls'],
-      'text/csv': ['.csv'],
-    },
-    maxSize: 5 * 1024 * 1024, // 5MB
-    multiple: true,
-    // Don't use the validator prop as it's causing issues
-    // Instead, we'll validate in the onDrop function
-  });
+
+  const { getRootProps, getInputProps, isDragActive, fileRejections } =
+    useDropzone({
+      onDrop: handleOnDrop,
+      accept: {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [
+          ".xlsx",
+        ],
+        "application/vnd.ms-excel": [".xls"],
+        "text/csv": [".csv"],
+      },
+      maxSize: 5 * 1024 * 1024, // 5MB
+      multiple: true,
+      // Don't use the validator prop as it's causing issues
+      // Instead, we'll validate in the onDrop function
+    });
 
   // Styles for the dropzone
   const dropzoneStyles = {
@@ -57,25 +60,22 @@ const FileUploadDropzone = ({
     <Box sx={{ mb: 3 }}>
       {/* Error messages */}
       {errorMessages.uploadError && (
-        <Alert 
-          severity="error" 
-          sx={{ mb: 2 }}
-        >
+        <Alert severity="error" sx={{ mb: 2 }}>
           {errorMessages.uploadError}
         </Alert>
       )}
-      
+
       {/* File rejection errors */}
       {fileRejections.length > 0 && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {fileRejections.map(({ file, errors }) => (
             <div key={file.path}>
-              {file.path} - {errors.map(e => e.message).join(', ')}
+              {file.path} - {errors.map((e) => e.message).join(", ")}
             </div>
           ))}
         </Alert>
       )}
-      
+
       {/* Dropzone */}
       <Box {...getRootProps()} sx={dropzoneStyles}>
         <input {...getInputProps()} />
@@ -92,9 +92,7 @@ const FileUploadDropzone = ({
             sx={{ fontSize: 48, color: "primary.main", mb: 2, opacity: 0.8 }}
           />
           <Typography variant="h6" gutterBottom>
-            {isDragActive 
-              ? "Drop files here..." 
-              : "Drag & Drop Files Here"}
+            {isDragActive ? "Drop files here..." : "Drag & Drop Files Here"}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             or click to browse your files
@@ -105,20 +103,20 @@ const FileUploadDropzone = ({
           <Typography variant="caption" color="text.secondary">
             Maximum file size: 5MB
           </Typography>
-          
+
           {/* Show selected files count */}
           {files.length > 0 && (
-            <Typography 
-              variant="body2" 
-              color="primary" 
-              sx={{ mt: 2, fontWeight: 'bold' }}
+            <Typography
+              variant="body2"
+              color="primary"
+              sx={{ mt: 2, fontWeight: "bold" }}
             >
               {files.length} file(s) selected
             </Typography>
           )}
         </Box>
       </Box>
-      
+
       {/* Show selected files */}
       {files.length > 0 && (
         <Box sx={{ mb: 2 }}>

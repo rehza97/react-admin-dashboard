@@ -21,6 +21,7 @@ export const fileService = {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("invoice_number", invoiceNumber);
+    formData.append("file_name", file.name);
 
     const response = await axiosInstance.post(
       "/upload-facturation/",

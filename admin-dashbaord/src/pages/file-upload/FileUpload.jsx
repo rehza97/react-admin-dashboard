@@ -187,7 +187,7 @@ const FileUpload = () => {
 
   const onDrop = (acceptedFiles) => {
     console.log("Files dropped in FileUpload:", acceptedFiles);
-    
+
     if (!acceptedFiles || acceptedFiles.length === 0) {
       console.log("No files received in onDrop");
       setErrorMessages((prev) => ({
@@ -196,7 +196,7 @@ const FileUpload = () => {
       }));
       return;
     }
-    
+
     // Manually validate each file
     const validFiles = [];
     for (const file of acceptedFiles) {
@@ -204,9 +204,9 @@ const FileUpload = () => {
         validFiles.push(file);
       }
     }
-    
+
     console.log("Valid files after validation:", validFiles);
-    
+
     if (validFiles.length === 0) {
       console.log("No valid files found");
       setErrorMessages((prev) => ({
@@ -215,7 +215,7 @@ const FileUpload = () => {
       }));
       return;
     }
-    
+
     // Add valid files to state
     setFiles((prev) => [...prev, ...validFiles]);
     console.log("Files added to state:", validFiles);

@@ -17,12 +17,32 @@ import {
   TableRow,
   Paper,
   Chip,
-  Divider,
   Button,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  RadioGroup,
+  Radio,
+  FormControlLabel,
+  FormLabel,
+  Grid,
+  Alert,
+  Tooltip,
+  CircularProgress,
+  Stack,
+  useTheme,
+  alpha,
+  Checkbox,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import TableChartIcon from "@mui/icons-material/TableChart";
+import SettingsIcon from "@mui/icons-material/Settings";
+import AutorenewIcon from "@mui/icons-material/Autorenew";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import PropTypes from "prop-types";
 import "../styles/dataPreview.css";
 
 const DataPreviewDialog = ({
@@ -32,11 +52,209 @@ const DataPreviewDialog = ({
   summaryData,
   processingLogs = [],
   onProcess,
+  isProcessing = false,
+  fileName = "", // Added fileName prop to help with detection
 }) => {
+  const theme = useTheme();
   const [expanded, setExpanded] = useState(true);
+  const [processingMode, setProcessingMode] = useState("automatic");
+  const [selectedTreatment, setSelectedTreatment] = useState("");
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+
+  // Define available treatments based on file type
+  const availableTreatments = {
+    ca_periodique: [
+      {
+        id: "standard",
+        name: "Standard CA Periodique Processing",
+        description: "Process periodic revenue data with standard fields",
+      },
+      {
+        id: "detailed",
+        name: "Detailed Revenue Analysis",
+        description: "In-depth analysis with regional and product breakdowns",
+      },
+      {
+        id: "summary",
+        name: "Summary Report",
+        description: "Generate summary totals by product and region",
+      },
+    ],
+    ca_non_periodique: [
+      {
+        id: "standard",
+        name: "Standard Non-Periodic Processing",
+        description: "Process non-periodic revenue data with standard fields",
+      },
+      {
+        id: "reconciliation",
+        name: "Reconciliation Analysis",
+        description: "Compare with periodic data and identify discrepancies",
+      },
+    ],
+    ca_dnt: [
+      {
+        id: "standard",
+        name: "DNT Data Processing",
+        description: "Process DNT revenue data with standard fields",
+      },
+      {
+        id: "technical",
+        name: "Technical Analysis",
+        description: "Detailed technical breakdown of DNT revenue sources",
+      },
+    ],
+    ca_rfd: [
+      {
+        id: "standard",
+        name: "RFD Data Processing",
+        description: "Process RFD revenue data with standard fields",
+      },
+      {
+        id: "financial",
+        name: "Financial Analysis",
+        description: "Detailed financial analysis of RFD data",
+      },
+    ],
+    invoice: [
+      {
+        id: "standard",
+        name: "Standard Invoice Processing",
+        description:
+          "Process invoices with standard fields (date, amount, tax, etc.)",
+      },
+      {
+        id: "detailed",
+        name: "Detailed Invoice Analysis",
+        description:
+          "In-depth analysis with line item extraction and categorization",
+      },
+    ],
+    general: [
+      {
+        id: "basic",
+        name: "Basic Data Processing",
+        description: "Simple data cleaning and formatting",
+      },
+      {
+        id: "advanced",
+        name: "Advanced Data Analysis",
+        description: "In-depth analysis with statistical calculations",
+      },
+    ],
+  };
+
+  // Detect file type from filename and data
+  const detectFileType = () => {
+    // If backend already detected the file type, use that
+    if (summaryData?.detected_file_type) {
+      return summaryData.detected_file_type;
+    }
+
+    // Otherwise use the existing logic with the fileName
+    const lowerFileName = fileName.toLowerCase();
+
+    if (
+      lowerFileName.includes("ca periodique") ||
+      lowerFileName.includes("ca_periodique")
+    ) {
+      return "ca_periodique";
+    } else if (
+      lowerFileName.includes("ca non periodique") ||
+      lowerFileName.includes("ca_non_periodique")
+    ) {
+      return "ca_non_periodique";
+    } else if (
+      lowerFileName.includes("ca dnt") ||
+      lowerFileName.includes("ca_dnt")
+    ) {
+      return "ca_dnt";
+    } else if (
+      lowerFileName.includes("ca rfd") ||
+      lowerFileName.includes("ca_rfd")
+    ) {
+      return "ca_rfd";
+    } else if (
+      lowerFileName.includes("ca cnt") ||
+      lowerFileName.includes("ca_cnt")
+    ) {
+      return "ca_cnt";
+    } else if (lowerFileName.includes("facturation manuelle")) {
+      return "facturation_manuelle";
+    } else if (lowerFileName.includes("parc corporate")) {
+      return "parc_corporate";
+    } else if (
+      lowerFileName.includes("créances ngbss") ||
+      lowerFileName.includes("creances ngbss")
+    ) {
+      return "creances_ngbss";
+    } else if (lowerFileName.includes("etat de facture")) {
+      return "etat_facture";
+    } else if (lowerFileName.includes("journal des ventes")) {
+      return "journal_ventes";
+    }
+
+    // If filename doesn't match, check data structure
+    if (!previewData || previewData.length === 0) return "general";
+
+    const headers = Object.keys(previewData[0]).map((h) => h.toLowerCase());
+
+    // Check for CA Periodique indicators
+    if (
+      headers.some((h) => h.includes("produit")) &&
+      headers.some((h) => h.includes("ht") || h.includes("ttc"))
+    ) {
+      return "ca_periodique";
+    }
+
+    // Check for invoice indicators
+    if (headers.some((h) => h.includes("invoice") || h.includes("facture"))) {
+      return "invoice";
+    }
+
+    // Default to general
+    return "general";
+  };
+
+  const detectedType = detectFileType();
+  const treatments =
+    availableTreatments[detectedType] || availableTreatments.general;
+
+  // Set default treatment when treatments change
+  React.useEffect(() => {
+    if (treatments.length > 0 && !selectedTreatment) {
+      setSelectedTreatment(treatments[0].id);
+    }
+  }, [treatments, selectedTreatment]);
 
   const handleAccordionChange = () => {
     setExpanded(!expanded);
+  };
+
+  const handleProcessingModeChange = (event) => {
+    setProcessingMode(event.target.value);
+  };
+
+  const handleTreatmentChange = (event) => {
+    setSelectedTreatment(event.target.value);
+  };
+
+  const handleProcess = () => {
+    const options = {
+      processingMode,
+      treatment: selectedTreatment,
+      fileType: detectedType,
+      advancedOptions: showAdvancedOptions
+        ? {
+            // Add any advanced options here
+            skipHeaderRow: true,
+            trimWhitespace: true,
+            detectDataTypes: true,
+          }
+        : {},
+    };
+
+    onProcess(options);
   };
 
   // Format column type for better display
@@ -47,6 +265,32 @@ const DataPreviewDialog = ({
     if (type.includes("float")) return "Decimal";
     if (type.includes("date")) return "Date";
     return type;
+  };
+
+  // Get file type display name
+  const getFileTypeDisplayName = (type) => {
+    const typeMap = {
+      ca_periodique: "CA Periodique",
+      ca_non_periodique: "CA Non Periodique",
+      ca_dnt: "CA DNT",
+      ca_rfd: "CA RFD",
+      invoice: "Invoice Data",
+      general: "General Data",
+    };
+    return typeMap[type] || "Unknown Data Type";
+  };
+
+  // Get file type description
+  const getFileTypeDescription = (type) => {
+    const descriptionMap = {
+      ca_periodique: "Periodic revenue data with product and region breakdown",
+      ca_non_periodique: "Non-periodic revenue data",
+      ca_dnt: "DNT revenue data",
+      ca_rfd: "RFD revenue data",
+      invoice: "Invoice and billing data",
+      general: "General data format",
+    };
+    return descriptionMap[type] || "";
   };
 
   return (
@@ -64,10 +308,10 @@ const DataPreviewDialog = ({
           maxHeight: "90vh",
           display: "flex",
           flexDirection: "column",
-          position: "absolute", // Centering
-          top: "120%", // Center vertically
-          left: "50%", // Center horizontally
-          transform: "translate(-50%, -50%)", // Adjust position
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
         },
       }}
     >
@@ -82,9 +326,18 @@ const DataPreviewDialog = ({
           flexShrink: 0,
         }}
       >
-        <Typography variant="h5" component="div" fontWeight="500">
-          Data Preview
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center" }}>
+          <TableChartIcon sx={{ mr: 1.5 }} />
+          <Typography variant="h5" component="div" fontWeight="500">
+            File Processing Overview
+          </Typography>
+          <Chip
+            label={getFileTypeDisplayName(detectedType)}
+            color="secondary"
+            size="small"
+            sx={{ ml: 2, fontWeight: "bold" }}
+          />
+        </Box>
         <IconButton
           edge="end"
           color="inherit"
@@ -166,6 +419,29 @@ const DataPreviewDialog = ({
                 </Typography>
                 <Typography variant="h4">
                   {summaryData?.column_count || 0}
+                </Typography>
+              </Box>
+
+              <Box
+                sx={{
+                  bgcolor: alpha(theme.palette.info.main, 0.2),
+                  color: theme.palette.info.dark,
+                  p: 2,
+                  borderRadius: 2,
+                  minWidth: 180,
+                }}
+              >
+                <Typography variant="subtitle2" sx={{ opacity: 0.8 }}>
+                  Detected File Type
+                </Typography>
+                <Typography variant="h6" sx={{ fontWeight: "bold" }}>
+                  {getFileTypeDisplayName(detectedType)}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{ display: "block", mt: 0.5 }}
+                >
+                  {getFileTypeDescription(detectedType)}
                 </Typography>
               </Box>
             </Box>
@@ -329,6 +605,160 @@ const DataPreviewDialog = ({
           )}
         </Box>
 
+        {/* Processing Options Section */}
+        <Box sx={{ px: 3, pb: 3, pt: 1 }}>
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
+            <Typography variant="h6" gutterBottom>
+              Processing Options
+            </Typography>
+
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={6}>
+                <FormControl component="fieldset">
+                  <FormLabel component="legend">Processing Mode</FormLabel>
+                  <RadioGroup
+                    row
+                    name="processing-mode"
+                    value={processingMode}
+                    onChange={handleProcessingModeChange}
+                  >
+                    <FormControlLabel
+                      value="automatic"
+                      control={<Radio />}
+                      label={
+                        <Box sx={{ display: "flex", alignItems: "center" }}>
+                          <AutorenewIcon fontSize="small" sx={{ mr: 0.5 }} />
+                          <Typography>Automatic</Typography>
+                        </Box>
+                      }
+                    />
+                    <FormControlLabel
+                      value="manual"
+                      control={<Radio />}
+                      label={
+                        <Box sx={{ display: "flex", alignItems: "center" }}>
+                          <SettingsIcon fontSize="small" sx={{ mr: 0.5 }} />
+                          <Typography>Manual</Typography>
+                        </Box>
+                      }
+                    />
+                  </RadioGroup>
+                </FormControl>
+
+                {processingMode === "automatic" && (
+                  <Alert severity="info" sx={{ mt: 2 }}>
+                    Automatic mode will apply the most appropriate processing
+                    for {getFileTypeDisplayName(detectedType)}.
+                  </Alert>
+                )}
+              </Grid>
+
+              {processingMode === "manual" && (
+                <Grid item xs={12} md={6}>
+                  <FormControl fullWidth>
+                    <InputLabel id="treatment-select-label">
+                      Processing Treatment
+                    </InputLabel>
+                    <Select
+                      labelId="treatment-select-label"
+                      id="treatment-select"
+                      value={selectedTreatment}
+                      label="Processing Treatment"
+                      onChange={handleTreatmentChange}
+                    >
+                      {treatments.map((treatment) => (
+                        <MenuItem key={treatment.id} value={treatment.id}>
+                          {treatment.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  {selectedTreatment && (
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mt: 1 }}
+                    >
+                      {
+                        treatments.find((t) => t.id === selectedTreatment)
+                          ?.description
+                      }
+                    </Typography>
+                  )}
+                </Grid>
+              )}
+
+              <Grid item xs={12}>
+                <Box sx={{ display: "flex", alignItems: "center", mt: 1 }}>
+                  <Button
+                    size="small"
+                    onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                    endIcon={<ExpandMoreIcon />}
+                  >
+                    {showAdvancedOptions ? "Hide" : "Show"} Advanced Options
+                  </Button>
+                  <Tooltip title="Configure detailed processing parameters">
+                    <HelpOutlineIcon
+                      fontSize="small"
+                      sx={{ ml: 1, color: "text.secondary" }}
+                    />
+                  </Tooltip>
+                </Box>
+
+                {showAdvancedOptions && (
+                  <Box
+                    sx={{
+                      mt: 2,
+                      p: 2,
+                      bgcolor: alpha(theme.palette.background.default, 0.5),
+                      borderRadius: 1,
+                    }}
+                  >
+                    <Typography variant="subtitle2" gutterBottom>
+                      Advanced Processing Options
+                    </Typography>
+                    <Stack spacing={2}>
+                      <FormControlLabel
+                        control={<Checkbox defaultChecked />}
+                        label="Skip header row"
+                      />
+                      <FormControlLabel
+                        control={<Checkbox defaultChecked />}
+                        label="Trim whitespace"
+                      />
+                      <FormControlLabel
+                        control={<Checkbox defaultChecked />}
+                        label="Auto-detect data types"
+                      />
+                      <FormControlLabel
+                        control={<Checkbox />}
+                        label="Normalize date formats"
+                      />
+                      <FormControlLabel
+                        control={<Checkbox />}
+                        label="Convert currency values"
+                      />
+                      {detectedType.startsWith("ca_") && (
+                        <>
+                          <FormControlLabel
+                            control={<Checkbox />}
+                            label="Aggregate by region"
+                          />
+                          <FormControlLabel
+                            control={<Checkbox />}
+                            label="Aggregate by product"
+                          />
+                        </>
+                      )}
+                    </Stack>
+                  </Box>
+                )}
+              </Grid>
+            </Grid>
+          </Paper>
+        </Box>
+
         {/* Processing Logs Section */}
         {processingLogs && processingLogs.length > 0 && (
           <Box sx={{ px: 3, pb: 3 }}>
@@ -380,14 +810,49 @@ const DataPreviewDialog = ({
         )}
 
         {/* Process Button */}
-        <Box sx={{ p: 2, textAlign: "right" }}>
-          <Button variant="contained" color="primary" onClick={onProcess}>
-            Start Processing
+        <Box
+          sx={{
+            p: 2,
+            textAlign: "right",
+            borderTop: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Button
+            variant="outlined"
+            color="inherit"
+            onClick={onClose}
+            sx={{ mr: 2 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleProcess}
+            disabled={isProcessing}
+            startIcon={isProcessing ? <CircularProgress size={20} /> : null}
+          >
+            {isProcessing ? "Processing..." : "Start Processing"}
           </Button>
         </Box>
       </DialogContent>
     </Dialog>
   );
+};
+
+DataPreviewDialog.propTypes = {
+  open: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  previewData: PropTypes.array,
+  summaryData: PropTypes.shape({
+    row_count: PropTypes.number,
+    column_count: PropTypes.number,
+    columns: PropTypes.array,
+  }),
+  processingLogs: PropTypes.array,
+  onProcess: PropTypes.func.isRequired,
+  isProcessing: PropTypes.bool,
+  fileName: PropTypes.string,
 };
 
 export default DataPreviewDialog;
