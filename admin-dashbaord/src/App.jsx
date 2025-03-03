@@ -29,6 +29,7 @@ import ResetPassword from "./pages/auth/ResetPassword";
 import SetNewPassword from "./pages/auth/SetNewPassword";
 import { AuthProvider } from "./context/AuthContext";
 import FileUpload from "./pages/file-upload/FileUpload";
+import FileProcessingView from "./pages/file-upload/FileProcessingView";
 
 // Define drawer width for consistency
 const drawerWidth = 240;
@@ -378,6 +379,19 @@ function App() {
                     toggleTheme={toggleTheme}
                   >
                     <FileUpload />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/file-upload/process/:fileId"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <FileProcessingView />
                   </DashboardLayout>
                 </ProtectedRoute>
               }

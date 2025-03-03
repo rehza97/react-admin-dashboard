@@ -1,5 +1,7 @@
 from django import forms
 from .models import Invoice
+import os
+
 
 class InvoiceUploadForm(forms.ModelForm):
     class Meta:
@@ -10,12 +12,12 @@ class InvoiceUploadForm(forms.ModelForm):
         file = self.cleaned_data.get('file')
         if file:
             # Check file extension
-            ext = file.name.split('.')[-1].lower()
-            if ext not in ['csv', 'xlsx', 'xls']:
-                raise forms.ValidationError("Only CSV and Excel files are allowed")
-            # Check file size (5MB limit)
-            if file.size > 5 * 1024 * 1024:
-                raise forms.ValidationError("File size must be under 5MB")
+            ext = os.path.splitext(file.name)[1]
+            valid_extensions = ['.csv', '.xlsx', '.xls']
+            if not ext.lower() in valid_extensions:
+                raise forms.ValidationError(
+                    'Unsupported file extension. Please upload a CSV or Excel file.')
+
+            # Remove file size check completely
+            # Don't even have commented code here that might cause issues
         return file
-
-

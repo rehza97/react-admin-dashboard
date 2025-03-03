@@ -12,6 +12,7 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  Dialog,
 } from "@mui/material";
 import PropTypes from "prop-types";
 
@@ -20,6 +21,7 @@ const FileInspection = ({
   error,
   fileInspection,
   targetColumns,
+  onClose,
 }) => {
   if (isLoading) {
     return (
@@ -190,6 +192,10 @@ const FileInspection = ({
           </TableBody>
         </Table>
       </TableContainer>
+
+      <Dialog open={isLoading} onClose={onClose}>
+        {/* Dialog content here */}
+      </Dialog>
     </Box>
   );
 };
@@ -227,6 +233,7 @@ FileInspection.propTypes = {
   error: PropTypes.string,
   fileInspection: PropTypes.object,
   targetColumns: PropTypes.arrayOf(PropTypes.string),
+  onClose: PropTypes.func,
 };
 
 export default FileInspection;

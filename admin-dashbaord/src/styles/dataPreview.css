@@ -28,7 +28,7 @@
 .summary-card {
   border-radius: 8px;
   padding: 16px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
   min-width: 150px;
@@ -36,11 +36,195 @@
 
 .summary-card-title {
   font-size: 14px;
-  color: rgba(0,0,0,0.6);
+  color: rgba(0, 0, 0, 0.6);
   margin-bottom: 8px;
 }
 
 .summary-card-value {
   font-size: 24px;
   font-weight: 600;
-} 
+}
+
+/* DataPreviewDialog Styles */
+
+.data-preview-dialog .MuiDialog-paper {
+  overflow: hidden;
+}
+
+/* Prevent text selection during resize */
+body.resizing {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  cursor: inherit !important;
+}
+
+/* Resizable handle styles */
+.resize-handle {
+  position: absolute;
+  background-color: transparent;
+  z-index: 10;
+}
+
+.resize-handle-top {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.resize-handle-right {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.resize-handle-bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 15px !important; /* Increased height for easier grabbing */
+  cursor: ns-resize !important;
+}
+
+.resize-handle-left {
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.resize-handle-top-right {
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nesw-resize;
+}
+
+.resize-handle-bottom-right {
+  bottom: 0 !important;
+  right: 0 !important;
+  width: 25px !important;
+  height: 25px !important;
+  cursor: nwse-resize !important;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.resize-handle-bottom-left {
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 25px !important;
+  height: 25px !important;
+  cursor: nesw-resize !important;
+}
+
+.resize-handle-top-left {
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+}
+
+/* Make bottom handles more visible */
+.resize-handle-visible {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.resize-handle-visible:hover {
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+/* Add a visible indicator for the bottom handle */
+.resize-handle-bottom::after {
+  content: "";
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 50px;
+  height: 5px;
+  background-color: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+}
+
+/* Custom scrollbar for better UX */
+.data-preview-dialog ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.data-preview-dialog ::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+
+.data-preview-dialog ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.data-preview-dialog ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Table cell hover effect */
+.data-preview-dialog .MuiTableRow-root:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .data-preview-dialog .MuiTableCell-root {
+    padding: 8px;
+  }
+
+  .data-preview-dialog .MuiDialogTitle-root {
+    padding: 12px;
+  }
+
+  .data-preview-dialog .MuiDialogActions-root {
+    padding: 8px 12px;
+  }
+}
+
+/* Fix for dialog content */
+.data-preview-dialog .MuiDialogContent-root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Ensure table headers stay fixed */
+.data-preview-dialog .MuiTableHead-root {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: #fff;
+}
+
+/* Add a special style for the react-resizable component */
+.react-resizable {
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* Make the bottom resize handle more prominent */
+.react-resizable-handle-s,
+.react-resizable-handle-se,
+.react-resizable-handle-sw {
+  height: 25px !important;
+  bottom: 0 !important;
+  background-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+.react-resizable-handle-s:hover,
+.react-resizable-handle-se:hover,
+.react-resizable-handle-sw:hover {
+  background-color: rgba(0, 0, 0, 0.15) !important;
+}

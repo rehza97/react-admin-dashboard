@@ -30,105 +30,76 @@ const FileUploadDropzone = ({
         ],
         "application/vnd.ms-excel": [".xls"],
         "text/csv": [".csv"],
+        "application/csv": [".csv"],
+        "text/plain": [".csv"], // Some CSV files might be detected as text/plain
       },
-      maxSize: 5 * 1024 * 1024, // 5MB
       multiple: true,
-      // Don't use the validator prop as it's causing issues
-      // Instead, we'll validate in the onDrop function
     });
 
-  // Styles for the dropzone
-  const dropzoneStyles = {
-    border: `2px dashed ${
-      isDragActive ? theme.palette.primary.main : theme.palette.divider
-    }`,
-    borderRadius: 2,
-    p: 4,
-    mb: 3,
-    backgroundColor: isDragActive
-      ? alpha(theme.palette.primary.main, 0.05)
-      : theme.palette.background.default,
-    cursor: "pointer",
-    transition: "all 0.2s ease-in-out",
-    "&:hover": {
-      borderColor: theme.palette.primary.main,
-      backgroundColor: alpha(theme.palette.primary.main, 0.05),
-    },
-  };
-
   return (
-    <Box sx={{ mb: 3 }}>
-      {/* Error messages */}
-      {errorMessages.uploadError && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {errorMessages.uploadError}
-        </Alert>
+    <Box
+      sx={{
+        p: 3,
+        mb: 3,
+        border: `2px dashed ${
+          isDragActive ? theme.palette.primary.main : theme.palette.divider
+        }`,
+        borderRadius: 2,
+        bgcolor: isDragActive
+          ? alpha(theme.palette.primary.main, 0.05)
+          : "background.paper",
+        textAlign: "center",
+        cursor: "pointer",
+        transition: "all 0.2s ease-in-out",
+        "&:hover": {
+          bgcolor: alpha(theme.palette.primary.main, 0.05),
+          borderColor: theme.palette.primary.main,
+        },
+      }}
+      {...getRootProps()}
+    >
+      <input {...getInputProps()} />
+      <UploadIcon sx={{ fontSize: 48, color: "primary.main", mb: 2 }} />
+      <Typography variant="h6" gutterBottom>
+        {isDragActive ? "Drop the files here..." : "Drag & drop files here"}
+      </Typography>
+      <Typography variant="body2" color="text.secondary" gutterBottom>
+        or
+      </Typography>
+      <Button variant="outlined" color="primary" sx={{ mt: 1 }}>
+        Browse Files
+      </Button>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+        Supported formats: .xlsx, .xls, .csv
+      </Typography>
+
+      {files.length > 0 && (
+        <Typography variant="body2" sx={{ mt: 2 }}>
+          {files.length} file{files.length !== 1 ? "s" : ""} selected
+        </Typography>
       )}
 
-      {/* File rejection errors */}
+      {/* Display file rejection errors */}
       {fileRejections.length > 0 && (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mt: 2, textAlign: "left" }}>
           {fileRejections.map(({ file, errors }) => (
             <div key={file.path}>
-              {file.path} - {errors.map((e) => e.message).join(", ")}
+              <strong>{file.path}</strong> -{" "}
+              {errors.map((e) => e.message).join(", ")}
             </div>
           ))}
         </Alert>
       )}
 
-      {/* Dropzone */}
-      <Box {...getRootProps()} sx={dropzoneStyles}>
-        <input {...getInputProps()} />
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            textAlign: "center",
-          }}
-        >
-          <UploadIcon
-            sx={{ fontSize: 48, color: "primary.main", mb: 2, opacity: 0.8 }}
-          />
-          <Typography variant="h6" gutterBottom>
-            {isDragActive ? "Drop files here..." : "Drag & Drop Files Here"}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            or click to browse your files
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Supported formats: CSV, Excel (.xlsx, .xls)
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Maximum file size: 5MB
-          </Typography>
-
-          {/* Show selected files count */}
-          {files.length > 0 && (
-            <Typography
-              variant="body2"
-              color="primary"
-              sx={{ mt: 2, fontWeight: "bold" }}
-            >
-              {files.length} file(s) selected
-            </Typography>
-          )}
-        </Box>
-      </Box>
-
-      {/* Show selected files */}
-      {files.length > 0 && (
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            Selected Files:
-          </Typography>
-          {files.map((file, index) => (
-            <Typography key={index} variant="body2">
-              {file.name} ({(file.size / 1024).toFixed(2)} KB)
-            </Typography>
-          ))}
-        </Box>
+      {/* Display upload errors */}
+      {errorMessages && Object.values(errorMessages).some((msg) => msg) && (
+        <Alert severity="error" sx={{ mt: 2, textAlign: "left" }}>
+          {Object.values(errorMessages)
+            .filter((msg) => msg)
+            .map((msg, index) => (
+              <div key={index}>{msg}</div>
+            ))}
+        </Alert>
       )}
     </Box>
   );
@@ -137,9 +108,9 @@ const FileUploadDropzone = ({
 FileUploadDropzone.propTypes = {
   onDrop: PropTypes.func.isRequired,
   files: PropTypes.array.isRequired,
-  isUploading: PropTypes.bool.isRequired,
-  errorMessages: PropTypes.object.isRequired,
-  validateFile: PropTypes.func.isRequired,
+  isUploading: PropTypes.bool,
+  errorMessages: PropTypes.object,
+  validateFile: PropTypes.func,
 };
 
 export default FileUploadDropzone;

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Invoice, ProcessedInvoiceData
+from .models import Invoice, ProcessedInvoiceData, FacturationManuelle
 
 
 class ProcessedInvoiceDataSerializer(serializers.ModelSerializer):
@@ -91,3 +91,28 @@ class InvoiceDetailSerializer(InvoiceSerializer):
 
     class Meta(InvoiceSerializer.Meta):
         fields = InvoiceSerializer.Meta.fields + ['processed_data']
+
+
+class FacturationManuelleSerializer(serializers.ModelSerializer):
+    """Serializer for Facturation Manuelle AR data"""
+    class Meta:
+        model = FacturationManuelle
+        fields = [
+            'id',
+            'invoice',
+            'month',
+            'invoice_date',
+            'department',
+            'invoice_number',
+            'fiscal_year',
+            'client',
+            'amount_pre_tax',
+            'vat_percentage',
+            'vat_amount',
+            'total_amount',
+            'description',
+            'period',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']

@@ -1,52 +1,29 @@
-import axios from "axios";
-
-const BASE_URL = "data/api";
-
-// Create axios instance with default config
-const api = axios.create({
-  baseURL: BASE_URL,
-});
-
-// Add request interceptor to handle token
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
+import api from "./api";
 
 const dataService = {
-  // File upload endpoints
-  uploadFile: async (file) => {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    return api.post("/facturation/", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
+  // User data
+  getUserProfile: async () => {
+    const response = await api.get("/auth/user/");
+    return response.data;
   },
 
-  getFiles: async () => {
-    return api.get("/facturation/");
+  // Invoice data
+  getInvoices: async () => {
+    const response = await api.get("/data/invoices/");
+    return response.data;
   },
 
-  deleteFile: async (id) => {
-    return api.delete(`/facturation/${id}/`);
+  getInvoiceDetails: async (id) => {
+    const response = await api.get(`/data/invoices/${id}/`);
+    return response.data;
   },
 
-  downloadFile: async (id) => {
-    return api.get(`/facturation/${id}/download/`, {
-      responseType: "blob",
-    });
+  getProcessedData: async () => {
+    const response = await api.get("/data/processed-data/");
+    return response.data;
   },
+
+  // Other data endpoints as needed
 };
 
 export default dataService;

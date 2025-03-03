@@ -34,6 +34,8 @@ import {
   useTheme,
   alpha,
   Checkbox,
+  DialogActions,
+  useMediaQuery,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -42,7 +44,11 @@ import TableChartIcon from "@mui/icons-material/TableChart";
 import SettingsIcon from "@mui/icons-material/Settings";
 import AutorenewIcon from "@mui/icons-material/Autorenew";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import SaveIcon from "@mui/icons-material/Save";
+import DragHandleIcon from "@mui/icons-material/DragHandle";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PropTypes from "prop-types";
+import { Resizable } from "re-resizable";
 import "../styles/dataPreview.css";
 
 const DataPreviewDialog = ({
@@ -52,14 +58,23 @@ const DataPreviewDialog = ({
   summaryData,
   processingLogs = [],
   onProcess,
+  onSave,
   isProcessing = false,
-  fileName = "", // Added fileName prop to help with detection
+  isSaving = false,
+  fileName = "",
 }) => {
   const theme = useTheme();
-  const [expanded, setExpanded] = useState(true);
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const isTablet = useMediaQuery(theme.breakpoints.down("md"));
+
+  const [expanded, setExpanded] = useState(!isMobile);
   const [processingMode, setProcessingMode] = useState("automatic");
   const [selectedTreatment, setSelectedTreatment] = useState("");
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const [dialogSize, setDialogSize] = useState({
+    width: isMobile ? "100%" : "90%",
+    height: isMobile ? "100vh" : "90%",
+  });
 
   // Define available treatments based on file type
   const availableTreatments = {
@@ -227,6 +242,11 @@ const DataPreviewDialog = ({
     }
   }, [treatments, selectedTreatment]);
 
+  // Update expanded state when screen size changes
+  React.useEffect(() => {
+    setExpanded(!isMobile);
+  }, [isMobile]);
+
   const handleAccordionChange = () => {
     setExpanded(!expanded);
   };
@@ -240,21 +260,17 @@ const DataPreviewDialog = ({
   };
 
   const handleProcess = () => {
-    const options = {
-      processingMode,
-      treatment: selectedTreatment,
-      fileType: detectedType,
-      advancedOptions: showAdvancedOptions
-        ? {
-            // Add any advanced options here
-            skipHeaderRow: true,
-            trimWhitespace: true,
-            detectDataTypes: true,
-          }
-        : {},
-    };
+    console.log("Process button clicked in DataPreviewDialog");
+    if (onProcess) {
+      onProcess();
+    }
+  };
 
-    onProcess(options);
+  const handleSave = () => {
+    console.log("Save button clicked in DataPreviewDialog");
+    if (onSave) {
+      onSave();
+    }
   };
 
   // Format column type for better display
@@ -274,6 +290,12 @@ const DataPreviewDialog = ({
       ca_non_periodique: "CA Non Periodique",
       ca_dnt: "CA DNT",
       ca_rfd: "CA RFD",
+      ca_cnt: "CA CNT",
+      facturation_manuelle: "Facturation Manuelle",
+      parc_corporate: "Parc Corporate",
+      creances_ngbss: "Créances NGBSS",
+      etat_facture: "État de Facture",
+      journal_ventes: "Journal des Ventes",
       invoice: "Invoice Data",
       general: "General Data",
     };
@@ -287,6 +309,12 @@ const DataPreviewDialog = ({
       ca_non_periodique: "Non-periodic revenue data",
       ca_dnt: "DNT revenue data",
       ca_rfd: "RFD revenue data",
+      ca_cnt: "CNT revenue data",
+      facturation_manuelle: "Manual billing data",
+      parc_corporate: "Corporate park data",
+      creances_ngbss: "NGBSS receivables data",
+      etat_facture: "Invoice status data",
+      journal_ventes: "Sales journal data",
       invoice: "Invoice and billing data",
       general: "General data format",
     };
@@ -297,545 +325,506 @@ const DataPreviewDialog = ({
     <Dialog
       open={open}
       onClose={onClose}
-      maxWidth="lg"
-      fullWidth
-      className="data-preview-dialog"
+      maxWidth={false}
+      fullScreen={isMobile}
       PaperProps={{
         sx: {
-          borderRadius: "8px",
-          boxShadow: "0 8px 24px rgba(0, 0, 0, 0.15)",
-          height: "90vh",
-          maxHeight: "90vh",
-          display: "flex",
-          flexDirection: "column",
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
+          width: isMobile ? "100%" : "auto",
+          height: isMobile ? "100%" : "auto",
+          m: 0,
+          overflow: "hidden",
         },
       }}
+      className="data-preview-dialog"
     >
-      <DialogTitle
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          bgcolor: "primary.main",
-          color: "white",
-          py: 2,
-          flexShrink: 0,
+      <Resizable
+        size={dialogSize}
+        onResizeStart={() => {
+          document.body.classList.add("resizing");
         }}
-      >
-        <Box sx={{ display: "flex", alignItems: "center" }}>
-          <TableChartIcon sx={{ mr: 1.5 }} />
-          <Typography variant="h5" component="div" fontWeight="500">
-            File Processing Overview
-          </Typography>
-          <Chip
-            label={getFileTypeDisplayName(detectedType)}
-            color="secondary"
-            size="small"
-            sx={{ ml: 2, fontWeight: "bold" }}
-          />
-        </Box>
-        <IconButton
-          edge="end"
-          color="inherit"
-          onClick={onClose}
-          aria-label="close"
-        >
-          <CloseIcon />
-        </IconButton>
-      </DialogTitle>
+        onResize={(e, direction, ref) => {
+          setDialogSize({
+            width: `${ref.offsetWidth}px`,
+            height: `${ref.offsetHeight}px`,
+          });
+        }}
+        onResizeStop={(e, direction, ref) => {
+          document.body.classList.remove("resizing");
 
-      <DialogContent
-        sx={{
-          p: 0,
+          setDialogSize({
+            width: `${ref.offsetWidth}px`,
+            height: `${ref.offsetHeight}px`,
+          });
+        }}
+        minWidth={isMobile ? "100%" : "600px"}
+        minHeight={isMobile ? "100%" : "400px"}
+        maxWidth="95vw"
+        maxHeight="95vh"
+        defaultSize={{
+          width: isMobile ? "100%" : "90vw",
+          height: isMobile ? "100vh" : "90vh",
+        }}
+        enable={{
+          top: !isMobile,
+          right: !isMobile,
+          bottom: !isMobile,
+          left: !isMobile,
+          topRight: !isMobile,
+          bottomRight: !isMobile,
+          bottomLeft: !isMobile,
+          topLeft: !isMobile,
+        }}
+        handleClasses={{
+          bottom: "resize-handle-visible resize-handle-bottom",
+          bottomRight: "resize-handle-visible resize-handle-bottom-right",
+          bottomLeft: "resize-handle-visible resize-handle-bottom-left",
+        }}
+        style={{
           display: "flex",
           flexDirection: "column",
+          borderRadius: isMobile ? 0 : "8px",
+          boxShadow: "0 8px 24px rgba(0, 0, 0, 0.15)",
           overflow: "hidden",
-          flex: 1,
+          position: "relative",
         }}
       >
-        {/* Summary Section */}
-        <Accordion
-          expanded={expanded}
-          onChange={handleAccordionChange}
+        <DialogTitle
           sx={{
-            boxShadow: "none",
-            "&:before": { display: "none" },
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            bgcolor: "primary.main",
+            color: "white",
+            py: 1.5,
+            px: isMobile ? 1.5 : 3,
             flexShrink: 0,
           }}
         >
-          <AccordionSummary
-            expandIcon={<ExpandMoreIcon />}
-            sx={{
-              bgcolor: "grey.100",
-              borderBottom: "1px solid",
-              borderColor: "divider",
-            }}
+          <Box
+            sx={{ display: "flex", alignItems: "center", overflow: "hidden" }}
           >
-            <Box sx={{ display: "flex", alignItems: "center" }}>
-              <InfoOutlinedIcon sx={{ mr: 1, color: "primary.main" }} />
-              <Typography variant="h6">Data Summary</Typography>
-            </Box>
-          </AccordionSummary>
-          <AccordionDetails
-            sx={{
-              p: 3,
-              maxHeight: "40vh",
-              overflow: "auto",
-            }}
-          >
-            <Box sx={{ display: "flex", gap: 4, mb: 3, flexWrap: "wrap" }}>
-              <Box
-                sx={{
-                  bgcolor: "primary.light",
-                  color: "primary.contrastText",
-                  p: 2,
-                  borderRadius: 2,
-                  minWidth: 180,
-                }}
-              >
-                <Typography variant="subtitle2" sx={{ opacity: 0.8 }}>
-                  Total Rows
-                </Typography>
-                <Typography variant="h4">
-                  {summaryData?.row_count || 0}
-                </Typography>
-              </Box>
-
-              <Box
-                sx={{
-                  bgcolor: "secondary.light",
-                  color: "secondary.contrastText",
-                  p: 2,
-                  borderRadius: 2,
-                  minWidth: 180,
-                }}
-              >
-                <Typography variant="subtitle2" sx={{ opacity: 0.8 }}>
-                  Columns
-                </Typography>
-                <Typography variant="h4">
-                  {summaryData?.column_count || 0}
-                </Typography>
-              </Box>
-
-              <Box
-                sx={{
-                  bgcolor: alpha(theme.palette.info.main, 0.2),
-                  color: theme.palette.info.dark,
-                  p: 2,
-                  borderRadius: 2,
-                  minWidth: 180,
-                }}
-              >
-                <Typography variant="subtitle2" sx={{ opacity: 0.8 }}>
-                  Detected File Type
-                </Typography>
-                <Typography variant="h6" sx={{ fontWeight: "bold" }}>
-                  {getFileTypeDisplayName(detectedType)}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  sx={{ display: "block", mt: 0.5 }}
-                >
-                  {getFileTypeDescription(detectedType)}
-                </Typography>
-              </Box>
-            </Box>
-
-            <Typography variant="h6" sx={{ mb: 2, mt: 3 }}>
-              Column Details
-            </Typography>
-
-            <TableContainer
-              component={Paper}
-              variant="outlined"
-              sx={{ maxHeight: "25vh" }}
+            <TableChartIcon sx={{ mr: 1, flexShrink: 0 }} />
+            <Typography
+              variant={isMobile ? "h6" : "h5"}
+              component="div"
+              fontWeight="500"
+              noWrap
+              sx={{ flexShrink: 1 }}
             >
-              <Table size="small" stickyHeader>
-                <TableHead>
-                  <TableRow sx={{ bgcolor: "grey.100" }}>
-                    <TableCell sx={{ fontWeight: "bold" }}>
-                      Column Name
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: "bold" }}>Type</TableCell>
-                    <TableCell sx={{ fontWeight: "bold" }}>
-                      Unique Values
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: "bold" }}>Missing</TableCell>
-                    <TableCell sx={{ fontWeight: "bold" }}>Stats</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {summaryData?.columns?.map((column, index) => (
-                    <TableRow key={index} hover>
-                      <TableCell>
-                        <Typography fontWeight="500">
-                          {column.name || `Unnamed: ${index}`}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={formatColumnType(column.type)}
-                          size="small"
-                          color={
-                            column.type?.includes("object")
-                              ? "default"
-                              : column.type?.includes("int") ||
-                                column.type?.includes("float")
-                              ? "primary"
-                              : column.type?.includes("date")
-                              ? "secondary"
-                              : "default"
-                          }
-                          variant="outlined"
-                        />
-                      </TableCell>
-                      <TableCell>{column.unique_values || "N/A"}</TableCell>
-                      <TableCell>
-                        {column.missing > 0 ? (
-                          <Chip
-                            label={column.missing}
-                            size="small"
-                            color="warning"
-                          />
-                        ) : (
-                          <Chip
-                            label="0"
-                            size="small"
-                            color="success"
-                            variant="outlined"
-                          />
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {column.min !== undefined && (
-                          <Box
-                            sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}
-                          >
-                            <Chip size="small" label={`Min: ${column.min}`} />
-                            <Chip size="small" label={`Max: ${column.max}`} />
-                            {column.mean !== undefined && (
-                              <Chip
-                                size="small"
-                                label={`Avg: ${Number(column.mean).toFixed(2)}`}
-                              />
-                            )}
-                          </Box>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </AccordionDetails>
-        </Accordion>
+              File Processing Overview
+            </Typography>
+            <Chip
+              label={getFileTypeDisplayName(detectedType)}
+              color="secondary"
+              size="small"
+              sx={{
+                ml: 1.5,
+                fontWeight: "bold",
+                flexShrink: 0,
+                display: { xs: "none", sm: "flex" },
+              }}
+            />
+          </Box>
+          <IconButton
+            edge="end"
+            color="inherit"
+            onClick={onClose}
+            aria-label="close"
+            sx={{ flexShrink: 0 }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
 
-        {/* Data Preview Section */}
-        <Box
+        <DialogContent
           sx={{
-            p: 3,
-            flex: 1,
+            p: 0,
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
+            flex: 1,
           }}
         >
-          <Typography variant="h6" sx={{ mb: 2, flexShrink: 0 }}>
-            Data Preview{" "}
-            {previewData?.length > 0
-              ? `(${Math.min(previewData.length, 10)} of ${
-                  previewData.length
-                } rows)`
-              : ""}
-          </Typography>
+          {/* Summary Section */}
+          <Accordion
+            expanded={expanded}
+            onChange={handleAccordionChange}
+            sx={{
+              boxShadow: "none",
+              "&:before": { display: "none" },
+              flexShrink: 0,
+            }}
+          >
+            <AccordionSummary
+              expandIcon={<ExpandMoreIcon />}
+              sx={{
+                bgcolor: "grey.100",
+                borderBottom: "1px solid",
+                borderColor: "divider",
+                minHeight: isMobile ? 48 : 56,
+              }}
+            >
+              <Box sx={{ display: "flex", alignItems: "center" }}>
+                <InfoOutlinedIcon
+                  sx={{
+                    mr: 1,
+                    color: "primary.main",
+                    fontSize: isMobile ? "1.2rem" : "1.5rem",
+                  }}
+                />
+                <Typography variant={isMobile ? "subtitle1" : "h6"}>
+                  Data Summary
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{ ml: 1, display: { xs: "none", md: "block" } }}
+                >
+                  ({summaryData?.row_count || 0} rows,{" "}
+                  {summaryData?.column_count || 0} columns)
+                </Typography>
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails
+              sx={{
+                p: { xs: 1.5, sm: 2, md: 3 },
+                maxHeight: isMobile ? "35vh" : "40vh",
+                overflow: "auto",
+              }}
+            >
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: { xs: 1, sm: 2, md: 3 },
+                  mb: 3,
+                  flexWrap: "wrap",
+                  justifyContent: { xs: "center", sm: "flex-start" },
+                }}
+              >
+                <Box
+                  sx={{
+                    bgcolor: "primary.light",
+                    color: "primary.contrastText",
+                    p: 2,
+                    borderRadius: 1,
+                    minWidth: { xs: "100%", sm: "180px" },
+                    flex: { xs: "1 1 100%", sm: "0 1 auto" },
+                    textAlign: "center",
+                  }}
+                >
+                  <Typography variant="h4" fontWeight="bold">
+                    {summaryData?.row_count || 0}
+                  </Typography>
+                  <Typography variant="body2">Total Rows</Typography>
+                </Box>
+                <Box
+                  sx={{
+                    bgcolor: "secondary.light",
+                    color: "secondary.contrastText",
+                    p: 2,
+                    borderRadius: 1,
+                    minWidth: { xs: "45%", sm: "180px" },
+                    flex: { xs: "1 1 45%", sm: "0 1 auto" },
+                    textAlign: "center",
+                  }}
+                >
+                  <Typography variant="h4" fontWeight="bold">
+                    {summaryData?.column_count || 0}
+                  </Typography>
+                  <Typography variant="body2">Columns</Typography>
+                </Box>
+                <Box
+                  sx={{
+                    bgcolor: "success.light",
+                    color: "success.contrastText",
+                    p: 2,
+                    borderRadius: 1,
+                    minWidth: { xs: "45%", sm: "180px" },
+                    flex: { xs: "1 1 45%", sm: "0 1 auto" },
+                    textAlign: "center",
+                  }}
+                >
+                  <Typography variant="h4" fontWeight="bold">
+                    {summaryData?.valid_rows || 0}
+                  </Typography>
+                  <Typography variant="body2">Valid Rows</Typography>
+                </Box>
+              </Box>
 
-          {previewData && previewData.length > 0 ? (
+              {/* File Type Info */}
+              <Box
+                sx={{
+                  mb: 3,
+                  p: 2,
+                  borderRadius: 1,
+                  bgcolor: alpha(theme.palette.info.main, 0.1),
+                  border: `1px solid ${alpha(theme.palette.info.main, 0.3)}`,
+                }}
+              >
+                <Typography
+                  variant="subtitle1"
+                  fontWeight="bold"
+                  sx={{ mb: 1 }}
+                >
+                  Detected File Type: {getFileTypeDisplayName(detectedType)}
+                </Typography>
+                <Typography variant="body2">
+                  {getFileTypeDescription(detectedType)}
+                </Typography>
+              </Box>
+
+              {/* Column Summary */}
+              {summaryData?.columns && (
+                <Box>
+                  <Typography
+                    variant="subtitle1"
+                    fontWeight="bold"
+                    sx={{ mb: 2 }}
+                  >
+                    Column Summary
+                  </Typography>
+                  <TableContainer
+                    component={Paper}
+                    variant="outlined"
+                    sx={{ maxHeight: "300px" }}
+                  >
+                    <Table size={isMobile ? "small" : "medium"} stickyHeader>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Column Name</TableCell>
+                          <TableCell>Type</TableCell>
+                          <TableCell>Sample Values</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {Object.entries(summaryData.columns).map(
+                          ([name, info]) => (
+                            <TableRow key={name}>
+                              <TableCell>
+                                <Typography
+                                  variant="body2"
+                                  fontWeight="medium"
+                                  sx={{
+                                    maxWidth: {
+                                      xs: "120px",
+                                      sm: "150px",
+                                      md: "200px",
+                                    },
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {name}
+                                </Typography>
+                              </TableCell>
+                              <TableCell>
+                                <Chip
+                                  label={formatColumnType(info.type)}
+                                  size="small"
+                                  color={
+                                    info.type?.includes("object")
+                                      ? "primary"
+                                      : info.type?.includes("int") ||
+                                        info.type?.includes("float")
+                                      ? "secondary"
+                                      : info.type?.includes("date")
+                                      ? "success"
+                                      : "default"
+                                  }
+                                  variant="outlined"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    maxWidth: {
+                                      xs: "120px",
+                                      sm: "200px",
+                                      md: "300px",
+                                    },
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {info.sample_values?.join(", ")}
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+              )}
+            </AccordionDetails>
+          </Accordion>
+
+          {/* Data Preview Section */}
+          <Box
+            sx={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              p: 0,
+            }}
+          >
+            <Box
+              sx={{
+                bgcolor: "grey.100",
+                p: { xs: 1, sm: 1.5 },
+                borderBottom: "1px solid",
+                borderColor: "divider",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <Typography variant={isMobile ? "subtitle1" : "h6"}>
+                Data Preview
+              </Typography>
+              <Box sx={{ display: "flex", gap: 1 }}>
+                <Chip
+                  label={`${previewData?.length || 0} rows`}
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                />
+                <Tooltip title="This is a preview of the first rows of data">
+                  <IconButton size="small">
+                    <HelpOutlineIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            </Box>
+
             <TableContainer
-              component={Paper}
-              variant="outlined"
               sx={{
                 flex: 1,
                 overflow: "auto",
-                maxHeight: expanded ? "35vh" : "65vh",
+                maxHeight: isMobile ? "40vh" : "50vh",
               }}
             >
-              <Table stickyHeader size="small">
-                <TableHead>
-                  <TableRow sx={{ bgcolor: "primary.light" }}>
-                    {Object.keys(previewData[0]).map((key) => (
-                      <TableCell
-                        key={key}
-                        sx={{
-                          fontWeight: "bold",
-                          whiteSpace: "nowrap",
-                          position: "sticky",
-                          top: 0,
-                          zIndex: 1,
-                        }}
-                      >
-                        {key}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {previewData.slice(0, 10).map((row, rowIndex) => (
-                    <TableRow key={rowIndex} hover>
-                      {Object.values(row).map((value, cellIndex) => (
-                        <TableCell key={cellIndex}>
-                          {value !== null && value !== undefined
-                            ? String(value)
-                            : "—"}
+              {previewData && previewData.length > 0 ? (
+                <Table size={isMobile ? "small" : "medium"} stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      {Object.keys(previewData[0]).map((header) => (
+                        <TableCell key={header}>
+                          <Typography
+                            variant="subtitle2"
+                            sx={{
+                              maxWidth: {
+                                xs: "100px",
+                                sm: "150px",
+                                md: "200px",
+                              },
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {header}
+                          </Typography>
                         </TableCell>
                       ))}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          ) : (
-            <Typography color="text.secondary">
-              No preview data available
-            </Typography>
-          )}
-        </Box>
-
-        {/* Processing Options Section */}
-        <Box sx={{ px: 3, pb: 3, pt: 1 }}>
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
-            <Typography variant="h6" gutterBottom>
-              Processing Options
-            </Typography>
-
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <FormControl component="fieldset">
-                  <FormLabel component="legend">Processing Mode</FormLabel>
-                  <RadioGroup
-                    row
-                    name="processing-mode"
-                    value={processingMode}
-                    onChange={handleProcessingModeChange}
-                  >
-                    <FormControlLabel
-                      value="automatic"
-                      control={<Radio />}
-                      label={
-                        <Box sx={{ display: "flex", alignItems: "center" }}>
-                          <AutorenewIcon fontSize="small" sx={{ mr: 0.5 }} />
-                          <Typography>Automatic</Typography>
-                        </Box>
-                      }
-                    />
-                    <FormControlLabel
-                      value="manual"
-                      control={<Radio />}
-                      label={
-                        <Box sx={{ display: "flex", alignItems: "center" }}>
-                          <SettingsIcon fontSize="small" sx={{ mr: 0.5 }} />
-                          <Typography>Manual</Typography>
-                        </Box>
-                      }
-                    />
-                  </RadioGroup>
-                </FormControl>
-
-                {processingMode === "automatic" && (
-                  <Alert severity="info" sx={{ mt: 2 }}>
-                    Automatic mode will apply the most appropriate processing
-                    for {getFileTypeDisplayName(detectedType)}.
-                  </Alert>
-                )}
-              </Grid>
-
-              {processingMode === "manual" && (
-                <Grid item xs={12} md={6}>
-                  <FormControl fullWidth>
-                    <InputLabel id="treatment-select-label">
-                      Processing Treatment
-                    </InputLabel>
-                    <Select
-                      labelId="treatment-select-label"
-                      id="treatment-select"
-                      value={selectedTreatment}
-                      label="Processing Treatment"
-                      onChange={handleTreatmentChange}
-                    >
-                      {treatments.map((treatment) => (
-                        <MenuItem key={treatment.id} value={treatment.id}>
-                          {treatment.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-
-                  {selectedTreatment && (
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ mt: 1 }}
-                    >
-                      {
-                        treatments.find((t) => t.id === selectedTreatment)
-                          ?.description
-                      }
-                    </Typography>
-                  )}
-                </Grid>
-              )}
-
-              <Grid item xs={12}>
-                <Box sx={{ display: "flex", alignItems: "center", mt: 1 }}>
-                  <Button
-                    size="small"
-                    onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                    endIcon={<ExpandMoreIcon />}
-                  >
-                    {showAdvancedOptions ? "Hide" : "Show"} Advanced Options
-                  </Button>
-                  <Tooltip title="Configure detailed processing parameters">
-                    <HelpOutlineIcon
-                      fontSize="small"
-                      sx={{ ml: 1, color: "text.secondary" }}
-                    />
-                  </Tooltip>
-                </Box>
-
-                {showAdvancedOptions && (
-                  <Box
-                    sx={{
-                      mt: 2,
-                      p: 2,
-                      bgcolor: alpha(theme.palette.background.default, 0.5),
-                      borderRadius: 1,
-                    }}
-                  >
-                    <Typography variant="subtitle2" gutterBottom>
-                      Advanced Processing Options
-                    </Typography>
-                    <Stack spacing={2}>
-                      <FormControlLabel
-                        control={<Checkbox defaultChecked />}
-                        label="Skip header row"
-                      />
-                      <FormControlLabel
-                        control={<Checkbox defaultChecked />}
-                        label="Trim whitespace"
-                      />
-                      <FormControlLabel
-                        control={<Checkbox defaultChecked />}
-                        label="Auto-detect data types"
-                      />
-                      <FormControlLabel
-                        control={<Checkbox />}
-                        label="Normalize date formats"
-                      />
-                      <FormControlLabel
-                        control={<Checkbox />}
-                        label="Convert currency values"
-                      />
-                      {detectedType.startsWith("ca_") && (
-                        <>
-                          <FormControlLabel
-                            control={<Checkbox />}
-                            label="Aggregate by region"
-                          />
-                          <FormControlLabel
-                            control={<Checkbox />}
-                            label="Aggregate by product"
-                          />
-                        </>
-                      )}
-                    </Stack>
-                  </Box>
-                )}
-              </Grid>
-            </Grid>
-          </Paper>
-        </Box>
-
-        {/* Processing Logs Section */}
-        {processingLogs && processingLogs.length > 0 && (
-          <Box sx={{ px: 3, pb: 3 }}>
-            <Accordion>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="subtitle1">Processing Logs</Typography>
-              </AccordionSummary>
-              <AccordionDetails>
+                  </TableHead>
+                  <TableBody>
+                    {previewData.map((row, rowIndex) => (
+                      <TableRow key={rowIndex}>
+                        {Object.values(row).map((cell, cellIndex) => (
+                          <TableCell key={cellIndex}>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                maxWidth: {
+                                  xs: "100px",
+                                  sm: "150px",
+                                  md: "200px",
+                                },
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {cell !== null && cell !== undefined
+                                ? String(cell)
+                                : ""}
+                            </Typography>
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
                 <Box
                   sx={{
-                    bgcolor: "background.paper",
-                    p: 1,
-                    borderRadius: 1,
-                    maxHeight: 200,
-                    overflow: "auto",
-                    fontFamily: "monospace",
-                    fontSize: "0.85rem",
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    height: "100%",
+                    p: 3,
                   }}
                 >
-                  {processingLogs.map((log, index) => (
-                    <Box
-                      key={index}
-                      sx={{
-                        py: 0.5,
-                        color:
-                          log.level === "error"
-                            ? "error.main"
-                            : log.level === "success"
-                            ? "success.main"
-                            : "text.primary",
-                      }}
-                    >
-                      <Typography
-                        variant="body2"
-                        component="span"
-                        sx={{ mr: 1, opacity: 0.7 }}
-                      >
-                        [{log.timestamp}]
-                      </Typography>
-                      <Typography variant="body2" component="span">
-                        {log.message}
-                      </Typography>
-                    </Box>
-                  ))}
+                  <Typography variant="body1" color="text.secondary">
+                    No preview data available
+                  </Typography>
                 </Box>
-              </AccordionDetails>
-            </Accordion>
+              )}
+            </TableContainer>
           </Box>
-        )}
+        </DialogContent>
 
-        {/* Process Button */}
-        <Box
+        <DialogActions
           sx={{
-            p: 2,
-            textAlign: "right",
-            borderTop: `1px solid ${theme.palette.divider}`,
+            p: { xs: 1.5, sm: 2 },
+            borderTop: "1px solid",
+            borderColor: "divider",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 1,
           }}
         >
-          <Button
-            variant="outlined"
-            color="inherit"
-            onClick={onClose}
-            sx={{ mr: 2 }}
-          >
-            Cancel
+          <Button onClick={onClose} color="inherit" variant="outlined">
+            Close
           </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleProcess}
-            disabled={isProcessing}
-            startIcon={isProcessing ? <CircularProgress size={20} /> : null}
-          >
-            {isProcessing ? "Processing..." : "Start Processing"}
-          </Button>
-        </Box>
-      </DialogContent>
+          <Box sx={{ display: "flex", gap: 1 }}>
+            <Button
+              onClick={handleProcess}
+              color="primary"
+              variant="outlined"
+              disabled={
+                isProcessing || !previewData || previewData.length === 0
+              }
+              startIcon={
+                isProcessing ? (
+                  <CircularProgress size={20} />
+                ) : (
+                  <PlayArrowIcon />
+                )
+              }
+            >
+              {isProcessing ? "Processing..." : "Process Data"}
+            </Button>
+            <Button
+              onClick={handleSave}
+              color="primary"
+              variant="contained"
+              disabled={isSaving || !previewData || previewData.length === 0}
+              startIcon={
+                isSaving ? <CircularProgress size={20} /> : <SaveIcon />
+              }
+            >
+              {isSaving ? "Saving..." : "Save to Database"}
+            </Button>
+          </Box>
+        </DialogActions>
+      </Resizable>
     </Dialog>
   );
 };
@@ -844,15 +833,24 @@ DataPreviewDialog.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   previewData: PropTypes.array,
-  summaryData: PropTypes.shape({
-    row_count: PropTypes.number,
-    column_count: PropTypes.number,
-    columns: PropTypes.array,
-  }),
+  summaryData: PropTypes.object,
   processingLogs: PropTypes.array,
   onProcess: PropTypes.func.isRequired,
+  onSave: PropTypes.func.isRequired,
   isProcessing: PropTypes.bool,
+  isSaving: PropTypes.bool,
   fileName: PropTypes.string,
 };
+
+// Add validation for detected_file_type to fix linter error
+if (process.env.NODE_ENV !== "production") {
+  DataPreviewDialog.propTypes.summaryData = PropTypes.shape({
+    detected_file_type: PropTypes.string,
+    row_count: PropTypes.number,
+    column_count: PropTypes.number,
+    valid_rows: PropTypes.number,
+    columns: PropTypes.object,
+  });
+}
 
 export default DataPreviewDialog;
