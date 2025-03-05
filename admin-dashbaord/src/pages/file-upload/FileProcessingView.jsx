@@ -48,6 +48,8 @@ const FileProcessingView = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [fileName, setFileName] = useState("");
+  const [fileType, setFileType] = useState("");
+  const [detectionConfidence, setDetectionConfidence] = useState(0);
   const [activeTab, setActiveTab] = useState(0);
   const [successMessage, setSuccessMessage] = useState(null);
   const [fetchProgress, setFetchProgress] = useState(0);
@@ -113,8 +115,17 @@ const FileProcessingView = () => {
       console.log("Inspection response:", response);
 
       if (response) {
+        // Get file details
+        const fileDetails = await fileService.getFileById(id);
+        setFileName(fileDetails.file.split("/").pop() || "Unknown file");
+
+        // Set preview data and summary
         setPreviewData(response.preview_data || []);
         setSummaryData(response.summary_data || {});
+
+        // Set file type information
+        setFileType(response.file_type || "");
+        setDetectionConfidence(response.detection_confidence || 0);
       }
     } catch (error) {
       console.error("Error inspecting file:", error);
@@ -139,12 +150,13 @@ const FileProcessingView = () => {
     try {
       console.log(`Processing file with ID: ${fileId}`);
 
-      const fileType = summaryData?.detected_file_type || "";
-      console.log(`Detected file type: ${fileType}`);
-
       const processingOptions = {
         processingMode: "automatic",
-        fileType: fileType,
+        fileType:
+          fileType ||
+          (summaryData && "detected_file_type" in summaryData
+            ? summaryData.detected_file_type
+            : ""),
         remove_duplicates: true,
         handle_missing: "fill_zeros",
         filters: [],
@@ -156,9 +168,9 @@ const FileProcessingView = () => {
 
       if (response) {
         setPreviewData(response.preview_data || []);
-
         setSummaryData(response.summary_data || {});
-
+        setFileType(response.file_type || "");
+        setDetectionConfidence(response.detection_confidence || 0);
         setSuccessMessage("File processed successfully");
       }
     } catch (error) {
@@ -184,12 +196,13 @@ const FileProcessingView = () => {
     try {
       console.log(`Saving file with ID: ${fileId}`);
 
-      const fileType = summaryData?.detected_file_type || "";
-      console.log(`Detected file type for saving: ${fileType}`);
-
       const dataToSave = {
         processed_data: true,
-        file_type: fileType,
+        file_type:
+          fileType ||
+          (summaryData && "detected_file_type" in summaryData
+            ? summaryData.detected_file_type
+            : ""),
         options: {
           remove_duplicates: true,
           handle_missing: "fill_zeros",
@@ -201,9 +214,7 @@ const FileProcessingView = () => {
       setSaveProgress(100);
 
       if (response) {
-        setSuccessMessage(
-          `Successfully saved ${response.saved_count || 0} records to database`
-        );
+        setSuccessMessage(`Successfully saved data to database`);
 
         setTimeout(() => {
           navigate("/file-upload");
@@ -220,10 +231,6 @@ const FileProcessingView = () => {
 
   const handleTabChange = (event, newValue) => {
     setActiveTab(newValue);
-  };
-
-  const detectFileType = () => {
-    return summaryData?.detected_file_type || "unknown";
   };
 
   const getFileTypeDisplayName = (type) => {
@@ -279,7 +286,11 @@ const FileProcessingView = () => {
   };
 
   const renderDataSummary = () => {
-    const fileType = detectFileType();
+    const currentFileType =
+      fileType ||
+      (summaryData && "detected_file_type" in summaryData
+        ? summaryData.detected_file_type
+        : "unknown");
 
     return (
       <Box sx={{ p: 3 }}>
@@ -291,30 +302,66 @@ const FileProcessingView = () => {
           <Paper className="summary-card">
             <Typography className="summary-card-title">File Type</Typography>
             <Typography className="summary-card-value">
-              {getFileTypeDisplayName(fileType)}
+              {getFileTypeDisplayName(currentFileType)}
             </Typography>
+            {detectionConfidence > 0 && (
+              <Box sx={{ mt: 1, display: "flex", alignItems: "center" }}>
+                <Typography variant="caption" sx={{ mr: 1 }}>
+                  Confidence:
+                </Typography>
+                <LinearProgress
+                  variant="determinate"
+                  value={detectionConfidence * 100}
+                  sx={{
+                    flexGrow: 1,
+                    height: 4,
+                    borderRadius: 2,
+                    bgcolor: alpha(theme.palette.grey[500], 0.2),
+                    "& .MuiLinearProgress-bar": {
+                      bgcolor:
+                        detectionConfidence > 0.7
+                          ? "success.main"
+                          : detectionConfidence > 0.4
+                          ? "warning.main"
+                          : "error.main",
+                      borderRadius: 2,
+                    },
+                  }}
+                />
+                <Typography
+                  variant="caption"
+                  sx={{ ml: 1, fontWeight: "bold" }}
+                >
+                  {Math.round(detectionConfidence * 100)}%
+                </Typography>
+              </Box>
+            )}
           </Paper>
 
           <Paper className="summary-card">
             <Typography className="summary-card-title">Rows</Typography>
             <Typography className="summary-card-value">
-              {summaryData?.row_count || 0}
+              {summaryData && "row_count" in summaryData
+                ? String(summaryData.row_count)
+                : "0"}
             </Typography>
           </Paper>
 
           <Paper className="summary-card">
             <Typography className="summary-card-title">Columns</Typography>
             <Typography className="summary-card-value">
-              {summaryData?.column_count || 0}
+              {summaryData && "column_count" in summaryData
+                ? String(summaryData.column_count)
+                : "0"}
             </Typography>
           </Paper>
         </Box>
 
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {getFileTypeDescription(fileType)}
+          {getFileTypeDescription(currentFileType)}
         </Typography>
 
-        {summaryData?.column_info && (
+        {summaryData && "columns" in summaryData && (
           <Box sx={{ mt: 3 }}>
             <Typography variant="subtitle1" gutterBottom>
               Column Information
@@ -329,27 +376,25 @@ const FileProcessingView = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {Object.entries(summaryData.column_info).map(
-                    ([col, info]) => (
-                      <TableRow key={col}>
-                        <TableCell>{col}</TableCell>
-                        <TableCell>
-                          <Chip
-                            label={formatColumnType(info.type)}
-                            size="small"
-                            className={`column-type-${info.type}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {Array.isArray(info.sample_values) &&
-                            info.sample_values
-                              .slice(0, 3)
-                              .map((val) => String(val))
-                              .join(", ")}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  )}
+                  {Object.entries(summaryData.columns).map(([col, info]) => (
+                    <TableRow key={col}>
+                      <TableCell>{col}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={formatColumnType(info.type)}
+                          size="small"
+                          className={`column-type-${info.type}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {Array.isArray(info.sample_values) &&
+                          info.sample_values
+                            .slice(0, 3)
+                            .map((val) => String(val))
+                            .join(", ")}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -368,10 +413,14 @@ const FileProcessingView = () => {
       );
     }
 
-    if (previewData.error) {
+    if (
+      previewData &&
+      typeof previewData === "object" &&
+      "error" in previewData
+    ) {
       return (
         <Typography variant="body1" color="error" sx={{ p: 2 }}>
-          Error: {previewData.error}
+          Error: {String(previewData.error)}
         </Typography>
       );
     }
@@ -386,17 +435,28 @@ const FileProcessingView = () => {
       );
     }
 
-    const requiredColumns = [
-      "department",
-      "fiscal_year",
-      "amount_pre_tax",
-      "total_amount",
-      "description",
-    ];
+    // Get columns based on file type
+    let columns = Object.keys(dataArray[0]);
 
-    const columns = Object.keys(dataArray[0]).filter((col) =>
-      requiredColumns.includes(col)
-    );
+    // For facturation_manuelle, prioritize specific columns
+    if (fileType === "facturation_manuelle") {
+      const priorityColumns = [
+        "department",
+        "fiscal_year",
+        "amount_pre_tax",
+        "total_amount",
+        "description",
+      ];
+
+      // Filter columns to prioritize important ones
+      const availablePriorityColumns = priorityColumns.filter((col) =>
+        columns.includes(col)
+      );
+
+      if (availablePriorityColumns.length > 0) {
+        columns = availablePriorityColumns;
+      }
+    }
 
     const columnDisplayNames = {
       department: "Department",
@@ -404,6 +464,10 @@ const FileProcessingView = () => {
       amount_pre_tax: "Amount Pre-Tax",
       total_amount: "Total Amount",
       description: "Description",
+      organization: "Organization",
+      origin: "Origin",
+      invoice_number: "Invoice Number",
+      revenue_amount: "Revenue Amount",
     };
 
     return (
@@ -423,8 +487,10 @@ const FileProcessingView = () => {
               <TableRow key={rowIndex} hover>
                 {columns.map((column) => (
                   <TableCell key={`${rowIndex}-${column}`}>
-                    {column.includes("amount")
-                      ? new Intl.NumberFormat("en-US", {
+                    {column.includes("amount") || column.includes("revenue")
+                      ? new Intl.NumberFormat("fr-FR", {
+                          style: "currency",
+                          currency: "EUR",
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         }).format(row[column] || 0)
@@ -454,6 +520,17 @@ const FileProcessingView = () => {
         <Typography variant="h6" sx={{ mt: 2 }}>
           Loading file data...
         </Typography>
+        <Box sx={{ width: "50%", mt: 2 }}>
+          <LinearProgress variant="determinate" value={fetchProgress} />
+          <Typography
+            variant="caption"
+            align="center"
+            display="block"
+            sx={{ mt: 1 }}
+          >
+            {fetchProgress}% complete
+          </Typography>
+        </Box>
       </Box>
     );
   }
@@ -498,6 +575,15 @@ const FileProcessingView = () => {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             File Processing: {fileName}
           </Typography>
+
+          {fileType && (
+            <Chip
+              label={getFileTypeDisplayName(fileType)}
+              color="primary"
+              sx={{ mr: 2 }}
+            />
+          )}
+
           <Tooltip title="Process File">
             <Button
               variant="contained"
@@ -549,6 +635,30 @@ const FileProcessingView = () => {
           />
         </Tabs>
       </AppBar>
+
+      {successMessage && (
+        <Alert
+          severity="success"
+          sx={{ m: 2 }}
+          onClose={() => setSuccessMessage(null)}
+        >
+          {successMessage}
+        </Alert>
+      )}
+
+      {isSaving && (
+        <Box sx={{ width: "100%", px: 2 }}>
+          <LinearProgress variant="determinate" value={saveProgress} />
+          <Typography
+            variant="caption"
+            align="center"
+            display="block"
+            sx={{ mt: 0.5 }}
+          >
+            Saving data: {saveProgress}% complete
+          </Typography>
+        </Box>
+      )}
 
       <Box sx={{ flexGrow: 1, overflow: "auto" }}>
         {activeTab === 0 && renderDataSummary()}

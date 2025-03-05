@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -27,36 +27,33 @@ import {
   FormControlLabel,
   FormLabel,
   Grid,
-  Alert,
   Tooltip,
   CircularProgress,
-  Stack,
   useTheme,
   alpha,
   Checkbox,
   DialogActions,
   useMediaQuery,
+  LinearProgress,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import TableChartIcon from "@mui/icons-material/TableChart";
 import SettingsIcon from "@mui/icons-material/Settings";
-import AutorenewIcon from "@mui/icons-material/Autorenew";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import SaveIcon from "@mui/icons-material/Save";
-import DragHandleIcon from "@mui/icons-material/DragHandle";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PropTypes from "prop-types";
 import { Resizable } from "re-resizable";
 import "../styles/dataPreview.css";
+import fileService from "../services/fileService";
 
 const DataPreviewDialog = ({
   open,
   onClose,
   previewData,
   summaryData,
-  processingLogs = [],
   onProcess,
   onSave,
   isProcessing = false,
@@ -65,7 +62,6 @@ const DataPreviewDialog = ({
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const isTablet = useMediaQuery(theme.breakpoints.down("md"));
 
   const [expanded, setExpanded] = useState(!isMobile);
   const [processingMode, setProcessingMode] = useState("automatic");
@@ -75,6 +71,35 @@ const DataPreviewDialog = ({
     width: isMobile ? "100%" : "90%",
     height: isMobile ? "100vh" : "90%",
   });
+
+  // New state variables for file type handling
+  const [availableFileTypes, setAvailableFileTypes] = useState([]);
+  const [selectedFileType, setSelectedFileType] = useState("");
+  const [fileTypeConfidence, setFileTypeConfidence] = useState(0);
+
+  // Fetch available file types when component mounts
+  useEffect(() => {
+    const fetchFileTypes = async () => {
+      if (open) {
+        try {
+          const types = await fileService.getFileTypes();
+          setAvailableFileTypes(types);
+        } catch (error) {
+          console.error("Error fetching file types:", error);
+        }
+      }
+    };
+
+    fetchFileTypes();
+  }, [open]);
+
+  // Set selected file type based on summary data
+  useEffect(() => {
+    if (summaryData && summaryData.detected_file_type) {
+      setSelectedFileType(summaryData.detected_file_type);
+      setFileTypeConfidence(summaryData.detection_confidence || 0);
+    }
+  }, [summaryData]);
 
   // Define available treatments based on file type
   const availableTreatments = {
@@ -259,17 +284,40 @@ const DataPreviewDialog = ({
     setSelectedTreatment(event.target.value);
   };
 
+  const handleFileTypeChange = (event) => {
+    setSelectedFileType(event.target.value);
+    // When manually selecting a file type, set confidence to 1.0
+    setFileTypeConfidence(1.0);
+  };
+
   const handleProcess = () => {
     console.log("Process button clicked in DataPreviewDialog");
     if (onProcess) {
-      onProcess();
+      // Pass processing options including file type
+      const options = {
+        processingMode,
+        treatment: selectedTreatment,
+        fileType: selectedFileType,
+        remove_duplicates: true,
+        handle_missing: "fill_zeros",
+      };
+      onProcess(options);
     }
   };
 
   const handleSave = () => {
     console.log("Save button clicked in DataPreviewDialog");
     if (onSave) {
-      onSave();
+      // Pass save options including file type
+      const saveOptions = {
+        file_type: selectedFileType,
+        processed_data: true,
+        options: {
+          remove_duplicates: true,
+          handle_missing: "fill_zeros",
+        },
+      };
+      onSave(saveOptions);
     }
   };
 
@@ -298,6 +346,7 @@ const DataPreviewDialog = ({
       journal_ventes: "Journal des Ventes",
       invoice: "Invoice Data",
       general: "General Data",
+      unknown: "Unknown Data Type",
     };
     return typeMap[type] || "Unknown Data Type";
   };
@@ -317,6 +366,7 @@ const DataPreviewDialog = ({
       journal_ventes: "Sales journal data",
       invoice: "Invoice and billing data",
       general: "General data format",
+      unknown: "Unknown data format",
     };
     return descriptionMap[type] || "";
   };
@@ -424,6 +474,32 @@ const DataPreviewDialog = ({
                 display: { xs: "none", sm: "flex" },
               }}
             />
+            {fileTypeConfidence > 0 && (
+              <Tooltip
+                title={`Detection confidence: ${Math.round(
+                  fileTypeConfidence * 100
+                )}%`}
+              >
+                <Chip
+                  label={`${Math.round(fileTypeConfidence * 100)}%`}
+                  color={
+                    fileTypeConfidence > 0.7
+                      ? "success"
+                      : fileTypeConfidence > 0.4
+                      ? "warning"
+                      : "error"
+                  }
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    ml: 1,
+                    fontWeight: "bold",
+                    flexShrink: 0,
+                    display: { xs: "none", md: "flex" },
+                  }}
+                />
+              </Tooltip>
+            )}
           </Box>
           <IconButton
             edge="end"
@@ -544,13 +620,13 @@ const DataPreviewDialog = ({
                   }}
                 >
                   <Typography variant="h4" fontWeight="bold">
-                    {summaryData?.valid_rows || 0}
+                    {summaryData?.valid_rows || summaryData?.row_count || 0}
                   </Typography>
                   <Typography variant="body2">Valid Rows</Typography>
                 </Box>
               </Box>
 
-              {/* File Type Info */}
+              {/* File Type Selection */}
               <Box
                 sx={{
                   mb: 3,
@@ -565,11 +641,74 @@ const DataPreviewDialog = ({
                   fontWeight="bold"
                   sx={{ mb: 1 }}
                 >
-                  Detected File Type: {getFileTypeDisplayName(detectedType)}
+                  File Type
                 </Typography>
+
+                <FormControl fullWidth sx={{ mb: 1 }}>
+                  <InputLabel id="file-type-select-label">File Type</InputLabel>
+                  <Select
+                    labelId="file-type-select-label"
+                    id="file-type-select"
+                    value={selectedFileType}
+                    label="File Type"
+                    onChange={handleFileTypeChange}
+                    disabled={isProcessing || isSaving}
+                  >
+                    <MenuItem value="">
+                      <em>Auto-detect</em>
+                    </MenuItem>
+                    {availableFileTypes.map((type) => (
+                      <MenuItem key={type.id} value={type.id}>
+                        {type.name}
+                      </MenuItem>
+                    ))}
+                    {!availableFileTypes.some(
+                      (t) => t.id === selectedFileType
+                    ) &&
+                      selectedFileType && (
+                        <MenuItem value={selectedFileType}>
+                          {getFileTypeDisplayName(selectedFileType)}
+                        </MenuItem>
+                      )}
+                  </Select>
+                </FormControl>
+
                 <Typography variant="body2">
-                  {getFileTypeDescription(detectedType)}
+                  {getFileTypeDescription(selectedFileType || detectedType)}
                 </Typography>
+
+                {fileTypeConfidence > 0 && selectedFileType && (
+                  <Box sx={{ mt: 1, display: "flex", alignItems: "center" }}>
+                    <Typography variant="body2" sx={{ mr: 1 }}>
+                      Detection confidence:
+                    </Typography>
+                    <LinearProgress
+                      variant="determinate"
+                      value={fileTypeConfidence * 100}
+                      sx={{
+                        flexGrow: 1,
+                        height: 8,
+                        borderRadius: 4,
+                        bgcolor: alpha(theme.palette.grey[500], 0.2),
+                        "& .MuiLinearProgress-bar": {
+                          bgcolor:
+                            fileTypeConfidence > 0.7
+                              ? "success.main"
+                              : fileTypeConfidence > 0.4
+                              ? "warning.main"
+                              : "error.main",
+                          borderRadius: 4,
+                        },
+                      }}
+                    />
+                    <Typography
+                      variant="body2"
+                      sx={{ ml: 1, fontWeight: "bold" }}
+                    >
+                      {Math.round(fileTypeConfidence * 100)}%
+                    </Typography>
+                  </Box>
+                )}
               </Box>
 
               {/* Column Summary */}
@@ -735,8 +874,8 @@ const DataPreviewDialog = ({
                   </TableHead>
                   <TableBody>
                     {previewData.map((row, rowIndex) => (
-                      <TableRow key={rowIndex}>
-                        {Object.values(row).map((cell, cellIndex) => (
+                      <TableRow key={rowIndex} hover>
+                        {Object.entries(row).map(([key, cell], cellIndex) => (
                           <TableCell key={cellIndex}>
                             <Typography
                               variant="body2"
@@ -749,10 +888,23 @@ const DataPreviewDialog = ({
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
                                 whiteSpace: "nowrap",
+                                color: cell < 0 ? "error.main" : "inherit", // Highlight negative values
                               }}
                             >
+                              {/* Format numbers and dates appropriately */}
                               {cell !== null && cell !== undefined
-                                ? String(cell)
+                                ? typeof cell === "number"
+                                  ? key.includes("amount") ||
+                                    key.includes("revenue")
+                                    ? new Intl.NumberFormat("fr-FR", {
+                                        style: "currency",
+                                        currency: "EUR",
+                                        minimumFractionDigits: 2,
+                                      }).format(cell)
+                                    : new Intl.NumberFormat("fr-FR").format(
+                                        cell
+                                      )
+                                  : String(cell)
                                 : ""}
                             </Typography>
                           </TableCell>
@@ -793,7 +945,28 @@ const DataPreviewDialog = ({
           <Button onClick={onClose} color="inherit" variant="outlined">
             Close
           </Button>
-          <Box sx={{ display: "flex", gap: 1 }}>
+
+          {/* Processing Options */}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Tooltip title="Show processing options">
+              <IconButton
+                color="primary"
+                onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                sx={{
+                  bgcolor: showAdvancedOptions
+                    ? alpha(theme.palette.primary.main, 0.1)
+                    : "transparent",
+                  "&:hover": {
+                    bgcolor: showAdvancedOptions
+                      ? alpha(theme.palette.primary.main, 0.2)
+                      : alpha(theme.palette.primary.main, 0.1),
+                  },
+                }}
+              >
+                <SettingsIcon />
+              </IconButton>
+            </Tooltip>
+
             <Button
               onClick={handleProcess}
               color="primary"
@@ -811,6 +984,7 @@ const DataPreviewDialog = ({
             >
               {isProcessing ? "Processing..." : "Process Data"}
             </Button>
+
             <Button
               onClick={handleSave}
               color="primary"
@@ -824,6 +998,112 @@ const DataPreviewDialog = ({
             </Button>
           </Box>
         </DialogActions>
+
+        {/* Advanced Processing Options Panel */}
+        {showAdvancedOptions && (
+          <Box
+            sx={{
+              p: 2,
+              borderTop: "1px solid",
+              borderColor: "divider",
+              bgcolor: alpha(theme.palette.primary.main, 0.05),
+            }}
+          >
+            <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+              Processing Options
+            </Typography>
+
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <FormControl component="fieldset">
+                  <FormLabel component="legend">Processing Mode</FormLabel>
+                  <RadioGroup
+                    value={processingMode}
+                    onChange={handleProcessingModeChange}
+                    row
+                  >
+                    <FormControlLabel
+                      value="automatic"
+                      control={<Radio />}
+                      label="Automatic"
+                    />
+                    <FormControlLabel
+                      value="manual"
+                      control={<Radio />}
+                      label="Manual"
+                    />
+                  </RadioGroup>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth disabled={processingMode !== "manual"}>
+                  <InputLabel id="treatment-select-label">Treatment</InputLabel>
+                  <Select
+                    labelId="treatment-select-label"
+                    id="treatment-select"
+                    value={selectedTreatment}
+                    label="Treatment"
+                    onChange={handleTreatmentChange}
+                    disabled={processingMode !== "manual"}
+                  >
+                    <MenuItem value="">
+                      <em>Select a treatment</em>
+                    </MenuItem>
+                    <MenuItem value="standard_facturation_manuelle">
+                      Standard Facturation Manuelle
+                    </MenuItem>
+                    <MenuItem value="standard_ca_periodique">
+                      Standard CA Periodique
+                    </MenuItem>
+                    <MenuItem value="standard_ca_non_periodique">
+                      Standard CA Non Periodique
+                    </MenuItem>
+                    <MenuItem value="standard_ca_dnt">Standard CA DNT</MenuItem>
+                    <MenuItem value="standard_ca_rfd">Standard CA RFD</MenuItem>
+                    <MenuItem value="standard_ca_cnt">Standard CA CNT</MenuItem>
+                    <MenuItem value="standard_parc_corporate">
+                      Standard Parc Corporate
+                    </MenuItem>
+                    <MenuItem value="standard_creances_ngbss">
+                      Standard Creances NGBSS
+                    </MenuItem>
+                    <MenuItem value="standard_etat_facture">
+                      Standard Etat Facture
+                    </MenuItem>
+                    <MenuItem value="standard_journal_ventes">
+                      Standard Journal Ventes
+                    </MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={true}
+                      onChange={() => {}}
+                      name="removeDuplicates"
+                    />
+                  }
+                  label="Remove duplicates"
+                />
+
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={true}
+                      onChange={() => {}}
+                      name="fillMissingValues"
+                    />
+                  }
+                  label="Fill missing values with zeros"
+                />
+              </Grid>
+            </Grid>
+          </Box>
+        )}
       </Resizable>
     </Dialog>
   );
@@ -833,24 +1113,17 @@ DataPreviewDialog.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   previewData: PropTypes.array,
-  summaryData: PropTypes.object,
-  processingLogs: PropTypes.array,
+  summaryData: PropTypes.shape({
+    detected_file_type: PropTypes.string,
+    detection_confidence: PropTypes.number,
+    row_count: PropTypes.number,
+    column_count: PropTypes.number,
+    valid_rows: PropTypes.number,
+    columns: PropTypes.object,
+  }),
   onProcess: PropTypes.func.isRequired,
   onSave: PropTypes.func.isRequired,
   isProcessing: PropTypes.bool,
   isSaving: PropTypes.bool,
   fileName: PropTypes.string,
 };
-
-// Add validation for detected_file_type to fix linter error
-if (process.env.NODE_ENV !== "production") {
-  DataPreviewDialog.propTypes.summaryData = PropTypes.shape({
-    detected_file_type: PropTypes.string,
-    row_count: PropTypes.number,
-    column_count: PropTypes.number,
-    valid_rows: PropTypes.number,
-    columns: PropTypes.object,
-  });
-}
-
-export default DataPreviewDialog;

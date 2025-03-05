@@ -122,8 +122,10 @@ const FileListTable = ({
           : b.status.localeCompare(a.status);
       case "upload_date":
         return isAsc
-          ? new Date(a.upload_date) - new Date(b.upload_date)
-          : new Date(b.upload_date) - new Date(a.upload_date);
+          ? new Date(a.upload_date).getTime() -
+              new Date(b.upload_date).getTime()
+          : new Date(b.upload_date).getTime() -
+              new Date(a.upload_date).getTime();
       default:
         return 0;
     }
@@ -281,7 +283,13 @@ const FileListTable = ({
               <TableCell>
                 <TableSortLabel
                   active={orderBy === "invoice_number"}
-                  direction={orderBy === "invoice_number" ? order : "asc"}
+                  direction={
+                    orderBy === "invoice_number"
+                      ? order === "asc"
+                        ? "asc"
+                        : "desc"
+                      : "asc"
+                  }
                   onClick={() => handleRequestSort("invoice_number")}
                 >
                   Invoice Number
@@ -292,7 +300,13 @@ const FileListTable = ({
               <TableCell>
                 <TableSortLabel
                   active={orderBy === "upload_date"}
-                  direction={orderBy === "upload_date" ? order : "asc"}
+                  direction={
+                    orderBy === "upload_date"
+                      ? order === "asc"
+                        ? "asc"
+                        : "desc"
+                      : "asc"
+                  }
                   onClick={() => handleRequestSort("upload_date")}
                 >
                   Upload Date
@@ -301,7 +315,13 @@ const FileListTable = ({
               <TableCell>
                 <TableSortLabel
                   active={orderBy === "status"}
-                  direction={orderBy === "status" ? order : "asc"}
+                  direction={
+                    orderBy === "status"
+                      ? order === "asc"
+                        ? "asc"
+                        : "desc"
+                      : "asc"
+                  }
                   onClick={() => handleRequestSort("status")}
                 >
                   Status

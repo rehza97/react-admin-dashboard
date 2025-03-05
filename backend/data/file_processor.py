@@ -5,13 +5,21 @@ import re
 import logging
 import traceback
 from datetime import datetime
-
+import chardet
 logger = logging.getLogger(__name__)
 
 # Load from JSON/YAML config file
 FILE_TYPE_PATTERNS = {
-    "facturation_manuelle": ["facturation manuelle", "facturation_manuelle"],
-    # ...
+    "facturation_manuelle": ["facturation manuelle", "facturation_manuelle", "situation facturation"],
+    "ca_periodique": ["ca periodique", "ca_periodique"],
+    "ca_non_periodique": ["ca non periodique", "ca_non_periodique"],
+    "ca_dnt": ["ca dnt", "ca_dnt"],
+    "ca_rfd": ["ca rfd", "ca_rfd"],
+    "ca_cnt": ["ca cnt", "ca_cnt"],
+    "parc_corporate": ["parc corporate", "parc_corporate"],
+    "creances_ngbss": ["creances ngbss", "creances_ngbss"],
+    "etat_facture": ["etat facture", "etat_facture", "factures ar et encaissements", "etat_de_facture_et_encaissement"],
+    "journal_ventes": ["journal", "ventes", "chiffre d affaire"]
 }
 
 
@@ -28,48 +36,52 @@ class FileTypeDetector:
         file_name_lower = file_name.lower()
 
         # Facturation Manuelle AR
-        if "facturation manuelle" in file_name_lower or "facturation_manuelle" in file_name_lower:
+        if any(pattern in file_name_lower for pattern in FILE_TYPE_PATTERNS["facturation_manuelle"]):
             return "facturation_manuelle", 0.9, "process_facturation_manuelle"
 
         # CA Periodique
-        if "ca periodique" in file_name_lower or "ca_periodique" in file_name_lower:
+        if any(pattern in file_name_lower for pattern in FILE_TYPE_PATTERNS["ca_periodique"]):
             return "ca_periodique", 0.9, "process_ca_periodique"
 
         # CA Non Periodique
-        if "ca non periodique" in file_name_lower or "ca_non_periodique" in file_name_lower:
+        if any(pattern in file_name_lower for pattern in FILE_TYPE_PATTERNS["ca_non_periodique"]):
             return "ca_non_periodique", 0.9, "process_ca_non_periodique"
 
         # CA DNT
-        if "ca dnt" in file_name_lower or "ca_dnt" in file_name_lower:
+        if any(pattern in file_name_lower for pattern in FILE_TYPE_PATTERNS["ca_dnt"]):
             return "ca_dnt", 0.9, "process_ca_dnt"
 
         # CA RFD
-        if "ca rfd" in file_name_lower or "ca_rfd" in file_name_lower:
+        if any(pattern in file_name_lower for pattern in FILE_TYPE_PATTERNS["ca_rfd"]):
             return "ca_rfd", 0.9, "process_ca_rfd"
 
         # CA CNT
-        if "ca cnt" in file_name_lower or "ca_cnt" in file_name_lower:
+        if any(pattern in file_name_lower for pattern in FILE_TYPE_PATTERNS["ca_cnt"]):
             return "ca_cnt", 0.9, "process_ca_cnt"
 
         # Parc Corporate
-        if "parc corporate" in file_name_lower or "parc_corporate" in file_name_lower:
+        if any(pattern in file_name_lower for pattern in FILE_TYPE_PATTERNS["parc_corporate"]):
             return "parc_corporate", 0.9, "process_parc_corporate"
 
         # Creances NGBSS
-        if "creances ngbss" in file_name_lower or "creances_ngbss" in file_name_lower:
+        if any(pattern in file_name_lower for pattern in FILE_TYPE_PATTERNS["creances_ngbss"]):
             return "creances_ngbss", 0.9, "process_creances_ngbss"
 
-        # Etat de facture et encaissement
-        if "etat facture" in file_name_lower or "etat_facture" in file_name_lower:
+        # Etat de facture
+        if any(pattern in file_name_lower for pattern in FILE_TYPE_PATTERNS["etat_facture"]):
             return "etat_facture", 0.9, "process_etat_facture"
+
+        # Journal des ventes
+        if any(pattern in file_name_lower for pattern in FILE_TYPE_PATTERNS["journal_ventes"]):
+            return "journal_ventes", 0.9, "process_journal_ventes"
 
         # If no match by filename, try to analyze content
         try:
             # For Excel files
             if file_path.endswith(('.xlsx', '.xls')):
                 try:
-                    # Try reading with different skiprows values
-                    for skip_rows in [0, 1, 2]:
+                    # Try reading with different skiprows values to handle headers in different positions
+                    for skip_rows in [0, 1, 2, 8, 11]:
                         try:
                             df = pd.read_excel(
                                 file_path, nrows=5, skiprows=skip_rows)
@@ -77,17 +89,32 @@ class FileTypeDetector:
 
                             # Check for Facturation Manuelle patterns
                             facturation_keywords = [
-                                'montant ht', 'montant ttc', 'Dépts', 'depts', 'désignations', 'designations']
+                                'montant ht', 'montant ttc', 'dépts', 'depts', 'désignations', 'designations']
                             facturation_matches = sum(
                                 1 for kw in facturation_keywords if any(kw in col for col in columns))
                             if facturation_matches >= 3:  # If at least 3 keywords match
                                 return "facturation_manuelle", 0.8, "process_facturation_manuelle"
 
                             # Check for CA Periodique patterns
-                            if any("ca ht" in col for col in columns) and any("periode" in col for col in columns):
+                            if any("ht" in col for col in columns) and any("tax" in col for col in columns) and any("ttc" in col for col in columns):
                                 return "ca_periodique", 0.7, "process_ca_periodique"
 
-                            # Add more content-based detection rules here
+                            # Check for Parc Corporate patterns
+                            if any("telecom_type" in col for col in columns) and any("offer_type" in col for col in columns):
+                                return "parc_corporate", 0.8, "process_parc_corporate"
+
+                            # Check for Creances NGBSS patterns
+                            if any("invoice_amt" in col for col in columns) and any("open_amt" in col for col in columns):
+                                return "creances_ngbss", 0.8, "process_creances_ngbss"
+
+                            # Check for Etat de facture patterns
+                            if any("montant ht" in col for col in columns) and any("encaissement" in col for col in columns):
+                                return "etat_facture", 0.8, "process_etat_facture"
+
+                            # Check for Journal des ventes patterns
+                            if any("chiffre aff" in col for col in columns) and any("date gl" in col for col in columns):
+                                return "journal_ventes", 0.8, "process_journal_ventes"
+
                         except Exception as e:
                             logger.debug(
                                 f"Error reading Excel with skiprows={skip_rows}: {str(e)}")
@@ -106,19 +133,29 @@ class FileTypeDetector:
                         if len(df.columns) > 1:  # If we got more than one column, it worked
                             columns = [str(col).lower() for col in df.columns]
 
-                            # Check for Facturation Manuelle patterns
-                            facturation_keywords = [
-                                'montant ht', 'montant ttc', 'Dépts', 'depts', 'désignations', 'designations']
-                            facturation_matches = sum(
-                                1 for kw in facturation_keywords if any(kw in col for col in columns))
-                            if facturation_matches >= 3:  # If at least 3 keywords match
-                                return "facturation_manuelle", 0.7, "process_facturation_manuelle"
+                            # Check for CA DNT patterns
+                            if any("trans_type" in col for col in columns) and any("dnt" in col for col in columns):
+                                return "ca_dnt", 0.8, "process_ca_dnt"
+
+                            # Check for CA RFD patterns
+                            if any("trans_id" in col for col in columns) and any("droit_timbre" in col for col in columns):
+                                return "ca_rfd", 0.8, "process_ca_rfd"
+
+                            # Check for CA CNT patterns
+                            if any("trans_type" in col for col in columns) and any("cnt" in col for col in columns):
+                                return "ca_cnt", 0.8, "process_ca_cnt"
+
+                            # Check for Parc Corporate patterns
+                            if any("telecom_type" in col for col in columns) and any("offer_type" in col for col in columns):
+                                return "parc_corporate", 0.8, "process_parc_corporate"
+
+                            # Check for CA Non Periodique patterns
+                            if any("type_vente" in col for col in columns) and any("channel" in col for col in columns):
+                                return "ca_non_periodique", 0.8, "process_ca_non_periodique"
 
                             # Check for CA Periodique patterns
-                            if any("ca ht" in col for col in columns) and any("periode" in col for col in columns):
-                                return "ca_periodique", 0.7, "process_ca_periodique"
-
-                            # Add more content-based detection rules here
+                            if any("discount" in col for col in columns) and any("ht" in col for col in columns) and any("tax" in col for col in columns):
+                                return "ca_periodique", 0.8, "process_ca_periodique"
 
                             break
                     except Exception as e:
@@ -850,20 +887,59 @@ class FileProcessor:
 
     @staticmethod
     def process_ca_periodique(file_path):
-        """Process CA periodique CSV files"""
+        """
+        Process CA periodique CSV files with robust encoding handling
+
+        Args:
+            file_path (str): Path to the CSV file
+
+        Returns:
+            Tuple of (preview data, summary data)
+        """
+        logger = logging.getLogger(__name__)
+
         try:
-            df = pd.read_csv(file_path, delimiter=';')
+            # List of encodings to try
+            encodings_to_try = [
+                'utf-8',
+                'latin-1',
+                'iso-8859-1',
+                'cp1252'
+            ]
+
+            # Try different encodings
+            for encoding in encodings_to_try:
+                try:
+                    df = pd.read_csv(file_path, delimiter=';',
+                                     encoding=encoding)
+                    logger.info(
+                        f"Successfully read file with {encoding} encoding")
+                    break
+                except (UnicodeDecodeError, pd.errors.ParserError):
+                    continue
+            else:
+                # If no encoding works, try detecting with chardet
+                with open(file_path, 'rb') as file:
+                    raw_data = file.read()
+                    detected_encoding = chardet.detect(raw_data)['encoding']
+                    df = pd.read_csv(file_path, delimiter=';',
+                                     encoding=detected_encoding)
 
             # Clean up column names and values
             df.columns = [col.strip() for col in df.columns]
 
+            # Numeric columns to process
+            numeric_columns = ['HT', 'TAX', 'TTC', 'DISCOUNT']
+
             # Convert numeric columns
-            for col in ['HT', 'TAX', 'TTC', 'DISCOUNT']:
+            for col in numeric_columns:
                 if col in df.columns:
                     # Remove spaces and replace commas with dots
                     df[col] = df[col].astype(str).str.replace(
                         ' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
+                    # Replace NaN with None for JSON serialization
+                    df[col] = df[col].replace({np.nan: None})
 
             # Calculate totals by product
             product_summary = df.groupby('PRODUIT').agg({
@@ -879,19 +955,49 @@ class FileProcessor:
                 'TTC': 'sum'
             }).reset_index()
 
+            # Replace NaN with None in summary dataframes
+            product_summary = product_summary.replace({np.nan: None})
+            do_summary = do_summary.replace({np.nan: None})
+
+            # Generate column information
+            def generate_column_info(dataframe):
+                column_info = []
+                for col in dataframe.columns:
+                    column_info.append({
+                        'name': col,
+                        'dtype': str(dataframe[col].dtype),
+                        'non_null_count': dataframe[col].count(),
+                        'null_count': dataframe[col].isnull().sum()
+                    })
+                return column_info
+
+            # Handle NaN values for JSON serialization
+            def handle_nan_values(data):
+                if isinstance(data, dict):
+                    return {k: handle_nan_values(v) for k, v in data.items()}
+                elif isinstance(data, list):
+                    return [handle_nan_values(item) for item in data]
+                elif isinstance(data, float):
+                    return None if pd.isna(data) else data
+                else:
+                    return data
+
+            # Prepare summary dictionary
             summary = {
                 "row_count": len(df),
                 "column_count": len(df.columns),
-                "total_ht": float(df['HT'].sum()),
-                "total_tax": float(df['TAX'].sum()),
-                "total_ttc": float(df['TTC'].sum()),
-                "product_summary": product_summary.to_dict('records'),
-                "do_summary": do_summary.to_dict('records'),
+                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns and not np.isnan(df['HT'].sum()) else 0.0,
+                "total_tax": float(df['TAX'].sum()) if 'TAX' in df.columns and not np.isnan(df['TAX'].sum()) else 0.0,
+                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns and not np.isnan(df['TTC'].sum()) else 0.0,
+                "do_summary": do_summary.to_dict('records') if do_summary is not None else None,
                 "columns": generate_column_info(df)
             }
 
-            # Return preview data and summary
-            return df.head(10).to_dict('records'), summary
+            # Return preview data and summary with NaN values handled
+            return (
+                handle_nan_values(df.to_dict('records')),
+                summary
+            )
 
         except Exception as e:
             logger.error(f"Error processing CA Periodique: {str(e)}")
@@ -900,6 +1006,7 @@ class FileProcessor:
     @staticmethod
     def process_ca_non_periodique(file_path):
         """Process CA non periodique CSV files"""
+
         try:
             df = pd.read_csv(file_path, delimiter=';')
 
@@ -907,39 +1014,24 @@ class FileProcessor:
             df.columns = [col.strip() for col in df.columns]
 
             # Convert numeric columns
-            for col in ['HT', 'TAX', 'TTC']:
+            for col in ['HT', 'TAX', 'TTC', 'DISCOUNT']:
                 if col in df.columns:
                     # Remove spaces and replace commas with dots
                     df[col] = df[col].astype(str).str.replace(
                         ' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
 
-            # Calculate totals by product and channel
-            product_summary = df.groupby('PRODUIT').agg({
-                'HT': 'sum',
-                'TAX': 'sum',
-                'TTC': 'sum'
-            }).reset_index()
-
-            channel_summary = df.groupby('CHANNEL').agg({
-                'HT': 'sum',
-                'TAX': 'sum',
-                'TTC': 'sum'
-            }).reset_index() if 'CHANNEL' in df.columns else None
-
             summary = {
                 "row_count": len(df),
                 "column_count": len(df.columns),
-                "total_ht": float(df['HT'].sum()),
-                "total_tax": float(df['TAX'].sum()),
-                "total_ttc": float(df['TTC'].sum()),
-                "product_summary": product_summary.to_dict('records'),
-                "channel_summary": channel_summary.to_dict('records') if channel_summary is not None else None,
+                "total_ht": float(df['HT'].sum()) if not np.isnan(df['HT'].sum()) else 0.0,
+                "total_tax": float(df['TAX'].sum()) if not np.isnan(df['TAX'].sum()) else 0.0,
+                "total_ttc": float(df['TTC'].sum()) if not np.isnan(df['TTC'].sum()) else 0.0,
                 "columns": generate_column_info(df)
             }
 
-            # Return preview data and summary
-            return df.head(10).to_dict('records'), summary
+            # Return preview data and summary with NaN values handled
+            return handle_nan_values(df.to_dict('records')), summary
 
         except Exception as e:
             logger.error(f"Error processing CA Non Periodique: {str(e)}")
@@ -962,25 +1054,32 @@ class FileProcessor:
                         ' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
 
-            # Calculate totals by DO
-            do_summary = df.groupby('DO').agg({
-                'TTC': 'sum',
+            # Calculate totals by product
+            product_summary = df.groupby('PRODUIT').agg({
+                'HT': 'sum',
                 'TVA': 'sum',
-                'HT': 'sum'
-            }).reset_index() if 'DO' in df.columns else None
+                'TTC': 'sum'
+            }).reset_index() if all(col in df.columns for col in ['PRODUIT', 'HT', 'TVA', 'TTC']) else None
+
+            # Calculate totals by DO (Direction Opérationnelle)
+            do_summary = df.groupby('DO').agg({
+                'HT': 'sum',
+                'TVA': 'sum',
+                'TTC': 'sum'
+            }).reset_index() if all(col in df.columns for col in ['DO', 'HT', 'TVA', 'TTC']) else None
 
             summary = {
                 "row_count": len(df),
                 "column_count": len(df.columns),
-                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns else 0,
-                "total_tva": float(df['TVA'].sum()) if 'TVA' in df.columns else 0,
-                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns else 0,
+                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns and not np.isnan(df['HT'].sum()) else 0.0,
+                "total_tax": float(df['TVA'].sum()) if 'TVA' in df.columns and not np.isnan(df['TVA'].sum()) else 0.0,
+                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns and not np.isnan(df['TTC'].sum()) else 0.0,
                 "do_summary": do_summary.to_dict('records') if do_summary is not None else None,
                 "columns": generate_column_info(df)
             }
 
-            # Return preview data and summary
-            return df.head(10).to_dict('records'), summary
+            # Return preview data and summary with NaN values handled
+            return handle_nan_values(df.to_dict('records')), summary
 
         except Exception as e:
             logger.error(f"Error processing CA DNT: {str(e)}")
@@ -1023,7 +1122,7 @@ class FileProcessor:
             }
 
             # Return preview data and summary
-            return df.head(10).to_dict('records'), summary
+            return df.to_dict('records'), summary
 
         except Exception as e:
             logger.error(f"Error processing CA RFD: {str(e)}")
@@ -1064,7 +1163,7 @@ class FileProcessor:
             }
 
             # Return preview data and summary
-            return df.head(10).to_dict('records'), summary
+            return df.to_dict('records'), summary
 
         except Exception as e:
             logger.error(f"Error processing CA CNT: {str(e)}")
@@ -1101,7 +1200,7 @@ class FileProcessor:
             }
 
             # Return preview data and summary
-            return df.head(10).to_dict('records'), summary
+            return df.to_dict('records'), summary
 
         except Exception as e:
             logger.error(f"Error processing Parc Corporate: {str(e)}")
@@ -1111,109 +1210,345 @@ class FileProcessor:
     def process_creances_ngbss(file_path):
         """Process Créances NGBSS CSV files"""
         try:
+            # Read the CSV file with semicolon delimiter
             df = pd.read_csv(file_path, delimiter=';')
 
-            # Clean up column names
-            df.columns = [col.strip() for col in df.columns]
+            # Clean up column names - strip spaces and store original mapping
+            original_columns = df.columns.tolist()
+            cleaned_columns = [col.strip() for col in original_columns]
+            column_mapping = dict(zip(original_columns, cleaned_columns))
 
-            # Convert numeric columns - these have spaces in them
-            numeric_cols = [' INVOICE_AMT ', ' OPEN_AMT ', ' TAX_AMT ', ' INVOICE_AMT_HT ',
-                            ' DISPUTE_AMT ', ' DISPUTE_TAX_AMT ', ' DISPUTE_NET_AMT ',
-                            ' CREANCE_BRUT ', ' CREANCE_NET ', ' CREANCE_HT ']
+            # Rename columns to cleaned versions
+            df.columns = cleaned_columns
 
-            for col in numeric_cols:
-                if col in df.columns:
-                    # Remove spaces and replace commas with dots
+            # List of expected numeric columns (without extra spaces)
+            expected_numeric_cols = [
+                'INVOICE_AMT', 'OPEN_AMT', 'TAX_AMT', 'INVOICE_AMT_HT',
+                'DISPUTE_AMT', 'DISPUTE_TAX_AMT', 'DISPUTE_NET_AMT',
+                'CREANCE_BRUT', 'CREANCE_NET', 'CREANCE_HT'
+            ]
+
+            # Convert numeric columns - handle any column that contains these names
+            for col in df.columns:
+                # Check if this column is one of our numeric columns (after stripping spaces)
+                col_clean = col.strip()
+                if col_clean in expected_numeric_cols:
+                    # Remove spaces and replace commas with dots in the data
                     df[col] = df[col].astype(str).str.replace(
                         ' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
+                    # Replace NaN with None for JSON serialization
+                    df[col] = df[col].replace({np.nan: None})
 
             # Calculate totals by DOT
-            dot_summary = df.groupby('DOT').agg({
-                ' INVOICE_AMT ': 'sum',
-                ' OPEN_AMT ': 'sum',
-                ' CREANCE_NET ': 'sum'
-            }).reset_index() if 'DOT' in df.columns else None
+            if 'DOT' in df.columns:
+                # Determine which columns exist for aggregation
+                agg_cols = {}
+                for col in ['INVOICE_AMT', 'OPEN_AMT', 'CREANCE_NET']:
+                    if col in df.columns:
+                        agg_cols[col] = 'sum'
+
+                dot_summary = df.groupby('DOT').agg(
+                    agg_cols).reset_index() if agg_cols else None
+            else:
+                dot_summary = None
 
             # Calculate totals by product
-            product_summary = df.groupby('PRODUIT').agg({
-                ' INVOICE_AMT ': 'sum',
-                ' OPEN_AMT ': 'sum',
-                ' CREANCE_NET ': 'sum'
-            }).reset_index() if 'PRODUIT' in df.columns else None
+            if 'PRODUIT' in df.columns:
+                # Determine which columns exist for aggregation
+                agg_cols = {}
+                for col in ['INVOICE_AMT', 'OPEN_AMT', 'CREANCE_NET']:
+                    if col in df.columns:
+                        agg_cols[col] = 'sum'
 
+                product_summary = df.groupby('PRODUIT').agg(
+                    agg_cols).reset_index() if agg_cols else None
+            else:
+                product_summary = None
+
+            # Create summary with safe column access
             summary = {
                 "row_count": len(df),
                 "column_count": len(df.columns),
-                "total_invoice_amt": float(df[' INVOICE_AMT '].sum()) if ' INVOICE_AMT ' in df.columns else 0,
-                "total_open_amt": float(df[' OPEN_AMT '].sum()) if ' OPEN_AMT ' in df.columns else 0,
-                "total_creance_net": float(df[' CREANCE_NET '].sum()) if ' CREANCE_NET ' in df.columns else 0,
-                "dot_summary": dot_summary.to_dict('records') if dot_summary is not None else None,
-                "product_summary": product_summary.to_dict('records') if product_summary is not None else None,
-                "columns": generate_column_info(df)
             }
 
-            # Return preview data and summary
-            return df.head(10).to_dict('records'), summary
+            # Add totals if columns exist
+            for col in ['INVOICE_AMT', 'OPEN_AMT', 'CREANCE_NET']:
+                if col in df.columns:
+                    total_key = f"total_{col.lower()}"
+                    summary[total_key] = float(
+                        df[col].sum()) if not np.isnan(df[col].sum()) else 0.0
+
+            # Add summaries if they exist
+            if dot_summary is not None:
+                summary["dot_summary"] = handle_nan_values(
+                    dot_summary.to_dict('records'))
+            if product_summary is not None:
+                summary["product_summary"] = handle_nan_values(
+                    product_summary.to_dict('records'))
+
+            # Add column info
+            summary["columns"] = generate_column_info(df)
+
+            # Return preview data and summary with NaN values handled
+            return handle_nan_values(df.to_dict('records')), summary
 
         except Exception as e:
             logger.error(f"Error processing Créances NGBSS: {str(e)}")
-            return {"error": str(e)}, {"error": str(e)}
+            sample_data = {"error": str(e)}
+            summary_data = {"error": str(e)}
+            return sample_data, summary_data
 
     @staticmethod
     def process_etat_facture(file_path):
         """Process Etat de facture et encaissement Excel files"""
         try:
             # Skip the header rows
-            df = pd.read_excel(file_path, skiprows=7)
+            df = pd.read_excel(file_path, skiprows=11, engine='openpyxl')
 
             # Clean up column names
             df.columns = [col.strip() for col in df.columns]
 
-            # Convert numeric columns
-            numeric_cols = [' Montant Ht ', ' Montant Taxe ', ' Montant Ttc ',
-                            ' Chiffre Aff Exe ', ' Encaissement ', ' Facture Avoir / Annulation ']
+            # Define the expected column names
+            expected_numeric_cols = [
+                'Montant Ht', 'Montant Taxe', 'Montant Ttc',
+                'Chiffre Aff Exe', 'Encaissement', 'Facture Avoir / Annulation'
+            ]
 
+            # Map to actual column names (with or without spaces)
+            numeric_cols = []
+            for col in df.columns:
+                col_stripped = col.strip()
+                for expected_col in expected_numeric_cols:
+                    if expected_col in col_stripped:
+                        numeric_cols.append(col)
+                        break
+
+            # Convert numeric columns
             for col in numeric_cols:
                 if col in df.columns:
-                    # Remove spaces and replace commas with dots
-                    df[col] = df[col].astype(str).str.replace(
-                        ' ', '').str.replace(',', '.')
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                    try:
+                        # Handle different formats of numbers
+                        df[col] = df[col].astype(str).str.replace(
+                            ' ', '').str.replace(',', '.')
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                    except Exception as e:
+                        logger.warning(
+                            f"Error converting column {col}: {str(e)}")
+                        # If conversion fails, set to NaN
+                        df[col] = pd.NA
 
             # Calculate totals by organization
-            org_summary = df.groupby('Organisation').agg({
-                ' Montant Ht ': 'sum',
-                ' Montant Taxe ': 'sum',
-                ' Montant Ttc ': 'sum',
-                ' Encaissement ': 'sum'
-            }).reset_index() if 'Organisation' in df.columns else None
+            org_summary = None
+            if 'Organisation' in df.columns:
+                try:
+                    # Use only numeric columns that exist
+                    agg_cols = {}
+                    for col in numeric_cols:
+                        if col in df.columns:
+                            agg_cols[col] = 'sum'
+
+                    if agg_cols:
+                        org_summary = df.groupby('Organisation').agg(
+                            agg_cols).reset_index()
+                except Exception as e:
+                    logger.warning(
+                        f"Error calculating organization summary: {str(e)}")
 
             # Calculate totals by type
-            type_summary = df.groupby('Type').agg({
-                ' Montant Ht ': 'sum',
-                ' Montant Taxe ': 'sum',
-                ' Montant Ttc ': 'sum'
-            }).reset_index() if 'Type' in df.columns else None
+            type_summary = None
+            if 'Typ Fact' in df.columns:
+                try:
+                    # Use only numeric columns that exist
+                    agg_cols = {}
+                    for col in numeric_cols:
+                        if col in df.columns:
+                            agg_cols[col] = 'sum'
 
+                        if agg_cols:
+                            type_summary = df.groupby('Typ Fact').agg(
+                                agg_cols).reset_index()
+                except Exception as e:
+                    logger.warning(f"Error calculating type summary: {str(e)}")
+
+            # Create summary with safe calculations
             summary = {
                 "row_count": len(df),
                 "column_count": len(df.columns),
-                "total_ht": float(df[' Montant Ht '].sum()),
-                "total_tax": float(df[' Montant Taxe '].sum()),
-                "total_ttc": float(df[' Montant Ttc '].sum()),
-                "encaissement": float(df[' Encaissement '].sum()),
-                "org_summary": org_summary.to_dict('records') if org_summary is not None else None,
-                "type_summary": type_summary.to_dict('records') if type_summary is not None else None,
                 "columns": generate_column_info(df)
             }
 
-            # Return preview data and summary
-            return df.head(10).to_dict('records'), summary
+            # Add totals only for columns that exist
+            for col in numeric_cols:
+                if col in df.columns:
+                    try:
+                        col_key = col.strip().lower().replace(' ', '_')
+                        summary[f"total_{col_key}"] = float(df[col].sum())
+                    except Exception as e:
+                        logger.warning(
+                            f"Error calculating sum for {col}: {str(e)}")
+
+            # Add summaries if they exist
+            if org_summary is not None:
+                summary["org_summary"] = org_summary.to_dict('records')
+            if type_summary is not None:
+                summary["type_summary"] = type_summary.to_dict('records')
+
+            # Return preview data and summary with NaN values handled
+            return handle_nan_values(df.to_dict('records')), summary
 
         except Exception as e:
             logger.error(
                 f"Error processing Etat de facture et encaissement: {str(e)}")
+            return {"error": str(e)}, {"error": str(e)}
+
+    @staticmethod
+    def process_journal_ventes(file_path):
+        """Process Journal des Ventes (Sales Journal) Excel files"""
+        try:
+            # Try to read the Excel file with different skiprows values to find the header
+            df = None
+            used_skiprows = 0
+
+            # Try different skiprows values to find the header row
+            for skip_rows in [0, 1, 2, 5, 8, ]:
+                try:
+                    temp_df = pd.read_excel(
+                        file_path, skiprows=skip_rows, engine='openpyxl')
+                    # Check if we found the expected columns
+                    columns = [str(col).lower() for col in temp_df.columns]
+                    if any("org name" in col for col in columns) or any("origine" in col for col in columns) or any("n fact" in col for col in columns):
+                        df = temp_df
+                        used_skiprows = skip_rows
+                        logger.info(
+                            f"Found header row at skiprows={skip_rows}")
+                        break
+                except Exception as e:
+                    logger.debug(
+                        f"Error reading Excel with skiprows={skip_rows}: {str(e)}")
+                    continue
+
+            # If we couldn't find the header, use the default
+            if df is None:
+                logger.warning(
+                    "Could not find header row, using default skiprows=0")
+                df = pd.read_excel(file_path, engine='openpyxl')
+                used_skiprows = 0
+
+            # Clean up column names
+            df.columns = [str(col).strip() for col in df.columns]
+
+            # Map columns to standardized names
+            column_map = {}
+            for col in df.columns:
+                col_lower = str(col).lower()
+                if any(keyword in col_lower for keyword in ["org name", "organisation"]):
+                    column_map["organization"] = col
+                elif any(keyword in col_lower for keyword in ["origine", "origin"]):
+                    column_map["origin"] = col
+                elif any(keyword in col_lower for keyword in ["n fact", "n° fact", "invoice number"]):
+                    column_map["invoice_number"] = col
+                elif any(keyword in col_lower for keyword in ["typ fact", "type fact", "invoice type"]):
+                    column_map["invoice_type"] = col
+                elif any(keyword in col_lower for keyword in ["date fact", "invoice date"]):
+                    column_map["invoice_date"] = col
+                elif any(keyword in col_lower for keyword in ["client", "customer"]):
+                    column_map["client"] = col
+                elif any(keyword in col_lower for keyword in ["devise", "currency"]):
+                    column_map["currency"] = col
+                elif any(keyword in col_lower for keyword in ["obj fact", "object", "invoice object"]):
+                    column_map["invoice_object"] = col
+                elif any(keyword in col_lower for keyword in ["cpt comptable", "account code"]):
+                    column_map["account_code"] = col
+                elif any(keyword in col_lower for keyword in ["date gl", "gl date"]):
+                    column_map["gl_date"] = col
+                elif any(keyword in col_lower for keyword in ["periode de facturation", "billing period"]):
+                    column_map["billing_period"] = col
+                elif any(keyword in col_lower for keyword in ["reference", "ref"]):
+                    column_map["reference"] = col
+                elif any(keyword in col_lower for keyword in ["termine flag", "terminated flag"]):
+                    column_map["terminated_flag"] = col
+                elif any(keyword in col_lower for keyword in ["description", "ligne de produit"]):
+                    column_map["description"] = col
+                elif any(keyword in col_lower for keyword in ["chiffre aff exe", "revenue amount", "chiffre d'affaire", "chiffre aff exe dzd"]):
+                    column_map["revenue_amount"] = col
+
+            # Process the data
+            processed_data = []
+            org_summary = {}
+
+            for _, row in df.iterrows():
+                item = {}
+
+                # Extract data using the column mapping
+                for target_field, source_col in column_map.items():
+                    try:
+                        value = row[source_col]
+
+                        # Handle different field types
+                        if target_field == "revenue_amount":
+                            if pd.isna(value):
+                                value = 0.0
+                            elif isinstance(value, (int, float)):
+                                value = float(value)
+                            elif isinstance(value, str):
+                                # Clean the string and convert to float
+                                clean_str = value.replace(
+                                    ',', '.').replace(' ', '')
+
+                                # Handle parentheses for negative values
+                                if clean_str.startswith('(') and clean_str.endswith(')'):
+                                    clean_str = '-' + clean_str[1:-1]
+
+                                try:
+                                    value = float(clean_str)
+                                except ValueError:
+                                    value = 0.0
+
+                        item[target_field] = value
+
+                        # Track organization summary
+                        if target_field == "organization":
+                            org = value
+                        elif target_field == "revenue_amount":
+                            if org not in org_summary:
+                                org_summary[org] = 0
+                            org_summary[org] += value
+
+                    except Exception as e:
+                        logger.debug(
+                            f"Error processing field {target_field}: {str(e)}")
+
+                # Only add non-empty items
+                if item:
+                    processed_data.append(item)
+
+            # Create summary data
+            summary_data = {
+                "row_count": len(processed_data),
+                "column_count": len(df.columns),
+                "columns": [{"name": str(col), "type": str(df[col].dtype)} for col in df.columns],
+                "detected_file_type": "journal_ventes",
+                "detection_confidence": 0.9,
+                "total_revenue": sum(item.get("revenue_amount", 0.0) for item in processed_data),
+                "organization_summary": [
+                    {"organization": org, "revenue_amount": amount}
+                    for org, amount in org_summary.items()
+                ],
+                "debug_info": {
+                    "original_columns": df.columns.tolist(),
+                    "column_mapping": column_map,
+                    "skiprows_used": used_skiprows,
+                    "file_path": file_path
+                }
+            }
+
+            # Return preview data and summary
+            return processed_data, summary_data
+
+        except Exception as e:
+            logger.error(f"Error processing Journal des Ventes: {str(e)}")
+            logger.error(traceback.format_exc())
             return {"error": str(e)}, {"error": str(e)}
 
     @staticmethod
@@ -1258,23 +1593,21 @@ class FileProcessor:
                     except:
                         continue
                 else:
-                    return {"error": "Could not determine CSV delimiter"}, {"error": "Could not determine CSV delimiter"}
-            else:
-                return {"error": "Unsupported file format"}, {"error": "Unsupported file format"}
+                    return {"error": "Unsupported file format"}, {"error": "Unsupported file format"}
 
-            # Basic summary
-            summary = {
-                "row_count": len(df),
-                "column_count": len(df.columns),
-                "columns": generate_column_info(df),
-                "debug_info": {
-                    "original_columns": df.columns.tolist(),
-                    "file_path": file_path
+                # Basic summary
+                summary = {
+                    "row_count": len(df),
+                    "column_count": len(df.columns),
+                    "columns": generate_column_info(df),
+                    "debug_info": {
+                        "original_columns": df.columns.tolist(),
+                        "file_path": file_path
+                    }
                 }
-            }
 
-            # Return preview data and summary
-            return df.head(10).to_dict('records'), summary
+                # Return preview data and summary
+                return df.to_dict('records'), summary
 
         except Exception as e:
             logger.error(f"Error in process_generic: {str(e)}")
@@ -1286,54 +1619,17 @@ class FileProcessor:
         if not processed_data:
             return False, "No data was processed"
 
-        # Priority fields (green columns)
-        priority_fields = ['department', 'amount_pre_tax', 'total_amount']
-
-        # Check if we have at least some data with required fields
         valid_items = []
         for item in processed_data:
-            # Check if all required fields have values
-            is_valid = True
-            missing_fields = []
-            missing_priority_fields = []
-
-            for field in required_fields:
-                if field not in item or not item[field]:
-                    is_valid = False
-                    missing_fields.append(field)
-                    if field in priority_fields:
-                        missing_priority_fields.append(field)
-
-            # Special case: If we're missing amount_pre_tax but have total_amount, estimate amount_pre_tax
-            if 'amount_pre_tax' in missing_fields and 'total_amount' in item and item['total_amount']:
-                # Estimate pre-tax amount (assuming standard VAT rate of 20%)
-                item['amount_pre_tax'] = round(item['total_amount'] / 1.2, 2)
-                logger.info(
-                    f"Validation: Estimated amount_pre_tax from total_amount: {item['amount_pre_tax']}")
-
-                # Remove amount_pre_tax from missing fields
-                missing_fields.remove('amount_pre_tax')
-                if 'amount_pre_tax' in missing_priority_fields:
-                    missing_priority_fields.remove('amount_pre_tax')
-
-                # Reconsider validity
-                if not missing_fields:
-                    is_valid = True
-
-            # If we're only missing non-priority fields, consider it valid
-            if not is_valid and not missing_priority_fields:
-                logger.info(
-                    f"Item missing only non-priority fields: {missing_fields}, considering valid")
-                is_valid = True
-
+            is_valid = all(field in item and item[field]
+                           for field in required_fields)
             if is_valid:
                 valid_items.append(item)
             else:
-                logger.warning(
-                    f"Item missing required fields: {missing_fields}, including priority fields: {missing_priority_fields}")
+                logger.warning(f"Missing fields in item: {item}")
 
-        if not valid_items:
-            return False, f"No items with all required fields: {required_fields}"
+                if not valid_items:
+                    return False, f"No items with all required fields: {required_fields}"
 
         return True, valid_items
 

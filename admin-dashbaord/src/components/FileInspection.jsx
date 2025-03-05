@@ -13,6 +13,9 @@ import {
   CircularProgress,
   Alert,
   Dialog,
+  LinearProgress,
+  useTheme,
+  alpha,
 } from "@mui/material";
 import PropTypes from "prop-types";
 
@@ -23,6 +26,8 @@ const FileInspection = ({
   targetColumns,
   onClose,
 }) => {
+  const theme = useTheme();
+
   if (isLoading) {
     return (
       <Box
@@ -57,7 +62,34 @@ const FileInspection = ({
     );
   }
 
-  const { row_count, column_count, columns, header_row } = fileInspection;
+  const {
+    row_count,
+    column_count,
+    columns,
+    header_row,
+    file_type,
+    detection_confidence,
+  } = fileInspection;
+
+  // Get file type display name
+  const getFileTypeDisplayName = (type) => {
+    const typeMap = {
+      ca_periodique: "CA Periodique",
+      ca_non_periodique: "CA Non Periodique",
+      ca_dnt: "CA DNT",
+      ca_rfd: "CA RFD",
+      ca_cnt: "CA CNT",
+      facturation_manuelle: "Facturation Manuelle",
+      parc_corporate: "Parc Corporate",
+      creances_ngbss: "Créances NGBSS",
+      etat_facture: "État de Facture",
+      journal_ventes: "Journal des Ventes",
+      invoice: "Invoice Data",
+      general: "General Data",
+      unknown: "Unknown Data Type",
+    };
+    return typeMap[type] || type || "Unknown";
+  };
 
   // Filter columns based on target columns if provided
   const displayColumns = targetColumns
@@ -104,6 +136,54 @@ const FileInspection = ({
             >
               <Typography variant="body2">Header Row</Typography>
               <Typography variant="h5">{header_row}</Typography>
+            </Paper>
+          )}
+          {file_type && (
+            <Paper
+              sx={{
+                p: 2,
+                bgcolor: "success.light",
+                color: "success.contrastText",
+                borderRadius: 1,
+                minWidth: 200,
+              }}
+            >
+              <Typography variant="body2">Detected File Type</Typography>
+              <Typography variant="h5">
+                {getFileTypeDisplayName(file_type)}
+              </Typography>
+              {detection_confidence > 0 && (
+                <Box sx={{ mt: 1, display: "flex", alignItems: "center" }}>
+                  <Typography variant="caption" sx={{ mr: 1 }}>
+                    Confidence:
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={detection_confidence * 100}
+                    sx={{
+                      flexGrow: 1,
+                      height: 4,
+                      borderRadius: 2,
+                      bgcolor: alpha(theme.palette.grey[300], 0.5),
+                      "& .MuiLinearProgress-bar": {
+                        bgcolor:
+                          detection_confidence > 0.7
+                            ? "success.dark"
+                            : detection_confidence > 0.4
+                            ? "warning.dark"
+                            : "error.dark",
+                        borderRadius: 2,
+                      },
+                    }}
+                  />
+                  <Typography
+                    variant="caption"
+                    sx={{ ml: 1, fontWeight: "bold" }}
+                  >
+                    {Math.round(detection_confidence * 100)}%
+                  </Typography>
+                </Box>
+              )}
             </Paper>
           )}
         </Box>

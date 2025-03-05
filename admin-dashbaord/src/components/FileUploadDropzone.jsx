@@ -1,116 +1,225 @@
-import React from "react";
-import { Box, Typography, Button, Alert } from "@mui/material";
+import React, { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
-import { alpha, useTheme } from "@mui/material/styles";
-import { Upload as UploadIcon } from "@mui/icons-material";
+import {
+  Box,
+  Typography,
+  Button,
+  TextField,
+  Paper,
+  CircularProgress,
+  Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+} from "@mui/material";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import PropTypes from "prop-types";
+import fileService from "../services/fileService";
 
-const FileUploadDropzone = ({
-  onDrop,
-  files,
-  isUploading,
-  errorMessages,
-  validateFile,
-}) => {
-  const theme = useTheme();
+const FileUploadDropzone = ({ onUploadSuccess, onUploadError }) => {
+  const [file, setFile] = useState(null);
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState(null);
+  const [fileTypes, setFileTypes] = useState([]);
+  const [selectedFileType, setSelectedFileType] = useState("");
 
-  // Define a wrapper for onDrop to ensure proper handling
-  const handleOnDrop = (acceptedFiles) => {
-    console.log("FileUploadDropzone received files:", acceptedFiles);
-    // Call the parent onDrop function
-    onDrop(acceptedFiles);
+  // Fetch available file types when component mounts
+  useEffect(() => {
+    const fetchFileTypes = async () => {
+      try {
+        const types = await fileService.getFileTypes();
+        setFileTypes(types);
+      } catch (error) {
+        console.error("Error fetching file types:", error);
+      }
+    };
+
+    fetchFileTypes();
+  }, []);
+
+  const onDrop = useCallback((acceptedFiles) => {
+    if (acceptedFiles.length > 0) {
+      setFile(acceptedFiles[0]);
+      setError(null);
+    }
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      "text/csv": [".csv"],
+      "application/vnd.ms-excel": [".xls"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [
+        ".xlsx",
+      ],
+    },
+    maxFiles: 1,
+  });
+
+  const handleUpload = async () => {
+    if (!file) {
+      setError("Please select a file to upload");
+      return;
+    }
+
+    if (!invoiceNumber.trim()) {
+      setError("Please enter an invoice number");
+      return;
+    }
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      // Use fileService to upload the file
+      const response = await fileService.uploadFile(
+        file,
+        invoiceNumber,
+        selectedFileType
+      );
+
+      // Clear form after successful upload
+      setFile(null);
+      setInvoiceNumber("");
+      setSelectedFileType("");
+
+      // Notify parent component
+      if (onUploadSuccess) {
+        onUploadSuccess(response);
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      setError(error.message || "Failed to upload file");
+
+      if (onUploadError) {
+        onUploadError(error);
+      }
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const { getRootProps, getInputProps, isDragActive, fileRejections } =
-    useDropzone({
-      onDrop: handleOnDrop,
-      accept: {
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [
-          ".xlsx",
-        ],
-        "application/vnd.ms-excel": [".xls"],
-        "text/csv": [".csv"],
-        "application/csv": [".csv"],
-        "text/plain": [".csv"], // Some CSV files might be detected as text/plain
-      },
-      multiple: true,
-    });
-
   return (
-    <Box
+    <Paper
+      elevation={3}
       sx={{
         p: 3,
         mb: 3,
-        border: `2px dashed ${
-          isDragActive ? theme.palette.primary.main : theme.palette.divider
-        }`,
         borderRadius: 2,
-        bgcolor: isDragActive
-          ? alpha(theme.palette.primary.main, 0.05)
-          : "background.paper",
-        textAlign: "center",
-        cursor: "pointer",
-        transition: "all 0.2s ease-in-out",
-        "&:hover": {
-          bgcolor: alpha(theme.palette.primary.main, 0.05),
-          borderColor: theme.palette.primary.main,
-        },
+        backgroundColor: "background.paper",
       }}
-      {...getRootProps()}
     >
-      <input {...getInputProps()} />
-      <UploadIcon sx={{ fontSize: 48, color: "primary.main", mb: 2 }} />
       <Typography variant="h6" gutterBottom>
-        {isDragActive ? "Drop the files here..." : "Drag & drop files here"}
-      </Typography>
-      <Typography variant="body2" color="text.secondary" gutterBottom>
-        or
-      </Typography>
-      <Button variant="outlined" color="primary" sx={{ mt: 1 }}>
-        Browse Files
-      </Button>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-        Supported formats: .xlsx, .xls, .csv
+        Upload File
       </Typography>
 
-      {files.length > 0 && (
-        <Typography variant="body2" sx={{ mt: 2 }}>
-          {files.length} file{files.length !== 1 ? "s" : ""} selected
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      <Box
+        {...getRootProps()}
+        sx={{
+          border: "2px dashed",
+          borderColor: isDragActive ? "primary.main" : "grey.400",
+          borderRadius: 2,
+          p: 3,
+          mb: 2,
+          textAlign: "center",
+          cursor: "pointer",
+          backgroundColor: isDragActive ? "rgba(0, 0, 0, 0.05)" : "transparent",
+          transition: "all 0.2s ease",
+          "&:hover": {
+            borderColor: "primary.main",
+            backgroundColor: "rgba(0, 0, 0, 0.05)",
+          },
+        }}
+      >
+        <input {...getInputProps()} />
+        <CloudUploadIcon sx={{ fontSize: 48, color: "primary.main", mb: 1 }} />
+        {isDragActive ? (
+          <Typography>Drop the file here...</Typography>
+        ) : (
+          <Typography>
+            Drag and drop a file here, or click to select a file
+          </Typography>
+        )}
+        <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+          Supported formats: CSV, XLS, XLSX
         </Typography>
+      </Box>
+
+      {file && (
+        <Box
+          sx={{
+            p: 2,
+            mb: 2,
+            backgroundColor: "rgba(0, 0, 0, 0.03)",
+            borderRadius: 1,
+          }}
+        >
+          <Typography variant="subtitle2">Selected File:</Typography>
+          <Typography variant="body2">{file.name}</Typography>
+          <Typography variant="body2" color="textSecondary">
+            {(file.size / 1024).toFixed(2)} KB
+          </Typography>
+        </Box>
       )}
 
-      {/* Display file rejection errors */}
-      {fileRejections.length > 0 && (
-        <Alert severity="error" sx={{ mt: 2, textAlign: "left" }}>
-          {fileRejections.map(({ file, errors }) => (
-            <div key={file.path}>
-              <strong>{file.path}</strong> -{" "}
-              {errors.map((e) => e.message).join(", ")}
-            </div>
+      <TextField
+        fullWidth
+        label="Invoice Number"
+        variant="outlined"
+        value={invoiceNumber}
+        onChange={(e) => setInvoiceNumber(e.target.value)}
+        sx={{ mb: 2 }}
+        disabled={uploading}
+      />
+
+      <FormControl fullWidth sx={{ mb: 2 }}>
+        <InputLabel id="file-type-select-label">
+          File Type (Optional)
+        </InputLabel>
+        <Select
+          labelId="file-type-select-label"
+          id="file-type-select"
+          value={selectedFileType}
+          label="File Type (Optional)"
+          onChange={(e) => setSelectedFileType(e.target.value)}
+          disabled={uploading}
+        >
+          <MenuItem value="">
+            <em>Auto-detect</em>
+          </MenuItem>
+          {fileTypes.map((type) => (
+            <MenuItem key={type.id} value={type.id}>
+              {type.name}
+            </MenuItem>
           ))}
-        </Alert>
-      )}
+        </Select>
+      </FormControl>
 
-      {/* Display upload errors */}
-      {errorMessages && Object.values(errorMessages).some((msg) => msg) && (
-        <Alert severity="error" sx={{ mt: 2, textAlign: "left" }}>
-          {Object.values(errorMessages)
-            .filter((msg) => msg)
-            .map((msg, index) => (
-              <div key={index}>{msg}</div>
-            ))}
-        </Alert>
-      )}
-    </Box>
+      <Button
+        variant="contained"
+        color="primary"
+        onClick={handleUpload}
+        disabled={!file || uploading}
+        startIcon={uploading ? <CircularProgress size={20} /> : null}
+        fullWidth
+      >
+        {uploading ? "Uploading..." : "Upload"}
+      </Button>
+    </Paper>
   );
 };
 
 FileUploadDropzone.propTypes = {
-  onDrop: PropTypes.func.isRequired,
-  files: PropTypes.array.isRequired,
-  isUploading: PropTypes.bool,
-  errorMessages: PropTypes.object,
-  validateFile: PropTypes.func,
+  onUploadSuccess: PropTypes.func,
+  onUploadError: PropTypes.func,
 };
 
 export default FileUploadDropzone;

@@ -1,18 +1,28 @@
 import api from "./api";
 
 const fileService = {
-  uploadFile: async (file, invoiceNumber) => {
+  uploadFile: async (file, invoiceNumber, fileType = "") => {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("invoice_number", invoiceNumber);
     formData.append("file_name", file.name);
 
-    const response = await api.post("/data/upload-facturation/", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
-    return response.data;
+    // Add file type if provided
+    if (fileType) {
+      formData.append("file_type", fileType);
+    }
+
+    try {
+      const response = await api.post("/data/upload-facturation/", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      throw error;
+    }
   },
 
   getUploadedFiles: async () => {
@@ -146,6 +156,144 @@ const fileService = {
       return response.data;
     } catch (error) {
       console.error(`Error saving file with ID ${id} to database:`, error);
+      throw error;
+    }
+  },
+
+  // New methods for file type listing and specific model data retrieval
+  getFileTypes: async () => {
+    try {
+      const response = await api.get("/data/file-types/");
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching file types:", error);
+      throw error;
+    }
+  },
+
+  // Methods for retrieving specific model data
+  getFacturationManuelle: async (params = {}) => {
+    try {
+      const response = await api.get("/data/facturation-manuelle/", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching Facturation Manuelle data:", error);
+      throw error;
+    }
+  },
+
+  getJournalVentes: async (params = {}) => {
+    try {
+      const response = await api.get("/data/journal-ventes/", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching Journal Ventes data:", error);
+      throw error;
+    }
+  },
+
+  getEtatFacture: async (params = {}) => {
+    try {
+      const response = await api.get("/data/etat-facture/", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching Etat Facture data:", error);
+      throw error;
+    }
+  },
+
+  getParcCorporate: async (params = {}) => {
+    try {
+      const response = await api.get("/data/parc-corporate/", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching Parc Corporate data:", error);
+      throw error;
+    }
+  },
+
+  getCreancesNGBSS: async (params = {}) => {
+    try {
+      const response = await api.get("/data/creances-ngbss/", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching Creances NGBSS data:", error);
+      throw error;
+    }
+  },
+
+  getCAPeriodique: async (params = {}) => {
+    try {
+      const response = await api.get("/data/ca-periodique/", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching CA Periodique data:", error);
+      throw error;
+    }
+  },
+
+  getCANonPeriodique: async (params = {}) => {
+    try {
+      const response = await api.get("/data/ca-non-periodique/", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching CA Non Periodique data:", error);
+      throw error;
+    }
+  },
+
+  getCADNT: async (params = {}) => {
+    try {
+      const response = await api.get("/data/ca-dnt/", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching CA DNT data:", error);
+      throw error;
+    }
+  },
+
+  getCARFD: async (params = {}) => {
+    try {
+      const response = await api.get("/data/ca-rfd/", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching CA RFD data:", error);
+      throw error;
+    }
+  },
+
+  getCACNT: async (params = {}) => {
+    try {
+      const response = await api.get("/data/ca-cnt/", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching CA CNT data:", error);
+      throw error;
+    }
+  },
+
+  // Method to get data based on file type
+  getDataByFileType: async (fileType, params = {}) => {
+    const fileTypeEndpoints = {
+      facturation_manuelle: "/data/facturation-manuelle/",
+      journal_ventes: "/data/journal-ventes/",
+      etat_facture: "/data/etat-facture/",
+      parc_corporate: "/data/parc-corporate/",
+      creances_ngbss: "/data/creances-ngbss/",
+      ca_periodique: "/data/ca-periodique/",
+      ca_non_periodique: "/data/ca-non-periodique/",
+      ca_dnt: "/data/ca-dnt/",
+      ca_rfd: "/data/ca-rfd/",
+      ca_cnt: "/data/ca-cnt/",
+    };
+
+    const endpoint = fileTypeEndpoints[fileType] || "/data/processed-data/";
+
+    try {
+      const response = await api.get(endpoint, { params });
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching data for file type ${fileType}:`, error);
       throw error;
     }
   },
