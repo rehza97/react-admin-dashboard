@@ -1,5 +1,6 @@
 from django.db import models
 from users.models import CustomUser
+import pandas as pd
 
 
 class Invoice(models.Model):
@@ -562,3 +563,5 @@ class CACNT(models.Model):
 
     def __str__(self):
         return f"CA CNT {self.transaction_id} - {self.full_name}"
+
+

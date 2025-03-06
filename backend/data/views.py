@@ -866,15 +866,14 @@ class InvoiceSaveView(APIView):
         """Save data to CAPeriodique model"""
         saved_count = 0
         for row in data:
-            # Create the CAPeriodique record
             CAPeriodique.objects.create(
                 invoice=invoice,
-                dot=row.get('dot', ''),
-                product=row.get('product', ''),
-                amount_pre_tax=row.get('amount_pre_tax') or row.get('ht'),
-                tax_amount=row.get('tax_amount') or row.get('tax'),
-                total_amount=row.get('total_amount') or row.get('ttc'),
-                discount=row.get('discount')
+                dot=row.get('DO', ''),
+                product=row.get('PRODUIT', ''),
+                amount_pre_tax=row.get('HT', 0),
+                tax_amount=row.get('TAX', 0),
+                total_amount=row.get('TTC', 0),
+                discount=row.get('DISCOUNT', 0)
             )
             saved_count += 1
 
@@ -885,16 +884,15 @@ class InvoiceSaveView(APIView):
         """Save data to CANonPeriodique model"""
         saved_count = 0
         for row in data:
-            # Create the CANonPeriodique record
             CANonPeriodique.objects.create(
                 invoice=invoice,
-                dot=row.get('dot', ''),
-                product=row.get('product', ''),
-                amount_pre_tax=row.get('amount_pre_tax') or row.get('ht'),
-                tax_amount=row.get('tax_amount') or row.get('tax'),
-                total_amount=row.get('total_amount') or row.get('ttc'),
-                sale_type=row.get('sale_type') or row.get('type_vente'),
-                channel=row.get('channel')
+                dot=row.get('DO', ''),
+                product=row.get('PRODUIT', ''),
+                amount_pre_tax=row.get('HT', 0),
+                tax_amount=row.get('TAX', 0),
+                total_amount=row.get('TTC', 0),
+                sale_type=row.get('TYPE_VENTE', ''),
+                channel=row.get('CHANNEL', '')
             )
             saved_count += 1
 
@@ -906,28 +904,28 @@ class InvoiceSaveView(APIView):
         saved_count = 0
         for row in data:
             # Convert date fields
-            entry_date = self._parse_datetime(row.get('entry_date'))
+            entry_date = self._parse_datetime(row.get('ENTRY_DATE'))
 
             # Create the CADNT record
             CADNT.objects.create(
                 invoice=invoice,
-                pri_identity=row.get('pri_identity', ''),
-                customer_code=row.get('customer_code', ''),
-                full_name=row.get('full_name', ''),
-                transaction_id=row.get('transaction_id', ''),
-                transaction_type=row.get('transaction_type', ''),
-                channel_id=row.get('channel_id', ''),
-                ext_trans_type=row.get('ext_trans_type', ''),
-                total_amount=row.get('total_amount') or row.get('ttc'),
-                tax_amount=row.get('tax_amount') or row.get('tva'),
-                amount_pre_tax=row.get('amount_pre_tax') or row.get('ht'),
+                pri_identity=row.get('PRI_IDENTITY', ''),
+                customer_code=row.get('CUST_CODE', ''),
+                full_name=row.get('FULL_NAME', ''),
+                transaction_id=row.get('TRANS_ID', ''),
+                transaction_type=row.get('TRANS_TYPE', ''),
+                channel_id=row.get('CHANNEL_ID', ''),
+                ext_trans_type=row.get('EXT_TRANS_TYPE', ''),
+                total_amount=row.get('TTC', 0),
+                tax_amount=row.get('TVA', 0),
+                amount_pre_tax=row.get('HT', 0),
                 entry_date=entry_date,
-                actel=row.get('actel', ''),
-                dot=row.get('dot', ''),
-                customer_lev1=row.get('customer_lev1', ''),
-                customer_lev2=row.get('customer_lev2', ''),
-                customer_lev3=row.get('customer_lev3', ''),
-                department=row.get('department', '')
+                actel=row.get('ACTEL', ''),
+                dot=row.get('DO', ''),
+                customer_lev1=row.get('CUST_LEV1', ''),
+                customer_lev2=row.get('CUST_LEV2', ''),
+                customer_lev3=row.get('CUST_LEV3', ''),
+                department=row.get('DEPARTEMENT', '')
             )
             saved_count += 1
 

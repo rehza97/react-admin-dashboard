@@ -928,76 +928,24 @@ class FileProcessor:
             # Clean up column names and values
             df.columns = [col.strip() for col in df.columns]
 
-            # Numeric columns to process
-            numeric_columns = ['HT', 'TAX', 'TTC', 'DISCOUNT']
-
             # Convert numeric columns
-            for col in numeric_columns:
+            for col in ['HT', 'TAX', 'TTC', 'DISCOUNT']:
                 if col in df.columns:
-                    # Remove spaces and replace commas with dots
-                    df[col] = df[col].astype(str).str.replace(
-                        ' ', '').str.replace(',', '.')
+                    df[col] = df[col].astype(str).str.replace(' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
-                    # Replace NaN with None for JSON serialization
-                    df[col] = df[col].replace({np.nan: None})
 
-            # Calculate totals by product
-            product_summary = df.groupby('PRODUIT').agg({
-                'HT': 'sum',
-                'TAX': 'sum',
-                'TTC': 'sum'
-            }).reset_index()
-
-            # Calculate totals by DO (Direction Opérationnelle)
-            do_summary = df.groupby('DO').agg({
-                'HT': 'sum',
-                'TAX': 'sum',
-                'TTC': 'sum'
-            }).reset_index()
-
-            # Replace NaN with None in summary dataframes
-            product_summary = product_summary.replace({np.nan: None})
-            do_summary = do_summary.replace({np.nan: None})
-
-            # Generate column information
-            def generate_column_info(dataframe):
-                column_info = []
-                for col in dataframe.columns:
-                    column_info.append({
-                        'name': col,
-                        'dtype': str(dataframe[col].dtype),
-                        'non_null_count': dataframe[col].count(),
-                        'null_count': dataframe[col].isnull().sum()
-                    })
-                return column_info
-
-            # Handle NaN values for JSON serialization
-            def handle_nan_values(data):
-                if isinstance(data, dict):
-                    return {k: handle_nan_values(v) for k, v in data.items()}
-                elif isinstance(data, list):
-                    return [handle_nan_values(item) for item in data]
-                elif isinstance(data, float):
-                    return None if pd.isna(data) else data
-                else:
-                    return data
-
-            # Prepare summary dictionary
+            # Prepare summary data
             summary = {
                 "row_count": len(df),
                 "column_count": len(df.columns),
-                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns and not np.isnan(df['HT'].sum()) else 0.0,
-                "total_tax": float(df['TAX'].sum()) if 'TAX' in df.columns and not np.isnan(df['TAX'].sum()) else 0.0,
-                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns and not np.isnan(df['TTC'].sum()) else 0.0,
-                "do_summary": do_summary.to_dict('records') if do_summary is not None else None,
+                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns else 0.0,
+                "total_tax": float(df['TAX'].sum()) if 'TAX' in df.columns else 0.0,
+                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns else 0.0,
                 "columns": generate_column_info(df)
             }
 
-            # Return preview data and summary with NaN values handled
-            return (
-                handle_nan_values(df.to_dict('records')),
-                summary
-            )
+            # Return preview data and summary
+            return df.to_dict('records'), summary
 
         except Exception as e:
             logger.error(f"Error processing CA Periodique: {str(e)}")
@@ -1005,33 +953,32 @@ class FileProcessor:
 
     @staticmethod
     def process_ca_non_periodique(file_path):
-        """Process CA non periodique CSV files"""
-
+        """Process CA Non Periodique CSV files"""
         try:
             df = pd.read_csv(file_path, delimiter=';')
 
-            # Clean up column names and values
+            # Clean up column names
             df.columns = [col.strip() for col in df.columns]
 
             # Convert numeric columns
             for col in ['HT', 'TAX', 'TTC', 'DISCOUNT']:
                 if col in df.columns:
                     # Remove spaces and replace commas with dots
-                    df[col] = df[col].astype(str).str.replace(
-                        ' ', '').str.replace(',', '.')
+                    df[col] = df[col].astype(str).str.replace(' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
 
+            # Prepare summary data
             summary = {
                 "row_count": len(df),
                 "column_count": len(df.columns),
-                "total_ht": float(df['HT'].sum()) if not np.isnan(df['HT'].sum()) else 0.0,
-                "total_tax": float(df['TAX'].sum()) if not np.isnan(df['TAX'].sum()) else 0.0,
-                "total_ttc": float(df['TTC'].sum()) if not np.isnan(df['TTC'].sum()) else 0.0,
+                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns else 0.0,
+                "total_tax": float(df['TAX'].sum()) if 'TAX' in df.columns else 0.0,
+                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns else 0.0,
                 "columns": generate_column_info(df)
             }
 
-            # Return preview data and summary with NaN values handled
-            return handle_nan_values(df.to_dict('records')), summary
+            # Return preview data and summary
+            return df.to_dict('records'), summary
 
         except Exception as e:
             logger.error(f"Error processing CA Non Periodique: {str(e)}")
@@ -1050,36 +997,21 @@ class FileProcessor:
             for col in ['TTC', 'TVA', 'HT']:
                 if col in df.columns:
                     # Remove spaces and replace commas with dots
-                    df[col] = df[col].astype(str).str.replace(
-                        ' ', '').str.replace(',', '.')
+                    df[col] = df[col].astype(str).str.replace(' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
 
-            # Calculate totals by product
-            product_summary = df.groupby('PRODUIT').agg({
-                'HT': 'sum',
-                'TVA': 'sum',
-                'TTC': 'sum'
-            }).reset_index() if all(col in df.columns for col in ['PRODUIT', 'HT', 'TVA', 'TTC']) else None
-
-            # Calculate totals by DO (Direction Opérationnelle)
-            do_summary = df.groupby('DO').agg({
-                'HT': 'sum',
-                'TVA': 'sum',
-                'TTC': 'sum'
-            }).reset_index() if all(col in df.columns for col in ['DO', 'HT', 'TVA', 'TTC']) else None
-
+            # Prepare summary data
             summary = {
                 "row_count": len(df),
                 "column_count": len(df.columns),
-                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns and not np.isnan(df['HT'].sum()) else 0.0,
-                "total_tax": float(df['TVA'].sum()) if 'TVA' in df.columns and not np.isnan(df['TVA'].sum()) else 0.0,
-                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns and not np.isnan(df['TTC'].sum()) else 0.0,
-                "do_summary": do_summary.to_dict('records') if do_summary is not None else None,
+                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns else 0.0,
+                "total_tva": float(df['TVA'].sum()) if 'TVA' in df.columns else 0.0,
+                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns else 0.0,
                 "columns": generate_column_info(df)
             }
 
-            # Return preview data and summary with NaN values handled
-            return handle_nan_values(df.to_dict('records')), summary
+            # Return preview data and summary
+            return df.to_dict('records'), summary
 
         except Exception as e:
             logger.error(f"Error processing CA DNT: {str(e)}")
