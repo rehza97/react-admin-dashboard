@@ -1,5 +1,25 @@
 from django.contrib import admin
-from .models import *
+from .models import (
+    Invoice,
+    ProcessedInvoiceData,
+    FacturationManuelle,
+    JournalVentes,
+    EtatFacture,
+    ParcCorporate,
+    CreancesNGBSS,
+    CAPeriodique,
+    CANonPeriodique,
+    CADNT,
+    CARFD,
+    CACNT,
+    Anomaly,
+    ProgressTracker,
+    RevenueObjective,
+    CollectionObjective,
+    NGBSSCollection,
+    UnfinishedInvoice,
+    DOT
+)
 
 
 @admin.register(Invoice)
@@ -112,3 +132,42 @@ class CACNTAdmin(admin.ModelAdmin):
     list_filter = ('invoice__status', 'dot', 'department')
     search_fields = ('invoice__invoice_number', 'transaction_id', 'full_name')
     ordering = ('invoice__upload_date',)
+
+
+@admin.register(Anomaly)
+class AnomalyAdmin(admin.ModelAdmin):
+    list_display = ['id', 'type', 'description',
+                    'status', 'created_at', 'updated_at']
+    list_filter = ['status', 'type', 'created_at', 'updated_at']
+    search_fields = ['description', 'invoice__invoice_number']
+    readonly_fields = ['created_at', 'updated_at']
+    raw_id_fields = ['invoice', 'resolved_by']
+    fieldsets = (
+        (None, {
+            'fields': ('invoice', 'type', 'description', 'data')
+        }),
+        ('Resolution', {
+            'fields': ('status', 'resolved_by', 'resolution_notes')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
+
+
+@admin.register(DOT)
+class DOTAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'is_active', 'created_at', 'updated_at')
+    list_filter = ('is_active',)
+    search_fields = ('code', 'name', 'description')
+    ordering = ('code',)
+    readonly_fields = ('created_at', 'updated_at')
+    fieldsets = (
+        (None, {
+            'fields': ('code', 'name', 'description', 'is_active')
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )

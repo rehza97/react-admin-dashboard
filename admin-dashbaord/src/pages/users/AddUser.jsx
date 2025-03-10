@@ -13,14 +13,15 @@ import {
   Grid,
   Snackbar,
   Alert,
-  CircularProgress
+  CircularProgress,
 } from "@mui/material";
 import { userService } from "../../services/api";
 
+// Update roles to match backend expectations
 const ROLES = {
   ADMIN: "admin",
-  USER: "user",
-  EDITOR: "editor",
+  ANALYST: "analyst",
+  VIEWER: "viewer",
 };
 
 const AddUser = () => {
@@ -30,81 +31,133 @@ const AddUser = () => {
     first_name: "",
     last_name: "",
     password: "",
-    role: ROLES.USER,
+    role: ROLES.VIEWER, // Default to viewer
   });
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState({
+    email: "",
+    password: "",
+    first_name: "",
+    last_name: "",
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
-    severity: "success"
+    severity: "success",
   });
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData({
       ...formData,
-      [name]: value
+      [name]: value,
     });
     // Clear error when field is edited
     if (errors[name]) {
       setErrors({
         ...errors,
-        [name]: ""
+        [name]: "",
       });
     }
   };
 
   const validate = () => {
-    const newErrors = {};
-    
+    const newErrors = {
+      email: "",
+      password: "",
+      first_name: "",
+      last_name: "",
+    };
+
     if (!formData.email) {
       newErrors.email = "Email is required";
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = "Email is invalid";
     }
-    
+
     if (!formData.password) {
       newErrors.password = "Password is required";
     } else if (formData.password.length < 8) {
       newErrors.password = "Password must be at least 8 characters";
+    } else {
+      // Match backend password requirements
+      if (!/[A-Z]/.test(formData.password)) {
+        newErrors.password = "Password must contain uppercase letters";
+      } else if (!/[a-z]/.test(formData.password)) {
+        newErrors.password = "Password must contain lowercase letters";
+      } else if (!/[0-9]/.test(formData.password)) {
+        newErrors.password = "Password must contain numbers";
+      } else if (!/[!@#$%^&*(),.?":{}|<>]/.test(formData.password)) {
+        newErrors.password = "Password must contain special characters";
+      }
     }
-    
+
     if (!formData.first_name) {
       newErrors.first_name = "First name is required";
     }
-    
+
     if (!formData.last_name) {
       newErrors.last_name = "Last name is required";
     }
-    
+
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return !Object.values(newErrors).some((error) => error !== "");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (validate()) {
       setIsLoading(true);
       try {
+        // Log the data being sent to help with debugging
+        console.log("Sending user data:", formData);
+
         await userService.createUser(formData);
         setSnackbar({
           open: true,
           message: "User created successfully!",
-          severity: "success"
+          severity: "success",
         });
-        
+
         // Redirect after a short delay
         setTimeout(() => {
           navigate("/manage-users");
         }, 1500);
       } catch (error) {
         console.error("Error creating user:", error);
+        // Improve error message display
+        let errorMessage = "Failed to create user";
+        if (error.response?.data) {
+          // Handle different error formats
+          if (typeof error.response.data === "string") {
+            errorMessage = error.response.data;
+          } else if (error.response.data.detail) {
+            errorMessage = error.response.data.detail;
+          } else if (error.response.data.email) {
+            errorMessage = `Email: ${error.response.data.email}`;
+          } else if (error.response.data.password) {
+            errorMessage = `Password: ${error.response.data.password}`;
+          } else if (typeof error.response.data === "object") {
+            // Try to extract error messages from the response
+            const messages = [];
+            Object.entries(error.response.data).forEach(([key, value]) => {
+              if (Array.isArray(value)) {
+                messages.push(`${key}: ${value.join(", ")}`);
+              } else {
+                messages.push(`${key}: ${value}`);
+              }
+            });
+            if (messages.length > 0) {
+              errorMessage = messages.join("; ");
+            }
+          }
+        }
+
         setSnackbar({
           open: true,
-          message: error.response?.data?.detail || "Failed to create user",
-          severity: "error"
+          message: errorMessage,
+          severity: "error",
         });
       } finally {
         setIsLoading(false);
@@ -115,7 +168,7 @@ const AddUser = () => {
   const handleSnackbarClose = () => {
     setSnackbar({
       ...snackbar,
-      open: false
+      open: false,
     });
   };
 
@@ -125,7 +178,7 @@ const AddUser = () => {
         <Typography variant="h5" component="h1" gutterBottom>
           Add New User
         </Typography>
-        
+
         <Box component="form" onSubmit={handleSubmit} noValidate>
           <Grid container spacing={3}>
             <Grid item xs={12} sm={6}>
@@ -188,22 +241,26 @@ const AddUser = () => {
                   onChange={handleChange}
                   label="Role"
                 >
-                  <MenuItem value={ROLES.USER}>User</MenuItem>
-                  <MenuItem value={ROLES.EDITOR}>Editor</MenuItem>
-                  <MenuItem value={ROLES.ADMIN}>Admin</MenuItem>
+                  <MenuItem value={ROLES.VIEWER}>Viewer</MenuItem>
+                  <MenuItem value={ROLES.ANALYST}>Analyst</MenuItem>
+                  <MenuItem value={ROLES.ADMIN}>Administrator</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Button 
-                variant="outlined" 
+            <Grid
+              item
+              xs={12}
+              sx={{ display: "flex", justifyContent: "space-between" }}
+            >
+              <Button
+                variant="outlined"
                 onClick={() => navigate("/manage-users")}
               >
                 Cancel
               </Button>
-              <Button 
-                type="submit" 
-                variant="contained" 
+              <Button
+                type="submit"
+                variant="contained"
                 color="primary"
                 disabled={isLoading}
               >
@@ -213,17 +270,17 @@ const AddUser = () => {
           </Grid>
         </Box>
       </Paper>
-      
-      <Snackbar 
-        open={snackbar.open} 
-        autoHideDuration={6000} 
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
         onClose={handleSnackbarClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
       >
-        <Alert 
-          onClose={handleSnackbarClose} 
+        <Alert
+          onClose={handleSnackbarClose}
           severity={snackbar.severity}
-          sx={{ width: '100%' }}
+          sx={{ width: "100%" }}
         >
           {snackbar.message}
         </Alert>
@@ -232,4 +289,4 @@ const AddUser = () => {
   );
 };
 
-export default AddUser; 
+export default AddUser;

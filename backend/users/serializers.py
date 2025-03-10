@@ -34,21 +34,37 @@ class RegisterSerializers(serializers.ModelSerializer):
 User = get_user_model()
 
 
+class UserDOTPermissionSerializer(serializers.ModelSerializer):
+    """Serializer for user DOT permissions"""
+    class Meta:
+        model = UserDOTPermission
+        fields = ['id', 'dot_code', 'dot_name', 'created_at']
+        read_only_fields = ['created_at']
+
+
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     birthday = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, required=False)
+    dot_permissions = UserDOTPermissionSerializer(many=True, read_only=True)
+    authorized_dots = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "email", "full_name", "first_name",
-                  "last_name", "birthday", "profile_picture", "password"]
+        fields = [
+            "id", "email", "full_name", "first_name",
+            "last_name", "birthday", "profile_picture",
+            "password", "role", "dot_permissions", "authorized_dots"
+        ]
 
     def get_full_name(self, obj):
         return obj.get_full_name()
 
     def get_birthday(self, obj):
         return obj.birthday.strftime("%Y-%m-%d") if obj.birthday else ""
+
+    def get_authorized_dots(self, obj):
+        return obj.get_authorized_dots()
 
     def create(self, validated_data):
         return User.objects.create_user(**validated_data)
@@ -75,15 +91,20 @@ class UserManagementSerializer(serializers.ModelSerializer):
     groups = serializers.StringRelatedField(many=True, read_only=True)
     role = serializers.ChoiceField(choices=User.ROLE_CHOICES)
     password = serializers.CharField(write_only=True, required=False)
+    dot_permissions = UserDOTPermissionSerializer(many=True, read_only=True)
+    authorized_dots = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'password', 'first_name', 'last_name',
             'is_active', 'is_staff', 'date_joined', 'groups',
-            'role', 'last_login'
+            'role', 'last_login', 'dot_permissions', 'authorized_dots'
         ]
         read_only_fields = ['date_joined', 'last_login']
+
+    def get_authorized_dots(self, obj):
+        return obj.get_authorized_dots()
 
     def validate_email(self, value):
         try:
@@ -111,19 +132,36 @@ class UserManagementSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        # Use create_user instead of the default create
-        user = User.objects.create_user(**validated_data)
+        """
+        Create a new user with proper error handling
+        """
+        try:
+            # Use create_user instead of the default create
+            user = User.objects.create_user(**validated_data)
 
-        # Log admin action
-        request = self.context.get('request')
-        if request and request.user:
-            log_admin_action(
-                request.user,
-                'create_user',
-                target=user.email,
-                details=f"Role: {user.role}"
-            )
-        return user
+            # Log admin action
+            request = self.context.get('request')
+            if request and request.user:
+                log_admin_action(
+                    request.user,
+                    'create_user',
+                    target=user.email,
+                    details=f"Role: {user.role}"
+                )
+            return user
+        except Exception as e:
+            # Log the error
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error creating user: {str(e)}")
+
+            # Convert Django validation errors to DRF validation errors
+            if hasattr(e, 'message_dict'):
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError(e.message_dict)
+
+            # Re-raise the exception
+            raise
 
     def update(self, instance, validated_data):
         # Handle password updates separately
@@ -161,3 +199,15 @@ class UserRoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'is_staff', 'is_superuser']
+
+
+class DOTPermissionAssignmentSerializer(serializers.Serializer):
+    """Serializer for assigning DOT permissions to a user"""
+    dot_code = serializers.CharField(required=True)
+    dot_name = serializers.CharField(required=True)
+
+    def validate(self, attrs):
+        # Ensure dot_code is not empty
+        if not attrs.get('dot_code'):
+            raise serializers.ValidationError("DOT code cannot be empty")
+        return attrs

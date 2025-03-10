@@ -1,5 +1,5 @@
-import React from "react";
-import { styled } from "@mui/material/styles";
+import React, { useState } from "react";
+import { styled, useTheme } from "@mui/material/styles";
 import MuiDrawer from "@mui/material/Drawer";
 import List from "@mui/material/List";
 import Divider from "@mui/material/Divider";
@@ -30,8 +30,11 @@ import TimelineOutlinedIcon from "@mui/icons-material/TimelineOutlined";
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import TableChartIcon from "@mui/icons-material/TableChart";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import BusinessIcon from "@mui/icons-material/Business";
 import { useAuth } from "../context/AuthContext";
 import { Box, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
+import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 
 const drawerWidth = 260;
 
@@ -67,133 +70,45 @@ const DrawerHeader = styled("div")(({ theme }) => ({
 
 const StyledDrawer = styled(MuiDrawer, {
   shouldForwardProp: (prop) => prop !== "open",
-})(({ theme, open }) => ({
-  width: drawerWidth,
-  flexShrink: 0,
-  whiteSpace: "nowrap",
-  boxSizing: "border-box",
-  ...(open && {
-    ...openedMixin(theme),
-    "& .MuiDrawer-paper": {
+})`
+  width: ${drawerWidth}px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  box-sizing: border-box;
+  ${({ theme, open }) =>
+    open && {
       ...openedMixin(theme),
-      border: "none",
-    },
-  }),
-  ...(!open && {
-    ...closedMixin(theme),
-    "& .MuiDrawer-paper": {
+      "& .MuiDrawer-paper": {
+        ...openedMixin(theme),
+        border: "none",
+      },
+    }}
+  ${({ theme, open }) =>
+    !open && {
       ...closedMixin(theme),
-      border: "none",
+      "& .MuiDrawer-paper": {
+        ...closedMixin(theme),
+        border: "none",
+      },
+    }}
+  ${({ theme }) => ({
+    [theme.breakpoints.down("sm")]: {
+      width: "100%",
+      flexShrink: 0,
     },
-  }),
-  [theme.breakpoints.down("sm")]: {
-    width: "100%",
-    flexShrink: 0,
-  },
-}));
-
-const Array1 = [
-  {
-    text: "Dashboard",
-    icon: <HomeOutlinedIcon />,
-    path: "/",
-  },
-  {
-    text: "Manage Users",
-    icon: <PeopleOutlinedIcon />,
-    path: "/manage-users",
-  },
-  {
-    text: "Contacts Information",
-    icon: <ContactsOutlinedIcon />,
-    path: "/contacts-information",
-  },
-  {
-    text: "Invoices Balance",
-    icon: <ReceiptOutlinedIcon />,
-    path: "/invoices",
-  },
-  {
-    text: "Profile Form",
-    icon: <PersonOutlinedIcon />,
-    path: "/form",
-  },
-  {
-    text: "Calendar",
-    icon: <CalendarTodayOutlinedIcon />,
-    path: "/calendar",
-  },
-  {
-    text: "FAQ Page",
-    icon: <HelpOutlineOutlinedIcon />,
-    path: "/faq",
-  },
-  {
-    text: "File Upload",
-    icon: <CloudUploadIcon />,
-    path: "/file-upload",
-  },
-];
-
-const Array2 = [
-  {
-    text: "Bar Chart",
-    icon: <BarChartOutlinedIcon />,
-    path: "/bar",
-  },
-  {
-    text: "Pie Chart",
-    icon: <PieChartOutlineOutlinedIcon />,
-    path: "/pie",
-  },
-  {
-    text: "Line Chart",
-    icon: <TimelineOutlinedIcon />,
-    path: "/line",
-  },
-  {
-    text: "Geography Chart",
-    icon: <MapOutlinedIcon />,
-    path: "/geography",
-  },
-  {
-    text: "Pivot Table",
-    icon: <TableChartIcon />,
-    path: "/pivot-table",
-  },
-];
-
-const Array3 = [
-  {
-    text: "Bar Chart",
-    icon: <BarChartIcon />,
-    path: "/bar-chart",
-  },
-  {
-    text: "Pie Chart",
-    icon: <PieChartIcon />,
-    path: "/pie-chart",
-  },
-  {
-    text: "Line Chart",
-    icon: <LineChartIcon />,
-    path: "/line-chart",
-  },
-  {
-    text: "Radar Chart",
-    icon: <RadarChartIcon />,
-    path: "/radar-chart",
-  },
-];
+  })}
+`;
 
 const UserProfile = ({ open, currentUser, theme }) => (
-  <Box sx={{ 
-    p: 2,
-    mb: 1,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: open ? 'flex-start' : 'center'
-  }}>
+  <Box
+    sx={{
+      p: 2,
+      mb: 1,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: open ? "flex-start" : "center",
+    }}
+  >
     <Avatar
       alt={currentUser?.first_name || "User"}
       src={currentUser?.profile_picture}
@@ -201,38 +116,39 @@ const UserProfile = ({ open, currentUser, theme }) => (
         width: 40,
         height: 40,
         bgcolor: theme.palette.primary.main,
-        fontSize: '1.2rem',
+        fontSize: "1.2rem",
         border: `2px solid ${theme.palette.background.paper}`,
         boxShadow: theme.shadows[3],
-        children: currentUser?.first_name?.[0] || currentUser?.email?.[0] || "U"
+        children:
+          currentUser?.first_name?.[0] || currentUser?.email?.[0] || "U",
       }}
     />
     {open && (
-      <Box sx={{ ml: 2, overflow: 'hidden' }}>
+      <Box sx={{ ml: 2, overflow: "hidden" }}>
         <Typography
           variant="subtitle1"
           sx={{
             fontWeight: 600,
             color: theme.palette.text.primary,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
           }}
         >
-          {currentUser?.first_name 
-            ? `${currentUser.first_name} ${currentUser.last_name || ''}`
-            : 'Guest User'}
+          {currentUser?.first_name
+            ? `${currentUser.first_name} ${currentUser.last_name || ""}`
+            : "Guest User"}
         </Typography>
         <Typography
           variant="body2"
           sx={{
             color: theme.palette.text.secondary,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
           }}
         >
-          {currentUser?.email || 'Not logged in'}
+          {currentUser?.email || "Not logged in"}
         </Typography>
       </Box>
     )}
@@ -240,11 +156,11 @@ const UserProfile = ({ open, currentUser, theme }) => (
 );
 
 const listItemStyles = {
-  display: 'block',
+  display: "block",
   mb: 0.5,
-  '&:last-child': {
-    mb: 0
-  }
+  "&:last-child": {
+    mb: 0,
+  },
 };
 
 const listItemButtonStyles = (theme, open) => ({
@@ -252,7 +168,7 @@ const listItemButtonStyles = (theme, open) => ({
   px: 2.5,
   py: 1.2,
   justifyContent: open ? "initial" : "center",
-  borderRadius: '8px',
+  borderRadius: "8px",
   mx: 1,
   "&.active": {
     backgroundColor: theme.palette.primary.main,
@@ -269,94 +185,235 @@ const listItemButtonStyles = (theme, open) => ({
   },
 });
 
-export default function Drawer({ open, handleDrawerClose, theme }) {
+export default function Drawer({ open, handleDrawerClose }) {
+  const theme = useTheme();
   const { currentUser } = useAuth();
+  const { t } = useTranslation();
+  const [openSubmenu, setOpenSubmenu] = useState(null);
+
+  // Define menu items with translation keys
+  const Array1 = [
+    {
+      text: t("common.dashboard"),
+      icon: <HomeOutlinedIcon />,
+      path: "/",
+    },
+    {
+      title: "KPI Analysis",
+      icon: <BarChartOutlinedIcon />,
+      items: [
+        {
+          title: "Revenue Analysis",
+          path: "/kpi/revenue",
+        },
+        {
+          title: "Collections Analysis",
+          path: "/kpi/collections",
+        },
+        {
+          title: "Receivables Analysis",
+          path: "/kpi/receivables",
+        },
+        {
+          title: "Corporate Park",
+          path: "/kpi/corporate-park",
+        },
+        {
+          title: "Unfinished Invoices",
+          path: "/kpi/unfinished-invoices",
+        },
+      ],
+    },
+    {
+      title: "User Management",
+      icon: <PeopleOutlinedIcon />,
+      path: "/manage-users",
+      items: [
+        {
+          title: "Manage Users",
+          path: "/manage-users",
+        },
+        {
+          title: "DOT Permissions",
+          path: "/user-dot-permissions",
+        },
+        {
+          title: "DOT Management",
+          path: "/dot-management",
+        },
+      ],
+    },
+    {
+      text: t("common.permissions"),
+      icon: <BusinessIcon />,
+      path: "/user-management/dot-permissions",
+    },
+    {
+      text: t("common.reports"),
+      icon: <BarChartOutlinedIcon />,
+      path: "/reports",
+    },
+    {
+      text: t("common.profile"),
+      icon: <PersonOutlinedIcon />,
+      path: "/form",
+    },
+    {
+      text: t("common.calendar"),
+      icon: <CalendarTodayOutlinedIcon />,
+      path: "/calendar",
+    },
+    {
+      text: t("common.fileUpload"),
+      icon: <CloudUploadIcon />,
+      path: "/file-upload",
+    },
+    {
+      text: t("common.anomalyScan"),
+      icon: <BarChartOutlinedIcon />,
+      path: "/anomaly-scan",
+    },
+  ];
+
+  const Array2 = [
+    {
+      text: t("common.pivot"),
+      icon: <TableChartIcon />,
+      path: "/pivot-table",
+    },
+    {
+      text: t("common.bar"),
+      icon: <BarChartIcon />,
+      path: "/bar",
+    },
+    {
+      text: t("common.pie"),
+      icon: <PieChartIcon />,
+      path: "/pie",
+    },
+    {
+      text: t("common.line"),
+      icon: <LineChartIcon />,
+      path: "/line",
+    },
+    {
+      text: t("common.faq"),
+      icon: <HelpOutlineOutlinedIcon />,
+      path: "/faq",
+    },
+  ];
 
   return (
     <StyledDrawer variant="permanent" open={open}>
       <DrawerHeader sx={{ px: 2, py: 1 }}>
         <IconButton onClick={handleDrawerClose}>
-          {theme.direction === "rtl" ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+          {theme.direction === "rtl" ? (
+            <ChevronRightIcon />
+          ) : (
+            <ChevronLeftIcon />
+          )}
         </IconButton>
       </DrawerHeader>
-      
+
       <Divider sx={{ mb: 1 }} />
-      
+
       <UserProfile open={open} currentUser={currentUser} theme={theme} />
-      
+
       <Divider sx={{ mb: 2 }} />
-      
+
       <List sx={{ px: 1 }}>
         {Array1.map((item) => (
-          <ListItem key={item.path} sx={listItemStyles} disablePadding>
-            <ListItemButton
-              component={NavLink}
-              to={item.path}
-              sx={listItemButtonStyles(theme, open)}
-            >
-              <ListItemIcon
-                sx={{
-                  minWidth: 0,
-                  justifyContent: "center",
-                  mr: open ? 2 : "auto",
-                  color: theme.palette.text.primary,
-                }}
-              >
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText
-                primary={item.text}
-                sx={{
-                  opacity: open ? 1 : 0,
-                  "& .MuiTypography-root": {
-                    fontWeight: 500,
-                  },
-                }}
-              />
-            </ListItemButton>
-          </ListItem>
+          <React.Fragment key={item.path || item.title}>
+            <ListItem sx={listItemStyles} disablePadding>
+              {item.items ? (
+                <ListItemButton
+                  onClick={() =>
+                    setOpenSubmenu(
+                      item.title === openSubmenu ? null : item.title
+                    )
+                  }
+                  sx={listItemButtonStyles(theme, open)}
+                >
+                  <ListItemIcon
+                    sx={{
+                      minWidth: 0,
+                      justifyContent: "center",
+                      mr: open ? 2 : "auto",
+                      color: theme.palette.text.primary,
+                    }}
+                  >
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.title || item.text}
+                    sx={{
+                      opacity: open ? 1 : 0,
+                      "& .MuiTypography-root": {
+                        fontWeight: 500,
+                      },
+                    }}
+                  />
+                </ListItemButton>
+              ) : (
+                <ListItemButton
+                  component={NavLink}
+                  to={item.path}
+                  sx={listItemButtonStyles(theme, open)}
+                >
+                  <ListItemIcon
+                    sx={{
+                      minWidth: 0,
+                      justifyContent: "center",
+                      mr: open ? 2 : "auto",
+                      color: theme.palette.text.primary,
+                    }}
+                  >
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.text}
+                    sx={{
+                      opacity: open ? 1 : 0,
+                      "& .MuiTypography-root": {
+                        fontWeight: 500,
+                      },
+                    }}
+                  />
+                </ListItemButton>
+              )}
+            </ListItem>
+            {item.items && openSubmenu === item.title && open && (
+              <List component="div" disablePadding>
+                {item.items.map((subItem) => (
+                  <ListItem key={subItem.path} sx={{ pl: 4 }} disablePadding>
+                    <ListItemButton
+                      component={NavLink}
+                      to={subItem.path}
+                      sx={listItemButtonStyles(theme, open)}
+                    >
+                      <ListItemText
+                        primary={subItem.title}
+                        sx={{
+                          opacity: open ? 1 : 0,
+                          "& .MuiTypography-root": {
+                            fontWeight: 500,
+                          },
+                        }}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                ))}
+              </List>
+            )}
+          </React.Fragment>
         ))}
       </List>
-      
+
       <Divider sx={{ my: 2 }} />
-      
-      <List>
+
+      <List sx={{ px: 1 }}>
         {Array2.map((item) => (
-          <ListItem key={item.path} disablePadding sx={listItemStyles}>
-            <ListItemButton
-              component={NavLink}
-              to={item.path}
-              sx={listItemButtonStyles(theme, open)}
-            >
-              <ListItemIcon
-                sx={{
-                  minWidth: 0,
-                  justifyContent: "center",
-                  mr: open ? 2 : "auto",
-                  color: theme.palette.text.primary,
-                }}
-              >
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText
-                primary={item.text}
-                sx={{
-                  opacity: open ? 1 : 0,
-                  "& .MuiTypography-root": {
-                    fontWeight: 500,
-                  },
-                }}
-              />
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
-      
-      <Divider sx={{ my: 2 }} />
-      
-      <List>
-        {Array3.map((item) => (
-          <ListItem key={item.path} disablePadding sx={listItemStyles}>
+          <ListItem key={item.path} sx={listItemStyles} disablePadding>
             <ListItemButton
               component={NavLink}
               to={item.path}
@@ -392,7 +449,6 @@ export default function Drawer({ open, handleDrawerClose, theme }) {
 Drawer.propTypes = {
   open: PropTypes.bool.isRequired,
   handleDrawerClose: PropTypes.func.isRequired,
-  theme: PropTypes.object.isRequired,
 };
 
 UserProfile.propTypes = {

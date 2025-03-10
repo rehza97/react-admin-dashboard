@@ -1,23 +1,23 @@
-import React from 'react';
-import { Box, Typography, Paper } from '@mui/material';
-import PropTypes from 'prop-types';
+import React from "react";
+import { Box, Typography, Paper } from "@mui/material";
+import PropTypes from "prop-types";
 
-const PageLayout = ({ 
-  title, 
-  subtitle, 
-  headerAction, 
-  children, 
-  maxWidth = '100%',
-  paperProps = {} 
+const PageLayout = ({
+  title,
+  subtitle,
+  headerAction,
+  children,
+  maxWidth = "100%",
+  paperProps = {},
 }) => {
   return (
-    <Box sx={{ p: 3, maxWidth, mx: 'auto', width: '100%' }}>
-      <Box 
-        sx={{ 
-          mb: 3, 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          alignItems: 'center' 
+    <Box sx={{ p: 3, maxWidth, mx: "auto", width: "100%" }}>
+      <Box
+        sx={{
+          mb: 3,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
         }}
       >
         <Box>
@@ -30,19 +30,15 @@ const PageLayout = ({
             </Typography>
           )}
         </Box>
-        {headerAction && (
-          <Box sx={{ ml: 2 }}>
-            {headerAction}
-          </Box>
-        )}
+        {headerAction && <Box sx={{ ml: 2 }}>{headerAction}</Box>}
       </Box>
 
-      <Paper 
-        elevation={2} 
-        sx={{ 
+      <Paper
+        elevation={2}
+        sx={{
           p: 3,
           borderRadius: 2,
-          ...paperProps.sx
+          ...(paperProps.sx || {}),
         }}
         {...paperProps}
       >
@@ -58,7 +54,7 @@ PageLayout.propTypes = {
   headerAction: PropTypes.node,
   children: PropTypes.node.isRequired,
   maxWidth: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  paperProps: PropTypes.object
+  paperProps: PropTypes.object,
 };
 
-export default PageLayout; 
+export default PageLayout;

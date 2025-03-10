@@ -1,11 +1,10 @@
-import { IconButton, styled, Toolbar, Stack, Badge } from "@mui/material";
-import { AppBar as MuiAppBar } from "@mui/material";
+import { IconButton, Toolbar, Stack, Badge, AppBar } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import PropTypes from "prop-types";
 import InputBase from "@mui/material/InputBase";
 import SearchIcon from "@mui/icons-material/Search";
-import { alpha } from "@mui/material/styles";
-import React from "react";
+import { alpha, styled } from "@mui/material/styles";
+import { useState } from "react";
 import NotificationsIcon from "@mui/icons-material/Notifications";
 import SettingsIcon from "@mui/icons-material/Settings";
 import AccountCircle from "@mui/icons-material/AccountCircle";
@@ -14,21 +13,17 @@ import Brightness7Icon from "@mui/icons-material/Brightness7";
 import { useNavigate } from "react-router-dom";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { useAuth } from "../context/AuthContext";
+import { useTranslation } from "react-i18next";
+import LanguageSwitcher from "./LanguageSwitcher";
 
 const drawerWidth = 240;
 
 const Search = styled("div")(({ theme }) => ({
   position: "relative",
   borderRadius: theme.shape.borderRadius,
-  backgroundColor:
-    theme.palette.mode === "dark"
-      ? alpha(theme.palette.common.white, 0.15)
-      : alpha(theme.palette.common.black, 0.05),
+  backgroundColor: alpha(theme.palette.common.white, 0.15),
   "&:hover": {
-    backgroundColor:
-      theme.palette.mode === "dark"
-        ? alpha(theme.palette.common.white, 0.25)
-        : alpha(theme.palette.common.black, 0.1),
+    backgroundColor: alpha(theme.palette.common.white, 0.25),
   },
   marginRight: theme.spacing(2),
   marginLeft: 0,
@@ -62,58 +57,67 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
   },
 }));
 
-// Define AppBar outside of component to avoid re-creation on each render
-const StyledAppBar = styled(MuiAppBar, {
-  shouldForwardProp: (prop) => prop !== "open",
-})(({ theme, open }) => ({
-  backgroundColor:
-    theme.palette.mode === "dark"
-      ? theme.palette.background.paper
-      : theme.palette.primary.main,
-  color:
-    theme.palette.mode === "dark"
-      ? theme.palette.text.primary
-      : theme.palette.primary.contrastText,
-  zIndex: theme.zIndex.drawer + 1,
-  transition: theme.transitions.create(["width", "margin"], {
-    easing: theme.transitions.easing.sharp,
-    duration: theme.transitions.duration.leavingScreen,
-  }),
-  ...(open && {
-    marginLeft: drawerWidth,
-    width: `calc(100% - ${drawerWidth}px)`,
-    transition: theme.transitions.create(["width", "margin"], {
-      easing: theme.transitions.easing.sharp,
-      duration: theme.transitions.duration.enteringScreen,
-    }),
-  }),
-}));
-
-export default function TopBar({ open, setOpen, toggleTheme, isDarkMode }) {
-  const handleDrawerOpen = () => {
-    setOpen(true);
-  };
-
-  const [searchQuery, setSearchQuery] = React.useState("");
+export default function TopBar({
+  open,
+  handleDrawerOpen,
+  toggleTheme,
+  isDarkMode,
+}) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+  const [searchValue, setSearchValue] = useState("");
 
   const handleSearchChange = (event) => {
-    setSearchQuery(event.target.value);
+    setSearchValue(event.target.value);
+    // Handle search functionality
+    console.log("Search:", event.target.value);
   };
-
-  const { logout } = useAuth();
-  const navigate = useNavigate();
 
   const handleLogout = async () => {
     await logout();
     navigate("/login");
   };
 
+  const handleKeyDown = (event, action) => {
+    if (event.key === "Enter" || event.key === " ") {
+      action();
+    }
+  };
+
   return (
-    <StyledAppBar position="fixed" open={open}>
+    <AppBar
+      position="fixed"
+      sx={{
+        backgroundColor: (theme) =>
+          theme.palette.mode === "dark"
+            ? theme.palette.background.paper
+            : theme.palette.primary.main,
+        color: (theme) =>
+          theme.palette.mode === "dark"
+            ? theme.palette.text.primary
+            : theme.palette.primary.contrastText,
+        zIndex: (theme) => theme.zIndex.drawer + 1,
+        transition: (theme) =>
+          theme.transitions.create(["width", "margin"], {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.leavingScreen,
+          }),
+        ...(open && {
+          marginLeft: drawerWidth,
+          width: `calc(100% - ${drawerWidth}px)`,
+          transition: (theme) =>
+            theme.transitions.create(["width", "margin"], {
+              easing: theme.transitions.easing.sharp,
+              duration: theme.transitions.duration.enteringScreen,
+            }),
+        }),
+      }}
+    >
       <Toolbar>
         <IconButton
           color="inherit"
-          aria-label="open drawer"
+          aria-label={open ? "Close menu" : "Open menu"}
           onClick={handleDrawerOpen}
           edge="start"
           sx={{
@@ -123,56 +127,77 @@ export default function TopBar({ open, setOpen, toggleTheme, isDarkMode }) {
         >
           <MenuIcon />
         </IconButton>
-
         <Search>
           <SearchIconWrapper>
             <SearchIcon />
           </SearchIconWrapper>
           <StyledInputBase
-            placeholder="Search…"
-            inputProps={{ "aria-label": "search" }}
-            value={searchQuery}
+            placeholder={t("common.search")}
+            inputProps={{
+              "aria-label": "search",
+              role: "search",
+            }}
+            value={searchValue}
             onChange={handleSearchChange}
           />
         </Search>
-
-        <Stack direction="row" spacing={2} sx={{ marginLeft: "auto" }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ marginLeft: "auto" }}
+          aria-label="User actions"
+        >
+          <LanguageSwitcher />
           <IconButton
             color="inherit"
+            aria-label="Toggle dark mode"
             onClick={toggleTheme}
-            aria-label={
-              isDarkMode ? "Switch to light mode" : "Switch to dark mode"
-            }
+            onKeyDown={(e) => handleKeyDown(e, toggleTheme)}
           >
             {isDarkMode ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>
-          <IconButton color="inherit" aria-label="notifications">
-            <Badge badgeContent={4} color="error">
+          <IconButton
+            color="inherit"
+            aria-label={t("common.notifications")}
+            aria-haspopup="true"
+          >
+            <Badge badgeContent={4} color="secondary">
               <NotificationsIcon />
             </Badge>
           </IconButton>
-          <IconButton color="inherit" aria-label="settings">
+          <IconButton
+            color="inherit"
+            aria-label={t("common.settings")}
+            aria-haspopup="true"
+          >
             <SettingsIcon />
           </IconButton>
-          <IconButton color="inherit" aria-label="profile">
+          <IconButton
+            color="inherit"
+            aria-label={t("common.profile")}
+            aria-haspopup="true"
+            onClick={() => navigate("/profile")}
+            onKeyDown={(e) => handleKeyDown(e, () => navigate("/profile"))}
+          >
             <AccountCircle />
           </IconButton>
           <IconButton
             color="inherit"
+            aria-label={t("common.logout")}
             onClick={handleLogout}
-            aria-label="logout"
+            onKeyDown={(e) => handleKeyDown(e, handleLogout)}
           >
             <LogoutIcon />
           </IconButton>
         </Stack>
       </Toolbar>
-    </StyledAppBar>
+    </AppBar>
   );
 }
 
 TopBar.propTypes = {
   open: PropTypes.bool.isRequired,
-  setOpen: PropTypes.func.isRequired,
+  handleDrawerOpen: PropTypes.func.isRequired,
   toggleTheme: PropTypes.func.isRequired,
   isDarkMode: PropTypes.bool.isRequired,
 };

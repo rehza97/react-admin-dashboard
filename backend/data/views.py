@@ -1,9 +1,9 @@
 from rest_framework import generics, status
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.core.exceptions import ValidationError
 from .models import (
     Invoice,
@@ -17,7 +17,12 @@ from .models import (
     CANonPeriodique,
     CADNT,
     CARFD,
-    CACNT
+    CACNT,
+    Anomaly,
+    ProgressTracker,
+    RevenueObjective,
+    CollectionObjective,
+    DOT
 )
 from .serializers import (
     InvoiceSerializer,
@@ -31,7 +36,8 @@ from .serializers import (
     CANonPeriodiqueSerializer,
     CADNTSerializer,
     CARFDSerializer,
-    CACNTSerializer
+    CACNTSerializer,
+    AnomalySerializer
 )
 from .forms import InvoiceUploadForm
 import logging
@@ -47,8 +53,41 @@ from django.shortcuts import get_object_or_404
 from .file_processor import FileTypeDetector, FileProcessor, handle_nan_values, FILE_TYPE_PATTERNS
 import os
 import traceback
+from .data_processor import DataProcessor
+import xlsxwriter
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+import csv
+from rest_framework.pagination import PageNumberPagination
+from django.db.models import Count, Sum, Q, DecimalField
+from django.db.models.functions import Coalesce
+# Add import for DOTPermissionMixin
+from users.permissions import DOTPermissionMixin
+from django.contrib.auth import get_user_model
+from django.conf import settings
+
 
 logger = logging.getLogger(__name__)
+
+
+class HealthCheckView(APIView):
+    """
+    Simple view to check if the API is running.
+    This endpoint can be used for health monitoring.
+    """
+    permission_classes = []  # Allow access without authentication
+
+    def get(self, request):
+        return Response(
+            {"status": "ok", "message": "API is running"},
+            status=status.HTTP_200_OK
+        )
+
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 100
+    page_size_query_param = 'page_size'
+    max_page_size = 1000
 
 
 class InvoiceUploadView(generics.CreateAPIView):
@@ -89,20 +128,48 @@ class InvoiceUploadView(generics.CreateAPIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Create the invoice directly without using the form or serializer validation
-            invoice = Invoice(
-                invoice_number=invoice_number,
-                file=file,
-                uploaded_by=request.user,
-                status='pending'
-            )
+            # Check if an invoice with this number already exists
+            existing_invoice = None
+            try:
+                existing_invoice = Invoice.objects.get(
+                    invoice_number=invoice_number)
+                logger.info(
+                    f"Found existing invoice with number {invoice_number}, updating instead of creating new")
 
-            # If file_type is provided, use it
-            if file_type:
+                # Delete the old file if it exists
+                if existing_invoice.file:
+                    existing_invoice.file.delete(save=False)
+
+                # Update the existing invoice
+                existing_invoice.file = file
+                existing_invoice.status = 'pending'
+                existing_invoice.error_message = None
+                existing_invoice.processed_date = None
+
+                # If file_type is provided, update it
+                if file_type:
+                    existing_invoice.file_type = file_type
+                    existing_invoice.detection_confidence = 1.0
+                else:
+                    existing_invoice.file_type = None
+                    existing_invoice.detection_confidence = None
+
+                invoice = existing_invoice
+            except Invoice.DoesNotExist:
+                # Create a new invoice if one doesn't exist
+                invoice = Invoice(
+                    invoice_number=invoice_number,
+                    file=file,
+                    uploaded_by=request.user,
+                    status='pending'
+                )
+
+            # If file_type is provided and we're creating a new invoice, use it
+            if file_type and not existing_invoice:
                 invoice.file_type = file_type
                 invoice.detection_confidence = 1.0  # Manual selection has 100% confidence
-            else:
-                # Try to detect file type automatically
+            elif not existing_invoice:
+                # Try to detect file type automatically for new invoices
                 try:
                     # Save the file first so we can access it
                     invoice.save()
@@ -519,152 +586,157 @@ class ProcessedInvoiceDataDetailView(generics.RetrieveUpdateDestroyAPIView):
 class InvoiceSaveView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, pk=None):
-        """Save processed data to the database"""
-        logger.info(f"Saving invoice {pk} to database")
+    def _map_fields(self, row, field_mappings, model_name):
+        """Helper method to map Excel fields to model fields and handle data conversion"""
+        model_data = {}
 
+        # Map the fields from the Excel file to the model fields
+        for excel_field, value in row.items():
+            # Normalize the field name (uppercase, remove spaces)
+            normalized_field = excel_field.upper().replace(' ', '_')
+
+            # Check if the normalized field is in our mappings
+            if normalized_field in field_mappings:
+                model_field = field_mappings[normalized_field]
+                model_data[model_field] = value
+            elif excel_field in field_mappings:
+                model_field = field_mappings[excel_field]
+                model_data[model_field] = value
+
+        # Special handling for DOT fields
+        if 'dot_code' in model_data:
+            dot_code = model_data['dot_code']
+            if dot_code:
+                try:
+                    # Try to get or create the DOT instance
+                    dot_instance, _ = DOT.objects.get_or_create(
+                        code=dot_code,
+                        defaults={'name': dot_code}
+                    )
+                    model_data['dot'] = dot_instance
+                except Exception as e:
+                    logger.warning(
+                        f"Error getting/creating DOT with code {dot_code} in {model_name}: {str(e)}")
+
+        # Log the mapping for debugging
+        logger.debug(
+            f"Field mapping for {model_name}: Excel fields {list(row.keys())} -> Model fields {list(model_data.keys())}")
+
+        return model_data
+
+    def post(self, request, pk=None):
+        """
+        Save processed data to the database
+        """
         try:
             # Get the invoice
-            invoice = get_object_or_404(
-                Invoice, pk=pk, uploaded_by=request.user)
+            invoice = get_object_or_404(Invoice, pk=pk)
 
-            # Check if the user has permission to access this invoice
-            if invoice.uploaded_by != request.user and not request.user.is_staff:
-                return Response(
-                    {"error": "You do not have permission to access this invoice"},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-
-            # Check if the invoice is in a valid state for saving
-            if invoice.status not in ['preview', 'processed']:
+            # Check if the invoice is in the correct state
+            if invoice.status not in ['preview', 'processing']:
                 return Response({
-                    "error": f"Invoice is in {invoice.status} state and cannot be saved"
+                    'error': f'Invoice is in {invoice.status} state and cannot be saved'
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            # Get the file type from the request or use the one from the invoice
-            file_type = request.data.get('file_type', invoice.file_type)
+            # Get the processed data from the request
+            data = request.data.get('data', None)
+            file_type = request.data.get('file_type', None)
 
-            if file_type:
-                # Get the file path
-                file_path = invoice.file.path
-                file_name = os.path.basename(file_path)
+            # If no data is provided, try to get it from the session
+            if not data:
+                # TODO: Implement session-based data retrieval if needed
+                return Response({
+                    'error': 'No data provided'
+                }, status=status.HTTP_400_BAD_REQUEST)
 
-                # Use the file processor to get the data
-                processor = FileProcessor()
+            # Process options
+            options = request.data.get('options', {})
 
-                # Detect file type if not provided
-                if not file_type:
-                    detector = FileTypeDetector()
-                    file_type, _, _ = detector.detect_file_type(
-                        file_path, file_name)
+            # Create a data processor
+            processor = DataProcessor()
 
-                # Process based on file type
-                if file_type == "facturation_manuelle":
-                    preview_data, _ = processor.process_facturation_manuelle(
-                        file_path)
-                    # Handle NaN values before saving
-                    preview_data = handle_nan_values(preview_data)
-                    self._save_facturation_manuelle(invoice, preview_data)
-                elif file_type == "journal_ventes":
-                    preview_data, _ = processor.process_journal_ventes(
-                        file_path)
-                    # Handle NaN values before saving
-                    preview_data = handle_nan_values(preview_data)
-                    self._save_journal_ventes(invoice, preview_data)
-                elif file_type == "etat_facture":
-                    preview_data, _ = processor.process_etat_facture(file_path)
-                    # Handle NaN values before saving
-                    preview_data = handle_nan_values(preview_data)
-                    self._save_etat_facture(invoice, preview_data)
-                elif file_type == "parc_corporate":
-                    preview_data, _ = processor.process_parc_corporate(
-                        file_path)
-                    # Handle NaN values before saving
-                    preview_data = handle_nan_values(preview_data)
-                    self._save_parc_corporate(invoice, preview_data)
-                elif file_type == "creances_ngbss":
-                    preview_data, _ = processor.process_creances_ngbss(
-                        file_path)
-                    # Handle NaN values before saving
-                    preview_data = handle_nan_values(preview_data)
-                    self._save_creances_ngbss(invoice, preview_data)
-                elif file_type == "ca_periodique":
-                    preview_data, _ = processor.process_ca_periodique(
-                        file_path)
-                    # Handle NaN values before saving
-                    preview_data = handle_nan_values(preview_data)
-                    self._save_ca_periodique(invoice, preview_data)
-                elif file_type == "ca_non_periodique":
-                    preview_data, _ = processor.process_ca_non_periodique(
-                        file_path)
-                    # Handle NaN values before saving
-                    preview_data = handle_nan_values(preview_data)
-                    self._save_ca_non_periodique(invoice, preview_data)
-                elif file_type == "ca_dnt":
-                    preview_data, _ = processor.process_ca_dnt(file_path)
-                    # Handle NaN values before saving
-                    preview_data = handle_nan_values(preview_data)
-                    self._save_ca_dnt(invoice, preview_data)
-                elif file_type == "ca_rfd":
-                    preview_data, _ = processor.process_ca_rfd(file_path)
-                    # Handle NaN values before saving
-                    preview_data = handle_nan_values(preview_data)
-                    self._save_ca_rfd(invoice, preview_data)
-                elif file_type == "ca_cnt":
-                    preview_data, _ = processor.process_ca_cnt(file_path)
-                    # Handle NaN values before saving
-                    preview_data = handle_nan_values(preview_data)
-                    self._save_ca_cnt(invoice, preview_data)
-                else:
-                    return Response({
-                        "error": f"Unsupported file type: {file_type}"
-                    }, status=status.HTTP_400_BAD_REQUEST)
-            else:
-                # If processed_data is provided as an array, use it directly
-                if not isinstance(processed_data, list):
-                    return Response(
-                        {"error": "Processed data must be an array"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+            # Process the data
+            processed_result = processor.process_and_clean_data(
+                invoice.file.path, file_type, data)
 
-                # Save the processed data based on file type
-                if file_type == "facturation_manuelle":
-                    self._save_facturation_manuelle(invoice, processed_data)
-                elif file_type == "journal_ventes":
-                    self._save_journal_ventes(invoice, processed_data)
-                elif file_type == "etat_facture":
-                    self._save_etat_facture(invoice, processed_data)
-                elif file_type == "parc_corporate":
-                    self._save_parc_corporate(invoice, processed_data)
-                elif file_type == "creances_ngbss":
-                    self._save_creances_ngbss(invoice, processed_data)
-                elif file_type == "ca_periodique":
-                    self._save_ca_periodique(invoice, processed_data)
-                elif file_type == "ca_non_periodique":
-                    self._save_ca_non_periodique(invoice, processed_data)
-                elif file_type == "ca_dnt":
-                    self._save_ca_dnt(invoice, processed_data)
-                elif file_type == "ca_rfd":
-                    self._save_ca_rfd(invoice, processed_data)
-                elif file_type == "ca_cnt":
-                    self._save_ca_cnt(invoice, processed_data)
-                else:
-                    # Default to ProcessedInvoiceData
-                    self._save_processed_invoice_data(invoice, processed_data)
+            processed_data = processed_result['processed_data']
+            anomalies = processed_result.get('anomalies', [])
 
-            # Update the invoice status
+            # Save the processed data to the database
+            self._save_processed_invoice_data(invoice, processed_data)
+
+            # Save specific data based on file type
+            if file_type == 'facturation_manuelle':
+                self._save_facturation_manuelle(invoice, processed_data)
+            elif file_type == 'journal_ventes':
+                self._save_journal_ventes(invoice, processed_data)
+            elif file_type == 'etat_facture':
+                self._save_etat_facture(invoice, processed_data)
+            elif file_type == 'parc_corporate':
+                self._save_parc_corporate(invoice, processed_data)
+            elif file_type == 'creances_ngbss':
+                self._save_creances_ngbss(invoice, processed_data)
+            elif file_type == 'ca_periodique':
+                self._save_ca_periodique(invoice, processed_data)
+            elif file_type == 'ca_non_periodique':
+                self._save_ca_non_periodique(invoice, processed_data)
+            elif file_type == 'ca_dnt':
+                self._save_ca_dnt(invoice, processed_data)
+            elif file_type == 'ca_rfd':
+                self._save_ca_rfd(invoice, processed_data)
+            elif file_type == 'ca_cnt':
+                self._save_ca_cnt(invoice, processed_data)
+
+            # Save detected anomalies
+            self._save_anomalies(invoice, anomalies)
+
+            # Update invoice status
             invoice.status = 'saved'
             invoice.processed_date = timezone.now()
             invoice.save()
 
-            return Response({"status": "success", "message": "Data saved to database"})
+            return Response({
+                'message': 'Data saved successfully',
+                'invoice_id': invoice.id,
+                'file_type': file_type,
+                'records_saved': len(processed_data),
+                'anomalies_detected': len(anomalies)
+            }, status=status.HTTP_200_OK)
 
         except Exception as e:
-            logger.error(f"Error saving invoice {pk} to database: {str(e)}")
+            logger.error(f"Error saving data: {str(e)}")
             logger.error(traceback.format_exc())
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _save_anomalies(self, invoice, anomalies):
+        """Save detected anomalies to the database"""
+        if not anomalies:
+            return
+
+        # Map anomaly types from detection to model types
+        anomaly_type_mapping = {
+            'missing_data': 'missing_data',
+            'duplicate_data': 'duplicate_data',
+            'invalid_data': 'invalid_data',
+            'anomaly': 'other',
+            'outlier': 'outlier',
+            'inconsistent_data': 'inconsistent_data'
+        }
+
+        for anomaly in anomalies:
+            # Get the anomaly type, defaulting to 'other' if not recognized
+            anomaly_type = anomaly_type_mapping.get(
+                anomaly.get('type', ''), 'other')
+
+            # Create the anomaly record
+            Anomaly.objects.create(
+                invoice=invoice,
+                type=anomaly_type,
+                description=anomaly.get('description', 'Unknown anomaly'),
+                data=anomaly.get('data', {}),
+                status='open'
             )
 
     def _save_processed_invoice_data(self, invoice, data):
@@ -738,31 +810,136 @@ class InvoiceSaveView(APIView):
     def _save_journal_ventes(self, invoice, data):
         """Save data to JournalVentes model"""
         saved_count = 0
+
+        # Debug: Log the first row to see what fields are available
+        if data and len(data) > 0:
+            logger.info(f"First row of JournalVentes data: {data[0]}")
+            logger.info(f"Available keys in first row: {list(data[0].keys())}")
+
+        # Define possible field mappings (Excel column name -> model field)
+        field_mappings = {
+            # DOT field mappings
+            'DO': 'dot_code',
+            'DOT': 'dot_code',
+            'DOT_CODE': 'dot_code',
+
+            # Organization field mappings
+            'ORGANISATION': 'organization',
+            'ORGANIZATION': 'organization',
+            'ORG': 'organization',
+            'ORGANISME': 'organization',
+
+            # Origin field mappings
+            'ORIGINE': 'origin',
+            'ORIGIN': 'origin',
+            'SOURCE': 'origin',
+
+            # Invoice number field mappings
+            'NUMERO_FACTURE': 'invoice_number',
+            'INVOICE_NUMBER': 'invoice_number',
+            'N_FACTURE': 'invoice_number',
+            'NUM_FACTURE': 'invoice_number',
+            'FACTURE_NO': 'invoice_number',
+
+            # Invoice type field mappings
+            'TYPE_FACTURE': 'invoice_type',
+            'INVOICE_TYPE': 'invoice_type',
+            'TYPE': 'invoice_type',
+
+            # Invoice date field mappings
+            'DATE_FACTURE': 'invoice_date',
+            'INVOICE_DATE': 'invoice_date',
+            'DATE': 'invoice_date',
+
+            # Client field mappings
+            'CLIENT': 'client',
+            'NOM_CLIENT': 'client',
+            'CUSTOMER': 'client',
+            'CLIENT_NAME': 'client',
+
+            # Currency field mappings
+            'DEVISE': 'currency',
+            'CURRENCY': 'currency',
+
+            # Invoice object field mappings
+            'OBJET_FACTURE': 'invoice_object',
+            'OBJECT': 'invoice_object',
+            'DESCRIPTION_FACTURE': 'invoice_object',
+
+            # Account code field mappings
+            'COMPTE_COMPTABLE': 'account_code',
+            'ACCOUNT_CODE': 'account_code',
+            'COMPTE': 'account_code',
+
+            # GL date field mappings
+            'DATE_GL': 'gl_date',
+            'GL_DATE': 'gl_date',
+
+            # Billing period field mappings
+            'PERIODE_FACTURATION': 'billing_period',
+            'PERIODE': 'billing_period',
+            'PERIOD': 'billing_period',
+            'BILLING_PERIOD': 'billing_period',
+
+            # Reference field mappings
+            'REFERENCE': 'reference',
+            'REF': 'reference',
+
+            # Flag field mappings
+            'TERMINE_FLAG': 'terminated_flag',
+            'FLAG': 'terminated_flag',
+
+            # Description field mappings
+            'DESCRIPTION': 'description',
+            'DESC': 'description',
+
+            # Revenue amount field mappings
+            'CHIFFRE_AFFAIRES': 'revenue_amount',
+            'CA': 'revenue_amount',
+            'REVENUE': 'revenue_amount',
+            'REVENUE_AMOUNT': 'revenue_amount',
+            'MONTANT': 'revenue_amount',
+            'AMOUNT': 'revenue_amount',
+        }
+
         for row in data:
-            # Convert date fields
-            invoice_date = self._parse_date(row.get('invoice_date'))
-            gl_date = self._parse_date(row.get('gl_date'))
+            try:
+                # Create a data dictionary for the model
+                model_data = {'invoice': invoice}
+
+                # Use the helper method to map fields
+                mapped_data = self._map_fields(
+                    row, field_mappings, "JournalVentes")
+                model_data.update(mapped_data)
+
+                # Parse date fields if they exist
+                if 'invoice_date' in model_data and model_data['invoice_date']:
+                    try:
+                        model_data['invoice_date'] = self._parse_date(
+                            model_data['invoice_date'])
+                    except:
+                        model_data['invoice_date'] = None
+
+                if 'gl_date' in model_data and model_data['gl_date']:
+                    try:
+                        model_data['gl_date'] = self._parse_date(
+                            model_data['gl_date'])
+                    except:
+                        model_data['gl_date'] = None
 
             # Create the JournalVentes record
-            JournalVentes.objects.create(
-                invoice=invoice,
-                organization=row.get('organization', ''),
-                origin=row.get('origin', ''),
-                invoice_number=row.get('invoice_number', ''),
-                invoice_type=row.get('invoice_type', ''),
-                invoice_date=invoice_date,
-                client=row.get('client', ''),
-                currency=row.get('currency', ''),
-                invoice_object=row.get('invoice_object', ''),
-                account_code=row.get('account_code', ''),
-                gl_date=gl_date,
-                billing_period=row.get('billing_period', ''),
-                reference=row.get('reference', ''),
-                terminated_flag=row.get('terminated_flag', ''),
-                description=row.get('description', ''),
-                revenue_amount=row.get('revenue_amount')
-            )
-            saved_count += 1
+                JournalVentes.objects.create(**model_data)
+                saved_count += 1
+
+                # Log the first few records for debugging
+                if saved_count <= 3:
+                    logger.info(
+                        f"Saved JournalVentes record #{saved_count}: {model_data}")
+
+            except Exception as e:
+                logger.error(f"Error saving JournalVentes record: {str(e)}")
+                logger.error(f"Problematic row data: {row}")
+                # Continue with next record
 
         logger.info(f"Saved {saved_count} records to JournalVentes")
         return saved_count
@@ -770,32 +947,145 @@ class InvoiceSaveView(APIView):
     def _save_etat_facture(self, invoice, data):
         """Save data to EtatFacture model"""
         saved_count = 0
-        for row in data:
-            # Convert date fields
-            invoice_date = self._parse_date(row.get('invoice_date'))
-            payment_date = self._parse_date(row.get('payment_date'))
 
-            # Create the EtatFacture record
-            EtatFacture.objects.create(
-                invoice=invoice,
-                organization=row.get('organization', ''),
-                source=row.get('source', ''),
-                invoice_number=row.get('invoice_number', ''),
-                invoice_type=row.get('invoice_type', ''),
-                invoice_date=invoice_date,
-                client=row.get('client', ''),
-                invoice_object=row.get('invoice_object', ''),
-                period=row.get('period', ''),
-                terminated_flag=row.get('terminated_flag', ''),
-                amount_pre_tax=row.get('amount_pre_tax'),
-                tax_amount=row.get('tax_amount'),
-                total_amount=row.get('total_amount'),
-                revenue_amount=row.get('revenue_amount'),
-                collection_amount=row.get('collection_amount'),
-                payment_date=payment_date,
-                invoice_credit_amount=row.get('invoice_credit_amount')
-            )
-            saved_count += 1
+        # Debug: Log the first row to see what fields are available
+        if data and len(data) > 0:
+            logger.info(f"First row of EtatFacture data: {data[0]}")
+            logger.info(f"Available keys in first row: {list(data[0].keys())}")
+
+        # Define possible field mappings (Excel column name -> model field)
+        field_mappings = {
+            # DOT field mappings
+            'DO': 'dot_code',
+            'DOT': 'dot_code',
+            'DOT_CODE': 'dot_code',
+
+            # Organization field mappings
+            'ORGANISATION': 'organization',
+            'ORGANIZATION': 'organization',
+            'ORG': 'organization',
+            'ORGANISME': 'organization',
+
+            # Source field mappings
+            'SOURCE': 'source',
+            'SRC': 'source',
+
+            # Invoice number field mappings
+            'NUMERO_FACTURE': 'invoice_number',
+            'INVOICE_NUMBER': 'invoice_number',
+            'N_FACTURE': 'invoice_number',
+            'NUM_FACTURE': 'invoice_number',
+            'FACTURE_NO': 'invoice_number',
+
+            # Invoice type field mappings
+            'TYPE_FACTURE': 'invoice_type',
+            'INVOICE_TYPE': 'invoice_type',
+            'TYPE': 'invoice_type',
+
+            # Invoice date field mappings
+            'DATE_FACTURE': 'invoice_date',
+            'INVOICE_DATE': 'invoice_date',
+            'DATE': 'invoice_date',
+
+            # Client field mappings
+            'NOM_CLIENT': 'client',
+            'CLIENT': 'client',
+            'CUSTOMER': 'client',
+            'CLIENT_NAME': 'client',
+
+            # Invoice object field mappings
+            'OBJET_FACTURE': 'invoice_object',
+            'OBJECT': 'invoice_object',
+            'DESCRIPTION': 'invoice_object',
+
+            # Period field mappings
+            'PERIODE_FACTURATION': 'period',
+            'PERIODE': 'period',
+            'PERIOD': 'period',
+
+            # Flag field mappings
+            'TERMINE_FLAG': 'terminated_flag',
+            'FLAG': 'terminated_flag',
+
+            # Amount pre-tax field mappings
+            'MONTANT_HT': 'amount_pre_tax',
+            'HT': 'amount_pre_tax',
+            'AMOUNT_PRE_TAX': 'amount_pre_tax',
+
+            # Tax amount field mappings
+            'MONTANT_TVA': 'tax_amount',
+            'TVA': 'tax_amount',
+            'TAX': 'tax_amount',
+            'TAX_AMOUNT': 'tax_amount',
+
+            # Total amount field mappings
+            'MONTANT_TTC': 'total_amount',
+            'TTC': 'total_amount',
+            'TOTAL': 'total_amount',
+            'TOTAL_AMOUNT': 'total_amount',
+
+            # Revenue amount field mappings
+            'CHIFFRE_AFFAIRES': 'revenue_amount',
+            'CA': 'revenue_amount',
+            'REVENUE': 'revenue_amount',
+            'REVENUE_AMOUNT': 'revenue_amount',
+
+            # Collection amount field mappings
+            'MONTANT_ENCAISSE': 'collection_amount',
+            'ENCAISSEMENT': 'collection_amount',
+            'COLLECTION': 'collection_amount',
+            'COLLECTION_AMOUNT': 'collection_amount',
+
+            # Payment date field mappings
+            'DATE_ENCAISSEMENT': 'payment_date',
+            'DATE_PAYMENT': 'payment_date',
+            'PAYMENT_DATE': 'payment_date',
+
+            # Invoice credit amount field mappings
+            'FACTURE_AVOIR': 'invoice_credit_amount',
+            'AVOIR': 'invoice_credit_amount',
+            'CREDIT': 'invoice_credit_amount',
+            'CREDIT_AMOUNT': 'invoice_credit_amount',
+        }
+
+        for row in data:
+            try:
+                # Create a data dictionary for the model
+                model_data = {'invoice': invoice}
+
+                # Use the helper method to map fields
+                mapped_data = self._map_fields(
+                    row, field_mappings, "EtatFacture")
+                model_data.update(mapped_data)
+
+                # Parse date fields if they exist
+                if 'invoice_date' in model_data and model_data['invoice_date']:
+                    try:
+                        model_data['invoice_date'] = self._parse_date(
+                            model_data['invoice_date'])
+                    except:
+                        model_data['invoice_date'] = None
+
+                if 'payment_date' in model_data and model_data['payment_date']:
+                    try:
+                        model_data['payment_date'] = self._parse_date(
+                            model_data['payment_date'])
+                    except:
+                        model_data['payment_date'] = None
+
+                # Create the EtatFacture record
+                EtatFacture.objects.create(**model_data)
+                saved_count += 1
+
+                # Log the first few records for debugging
+                if saved_count <= 3:
+                    logger.info(
+                        f"Saved EtatFacture record #{saved_count}: {model_data}")
+
+            except Exception as e:
+                logger.error(f"Error saving EtatFacture record: {str(e)}")
+                logger.error(f"Problematic row data: {row}")
+                # Continue with next record
 
         logger.info(f"Saved {saved_count} records to EtatFacture")
         return saved_count
@@ -803,79 +1093,339 @@ class InvoiceSaveView(APIView):
     def _save_parc_corporate(self, invoice, data):
         """Save data to ParcCorporate model"""
         saved_count = 0
-        for row in data:
-            # Convert date fields
-            creation_date = self._parse_datetime(row.get('creation_date'))
+        filtered_out_count = 0
 
-            # Create the ParcCorporate record
-            ParcCorporate.objects.create(
-                invoice=invoice,
-                actel_code=row.get('actel_code', ''),
-                customer_l1_code=row.get('customer_l1_code', ''),
-                customer_l1_desc=row.get('customer_l1_desc', ''),
-                customer_l2_code=row.get('customer_l2_code', ''),
-                customer_l2_desc=row.get('customer_l2_desc', ''),
-                customer_l3_code=row.get('customer_l3_code', ''),
-                customer_l3_desc=row.get('customer_l3_desc', ''),
-                telecom_type=row.get('telecom_type', ''),
-                offer_type=row.get('offer_type', ''),
-                offer_name=row.get('offer_name', ''),
-                subscriber_status=row.get('subscriber_status', ''),
-                creation_date=creation_date,
-                state=row.get('state', ''),
-                customer_full_name=row.get('customer_full_name', '')
-            )
-            saved_count += 1
+        # Debug: Log the first row to see what fields are available
+        if data and len(data) > 0:
+            logger.info(f"First row of ParcCorporate data: {data[0]}")
+            logger.info(f"Available keys in first row: {list(data[0].keys())}")
+
+        # Define field mappings (Excel column name -> model field)
+        field_mappings = {
+            # Actel code field mappings
+            'ACTEL_CODE': 'actel_code',
+            'ACTEL CODE': 'actel_code',
+            'ACTEL': 'actel_code',
+
+            # Customer L1 code field mappings
+            'CODE_CUSTOMER_L1': 'customer_l1_code',
+            'CUSTOMER_L1_CODE': 'customer_l1_code',
+            'CUSTOMER L1 CODE': 'customer_l1_code',
+
+            # Customer L1 desc field mappings
+            'DESCRIPTION_CUSTOMER_L1': 'customer_l1_desc',
+            'CUSTOMER_L1_DESC': 'customer_l1_desc',
+            'CUSTOMER L1 DESC': 'customer_l1_desc',
+
+            # Customer L2 code field mappings
+            'CODE_CUSTOMER_L2': 'customer_l2_code',
+            'CUSTOMER_L2_CODE': 'customer_l2_code',
+            'CUSTOMER L2 CODE': 'customer_l2_code',
+
+            # Customer L2 desc field mappings
+            'DESCRIPTION_CUSTOMER_L2': 'customer_l2_desc',
+            'CUSTOMER_L2_DESC': 'customer_l2_desc',
+            'CUSTOMER L2 DESC': 'customer_l2_desc',
+
+            # Customer L3 code field mappings
+            'CODE_CUSTOMER_L3': 'customer_l3_code',
+            'CUSTOMER_L3_CODE': 'customer_l3_code',
+            'CUSTOMER L3 CODE': 'customer_l3_code',
+
+            # Customer L3 desc field mappings
+            'DESCRIPTION_CUSTOMER_L3': 'customer_l3_desc',
+            'CUSTOMER_L3_DESC': 'customer_l3_desc',
+            'CUSTOMER L3 DESC': 'customer_l3_desc',
+
+            # Telecom type field mappings
+            'TELECOM_TYPE': 'telecom_type',
+            'TELECOM TYPE': 'telecom_type',
+
+            # Offer type field mappings
+            'OFFER_TYPE': 'offer_type',
+            'OFFER TYPE': 'offer_type',
+
+            # Offer name field mappings
+            'OFFER_NAME': 'offer_name',
+            'OFFER NAME': 'offer_name',
+
+            # Subscriber status field mappings
+            'SUBSCRIBER_STATUS': 'subscriber_status',
+            'SUBSCRIBER STATUS': 'subscriber_status',
+
+            # Creation date field mappings
+            'CREATION_DATE': 'creation_date',
+            'CREATION DATE': 'creation_date',
+
+            # State field mappings
+            'STATE': 'state',
+
+            # Customer full name field mappings
+            'CUSTOMER_FULL_NAME': 'customer_full_name',
+            'CUSTOMER FULL NAME': 'customer_full_name',
+        }
+
+        for row in data:
+            try:
+                # Use the helper method to map fields
+                mapped_data = self._map_fields(
+                    row, field_mappings, "ParcCorporate")
+
+                # Apply client's filtering requirements
+
+                # 1. Filter out records with customer_l3_code = 5 or 57
+                customer_l3_code = mapped_data.get('customer_l3_code', '')
+                if customer_l3_code in ['5', '57']:
+                    filtered_out_count += 1
+                    continue
+
+                # 2. Filter out records with offer_name containing "Moohtarif" or "Solutions Hebergements"
+                offer_name = mapped_data.get('offer_name', '')
+                if 'Moohtarif' in offer_name or 'Solutions Hebergements' in offer_name:
+                    filtered_out_count += 1
+                    continue
+
+                # 3. Filter out records with subscriber_status = "Predeactivated"
+                subscriber_status = mapped_data.get('subscriber_status', '')
+                if subscriber_status == 'Predeactivated':
+                    filtered_out_count += 1
+                    continue
+
+                # Handle DOT - store in state field if needed
+                dot_code = row.get('DO', '') or row.get(
+                    'DOT', '') or row.get('DOT_CODE', '')
+
+                # Parse creation_date if it exists and make it timezone-aware
+                if 'creation_date' in mapped_data and mapped_data['creation_date']:
+                    try:
+                        # Parse the datetime
+                        naive_datetime = self._parse_datetime(
+                            mapped_data['creation_date'])
+
+                        # Make it timezone-aware by adding the current timezone
+                        if naive_datetime and timezone.is_naive(naive_datetime):
+                            mapped_data['creation_date'] = timezone.make_aware(
+                                naive_datetime)
+                        else:
+                            mapped_data['creation_date'] = naive_datetime
+                    except Exception as e:
+                        logger.warning(
+                            f"Error parsing creation_date: {str(e)}")
+                        mapped_data['creation_date'] = None
+
+                # Get state value, append DOT code if available
+                state = mapped_data.get('state', '')
+                if dot_code and dot_code not in state:
+                    state = f"{state} (DOT: {dot_code})" if state else f"DOT: {dot_code}"
+                mapped_data['state'] = state
+
+                # Create the model instance
+                model_data = {'invoice': invoice}
+                model_data.update(mapped_data)
+
+                ParcCorporate.objects.create(**model_data)
+                saved_count += 1
+
+                # Log the first few records for debugging
+                if saved_count <= 3:
+                    logger.info(
+                        f"Saved ParcCorporate record #{saved_count}: {model_data}")
+
+            except Exception as e:
+                logger.error(f"Error saving ParcCorporate record: {str(e)}")
+                logger.error(f"Problematic row data: {row}")
+                # Continue with next record
 
         logger.info(f"Saved {saved_count} records to ParcCorporate")
+        logger.info(
+            f"Filtered out {filtered_out_count} records based on client requirements")
         return saved_count
 
     def _save_creances_ngbss(self, invoice, data):
         """Save data to CreancesNGBSS model"""
         saved_count = 0
-        for row in data:
-            # Create the CreancesNGBSS record
-            CreancesNGBSS.objects.create(
-                invoice=invoice,
-                dot=row.get('dot', ''),
-                actel=row.get('actel', ''),
-                month=row.get('month', ''),
-                year=row.get('year', ''),
-                subscriber_status=row.get('subscriber_status', ''),
-                product=row.get('product', ''),
-                customer_lev1=row.get('customer_lev1', ''),
-                customer_lev2=row.get('customer_lev2', ''),
-                customer_lev3=row.get('customer_lev3', ''),
-                invoice_amount=row.get('invoice_amount'),
-                open_amount=row.get('open_amount'),
-                tax_amount=row.get('tax_amount'),
-                invoice_amount_ht=row.get('invoice_amount_ht'),
-                dispute_amount=row.get('dispute_amount'),
-                dispute_tax_amount=row.get('dispute_tax_amount'),
-                dispute_net_amount=row.get('dispute_net_amount'),
-                creance_brut=row.get('creance_brut'),
-                creance_net=row.get('creance_net'),
-                creance_ht=row.get('creance_ht')
-            )
-            saved_count += 1
+        start_time = timezone.now()
 
-        logger.info(f"Saved {saved_count} records to CreancesNGBSS")
+        # Debug: Log the first row to see what fields are available
+        if data and len(data) > 0:
+            logger.info(f"First row of CreancesNGBSS data: {data[0]}")
+            logger.info(f"Available keys in first row: {list(data[0].keys())}")
+
+        # Define possible field mappings (Excel column name -> model field)
+        field_mappings = {
+            # DOT field mappings
+            'DO': 'dot_code',
+            'DOT': 'dot_code',
+            'DOT_CODE': 'dot_code',
+
+            # ACTEL field mappings
+            'ACTEL': 'actel',
+            'ACTEL_CODE': 'actel',
+
+            # Month field mappings
+            'MOIS': 'month',
+            'MONTH': 'month',
+
+            # Year field mappings
+            'ANNEE': 'year',
+            'YEAR': 'year',
+
+            # Subscriber status field mappings
+            'SUBS_STATUS': 'subscriber_status',
+            'SUBSCRIBER_STATUS': 'subscriber_status',
+            'STATUS': 'subscriber_status',
+
+            # Product field mappings
+            'PRODUIT': 'product',
+            'PRODUCT': 'product',
+
+            # Customer level field mappings
+            'CUST_LEV1': 'customer_lev1',
+            'CUSTOMER_LEV1': 'customer_lev1',
+            'CUST_LEV2': 'customer_lev2',
+            'CUSTOMER_LEV2': 'customer_lev2',
+            'CUST_LEV3': 'customer_lev3',
+            'CUSTOMER_LEV3': 'customer_lev3',
+
+            # Invoice amount field mappings
+            'INVOICE_AMT': 'invoice_amount',
+            'INVOICE_AMOUNT': 'invoice_amount',
+            'MONTANT_FACTURE': 'invoice_amount',
+
+            # Open amount field mappings
+            'OPEN_AMT': 'open_amount',
+            'OPEN_AMOUNT': 'open_amount',
+            'MONTANT_OUVERT': 'open_amount',
+
+            # Tax amount field mappings
+            'TAX_AMT': 'tax_amount',
+            'TAX_AMOUNT': 'tax_amount',
+            'MONTANT_TVA': 'tax_amount',
+            'TVA': 'tax_amount',
+
+            # Invoice amount HT field mappings
+            'INVOICE_AMT_HT': 'invoice_amount_ht',
+            'INVOICE_AMOUNT_HT': 'invoice_amount_ht',
+            'MONTANT_FACTURE_HT': 'invoice_amount_ht',
+            'HT': 'invoice_amount_ht',
+
+            # Dispute amount field mappings
+            'DISPUTE_AMT': 'dispute_amount',
+            'DISPUTE_AMOUNT': 'dispute_amount',
+            'MONTANT_LITIGE': 'dispute_amount',
+
+            # Dispute tax amount field mappings
+            'DISPUTE_TAX_AMT': 'dispute_tax_amount',
+            'DISPUTE_TAX_AMOUNT': 'dispute_tax_amount',
+            'MONTANT_TVA_LITIGE': 'dispute_tax_amount',
+
+            # Dispute net amount field mappings
+            'DISPUTE_NET_AMT': 'dispute_net_amount',
+            'DISPUTE_NET_AMOUNT': 'dispute_net_amount',
+            'MONTANT_NET_LITIGE': 'dispute_net_amount',
+
+            # Creance brut field mappings
+            'CREANCE_BRUT': 'creance_brut',
+            'CREANCE_BRUTE': 'creance_brut',
+            'GROSS_RECEIVABLE': 'creance_brut',
+
+            # Creance net field mappings
+            'CREANCE_NET': 'creance_net',
+            'NET_RECEIVABLE': 'creance_net',
+
+            # Creance HT field mappings
+            'CREANCE_HT': 'creance_ht',
+            'RECEIVABLE_HT': 'creance_ht',
+
+            # Generic amount field - map to invoice_amount if present
+            'MONTANT': 'invoice_amount',
+            'AMOUNT': 'invoice_amount',
+        }
+
+        for row in data:
+            try:
+                # Create a data dictionary for the model
+                model_data = {'invoice': invoice}
+
+                # Use the helper method to map fields
+                mapped_data = self._map_fields(
+                    row, field_mappings, "CreancesNGBSS")
+                model_data.update(mapped_data)
+
+                # Parse decimal values safely
+                decimal_fields = [
+                    'invoice_amount', 'open_amount', 'tax_amount', 'invoice_amount_ht',
+                    'dispute_amount', 'dispute_tax_amount', 'dispute_net_amount',
+                    'creance_brut', 'creance_net', 'creance_ht'
+                ]
+
+                for field in decimal_fields:
+                    if field in model_data and model_data[field] is not None:
+                        try:
+                            if isinstance(model_data[field], str):
+                                # Clean the string value
+                                clean_value = model_data[field].replace(
+                                    ',', '.').replace(' ', '')
+                                model_data[field] = float(
+                                    clean_value) if clean_value else 0
+                        except (ValueError, TypeError):
+                            model_data[field] = 0
+
+                # Create the CreancesNGBSS record
+                CreancesNGBSS.objects.create(**model_data)
+                saved_count += 1
+
+                # Log the first few records for debugging
+                if saved_count <= 3:
+                    logger.info(
+                        f"Saved CreancesNGBSS record #{saved_count}: {model_data}")
+
+            except Exception as e:
+                logger.error(f"Error saving CreancesNGBSS record: {str(e)}")
+                logger.error(f"Problematic row data: {row}")
+                # Continue with next record
+
+        # Calculate final stats
+        total_time = (timezone.now() - start_time).total_seconds()
+        records_per_second = saved_count / total_time if total_time > 0 else 0
+
+        logger.info(
+            f"Saved {saved_count} records to CreancesNGBSS in {total_time:.2f} seconds ({records_per_second:.2f} records/sec)")
         return saved_count
 
     def _save_ca_periodique(self, invoice, data):
         """Save data to CAPeriodique model"""
         saved_count = 0
         for row in data:
-            CAPeriodique.objects.create(
-                invoice=invoice,
-                dot=row.get('DO', ''),
-                product=row.get('PRODUIT', ''),
-                amount_pre_tax=row.get('HT', 0),
-                tax_amount=row.get('TAX', 0),
-                total_amount=row.get('TTC', 0),
-                discount=row.get('DISCOUNT', 0)
-            )
-            saved_count += 1
+            dot_code = row.get('DO', '')
+
+            # Get or create DOT instance
+            dot_instance = None
+            if dot_code:
+                try:
+                    dot_instance, _ = DOT.objects.get_or_create(
+                        code=dot_code,
+                        defaults={'name': dot_code}
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Error getting/creating DOT with code {dot_code}: {str(e)}")
+
+            try:
+                CAPeriodique.objects.create(
+                    invoice=invoice,
+                    dot=dot_instance,
+                    dot_code=dot_code,  # Store the original code as backup
+                    product=row.get('PRODUIT', ''),
+                    amount_pre_tax=row.get('HT', 0),
+                    tax_amount=row.get('TAX', 0),
+                    total_amount=row.get('TTC', 0),
+                    discount=row.get('DISCOUNT', 0)
+                )
+                saved_count += 1
+            except Exception as e:
+                logger.error(f"Error saving CAPeriodique record: {str(e)}")
+                # Continue with next record
 
         logger.info(f"Saved {saved_count} records to CAPeriodique")
         return saved_count
@@ -884,17 +1434,36 @@ class InvoiceSaveView(APIView):
         """Save data to CANonPeriodique model"""
         saved_count = 0
         for row in data:
-            CANonPeriodique.objects.create(
-                invoice=invoice,
-                dot=row.get('DO', ''),
-                product=row.get('PRODUIT', ''),
-                amount_pre_tax=row.get('HT', 0),
-                tax_amount=row.get('TAX', 0),
-                total_amount=row.get('TTC', 0),
-                sale_type=row.get('TYPE_VENTE', ''),
-                channel=row.get('CHANNEL', '')
-            )
-            saved_count += 1
+            dot_code = row.get('DO', '')
+
+            # Get or create DOT instance
+            dot_instance = None
+            if dot_code:
+                try:
+                    dot_instance, _ = DOT.objects.get_or_create(
+                        code=dot_code,
+                        defaults={'name': dot_code}
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Error getting/creating DOT with code {dot_code}: {str(e)}")
+
+            try:
+                CANonPeriodique.objects.create(
+                    invoice=invoice,
+                    dot=dot_instance,
+                    dot_code=dot_code,  # Store the original code as backup
+                    product=row.get('PRODUIT', ''),
+                    amount_pre_tax=row.get('HT', 0),
+                    tax_amount=row.get('TAX', 0),
+                    total_amount=row.get('TTC', 0),
+                    sale_type=row.get('TYPE_VENTE', ''),
+                    channel=row.get('CHANNEL', '')
+                )
+                saved_count += 1
+            except Exception as e:
+                logger.error(f"Error saving CANonPeriodique record: {str(e)}")
+                # Continue with next record
 
         logger.info(f"Saved {saved_count} records to CANonPeriodique")
         return saved_count
@@ -903,31 +1472,53 @@ class InvoiceSaveView(APIView):
         """Save data to CADNT model"""
         saved_count = 0
         for row in data:
-            # Convert date fields
-            entry_date = self._parse_datetime(row.get('ENTRY_DATE'))
+            dot_code = row.get('DO', '')
 
-            # Create the CADNT record
-            CADNT.objects.create(
-                invoice=invoice,
-                pri_identity=row.get('PRI_IDENTITY', ''),
-                customer_code=row.get('CUST_CODE', ''),
-                full_name=row.get('FULL_NAME', ''),
-                transaction_id=row.get('TRANS_ID', ''),
-                transaction_type=row.get('TRANS_TYPE', ''),
-                channel_id=row.get('CHANNEL_ID', ''),
-                ext_trans_type=row.get('EXT_TRANS_TYPE', ''),
-                total_amount=row.get('TTC', 0),
-                tax_amount=row.get('TVA', 0),
-                amount_pre_tax=row.get('HT', 0),
-                entry_date=entry_date,
-                actel=row.get('ACTEL', ''),
-                dot=row.get('DO', ''),
-                customer_lev1=row.get('CUST_LEV1', ''),
-                customer_lev2=row.get('CUST_LEV2', ''),
-                customer_lev3=row.get('CUST_LEV3', ''),
-                department=row.get('DEPARTEMENT', '')
-            )
-            saved_count += 1
+            # Get or create DOT instance
+            dot_instance = None
+            if dot_code:
+                try:
+                    dot_instance, _ = DOT.objects.get_or_create(
+                        code=dot_code,
+                        defaults={'name': dot_code}
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Error getting/creating DOT with code {dot_code}: {str(e)}")
+
+            try:
+                # Parse date if available
+                entry_date = None
+                if 'ENTRY_DATE' in row and row['ENTRY_DATE']:
+                    try:
+                        entry_date = self._parse_datetime(row['ENTRY_DATE'])
+                    except:
+                        pass
+
+                CADNT.objects.create(
+                    invoice=invoice,
+                    pri_identity=row.get('PRI_IDENTITY', ''),
+                    customer_code=row.get('CUST_CODE', ''),
+                    full_name=row.get('FULL_NAME', ''),
+                    transaction_id=row.get('TRANS_ID', ''),
+                    transaction_type=row.get('TRANS_TYPE', ''),
+                    channel_id=row.get('CHANNEL_ID', ''),
+                    ext_trans_type=row.get('EXT_TRANS_TYPE', ''),
+                    total_amount=row.get('TTC', 0),
+                    tax_amount=row.get('TVA', 0),
+                    amount_pre_tax=row.get('HT', 0),
+                    entry_date=entry_date,
+                    actel=row.get('ACTEL', ''),
+                    dot=dot_instance,
+                    dot_code=dot_code,  # Store the original code as backup
+                    customer_lev1=row.get('CUST_LEV1', ''),
+                    customer_lev2=row.get('CUST_LEV2', ''),
+                    customer_lev3=row.get('CUST_LEV3', '')
+                )
+                saved_count += 1
+            except Exception as e:
+                logger.error(f"Error saving CADNT record: {str(e)}")
+                # Continue with next record
 
         logger.info(f"Saved {saved_count} records to CADNT")
         return saved_count
@@ -936,29 +1527,53 @@ class InvoiceSaveView(APIView):
         """Save data to CARFD model"""
         saved_count = 0
         for row in data:
-            # Convert date fields
-            entry_date = self._parse_datetime(row.get('entry_date'))
+            dot_code = row.get('DO', '')
 
-            # Create the CARFD record
-            CARFD.objects.create(
-                invoice=invoice,
-                transaction_id=row.get('transaction_id', ''),
-                full_name=row.get('full_name', ''),
-                actel=row.get('actel', ''),
-                dot=row.get('dot', ''),
-                total_amount=row.get('total_amount') or row.get('ttc'),
-                droit_timbre=row.get('droit_timbre'),
-                tax_amount=row.get('tax_amount') or row.get('tva'),
-                amount_pre_tax=row.get('amount_pre_tax') or row.get('ht'),
-                entry_date=entry_date,
-                customer_code=row.get('customer_code', ''),
-                pri_identity=row.get('pri_identity', ''),
-                customer_lev1=row.get('customer_lev1', ''),
-                customer_lev2=row.get('customer_lev2', ''),
-                customer_lev3=row.get('customer_lev3', ''),
-                department=row.get('department', '')
-            )
-            saved_count += 1
+            # Get or create DOT instance
+            dot_instance = None
+            if dot_code:
+                try:
+                    dot_instance, _ = DOT.objects.get_or_create(
+                        code=dot_code,
+                        defaults={'name': dot_code}
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Error getting/creating DOT with code {dot_code}: {str(e)}")
+
+            try:
+                # Parse date if available
+                entry_date = None
+                if 'ENTRY_DATE' in row and row['ENTRY_DATE']:
+                    try:
+                        entry_date = self._parse_datetime(row['ENTRY_DATE'])
+                    except:
+                        pass
+
+                # Create CARFD record with only the fields that exist in the model
+                CARFD.objects.create(
+                    invoice=invoice,
+                    pri_identity=row.get('PRI_IDENTITY', ''),
+                    customer_code=row.get('CUST_CODE', ''),
+                    full_name=row.get('FULL_NAME', ''),
+                    transaction_id=row.get('TRANS_ID', ''),
+                    actel=row.get('ACTEL', ''),
+                    dot=dot_instance,
+                    dot_code=dot_code,  # Store the original code as backup
+                    total_amount=row.get('TTC', 0),
+                    droit_timbre=row.get('DROIT_TIMBRE', 0),
+                    tax_amount=row.get('TVA', 0),
+                    amount_pre_tax=row.get('HT', 0),
+                    entry_date=entry_date,
+                    customer_lev1=row.get('CUST_LEV1', ''),
+                    customer_lev2=row.get('CUST_LEV2', ''),
+                    customer_lev3=row.get('CUST_LEV3', ''),
+                    department=row.get('DEPARTEMENT', '')
+                )
+                saved_count += 1
+            except Exception as e:
+                logger.error(f"Error saving CARFD record: {str(e)}")
+                # Continue with next record
 
         logger.info(f"Saved {saved_count} records to CARFD")
         return saved_count
@@ -967,31 +1582,55 @@ class InvoiceSaveView(APIView):
         """Save data to CACNT model"""
         saved_count = 0
         for row in data:
-            # Convert date fields
-            entry_date = self._parse_datetime(row.get('entry_date'))
+            dot_code = row.get('DO', '')
 
-            # Create the CACNT record
-            CACNT.objects.create(
-                invoice=invoice,
-                invoice_adjusted=row.get('invoice_adjusted', ''),
-                pri_identity=row.get('pri_identity', ''),
-                customer_code=row.get('customer_code', ''),
-                full_name=row.get('full_name', ''),
-                transaction_id=row.get('transaction_id', ''),
-                transaction_type=row.get('transaction_type', ''),
-                channel_id=row.get('channel_id', ''),
-                total_amount=row.get('total_amount') or row.get('ttc'),
-                tax_amount=row.get('tax_amount') or row.get('tva'),
-                amount_pre_tax=row.get('amount_pre_tax') or row.get('ht'),
-                entry_date=entry_date,
-                actel=row.get('actel', ''),
-                dot=row.get('dot', ''),
-                customer_lev1=row.get('customer_lev1', ''),
-                customer_lev2=row.get('customer_lev2', ''),
-                customer_lev3=row.get('customer_lev3', ''),
-                department=row.get('department', '')
-            )
-            saved_count += 1
+            # Get or create DOT instance
+            dot_instance = None
+            if dot_code:
+                try:
+                    dot_instance, _ = DOT.objects.get_or_create(
+                        code=dot_code,
+                        defaults={'name': dot_code}
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Error getting/creating DOT with code {dot_code}: {str(e)}")
+
+            try:
+                # Parse date if available
+                entry_date = None
+                if 'ENTRY_DATE' in row and row['ENTRY_DATE']:
+                    try:
+                        entry_date = self._parse_datetime(row['ENTRY_DATE'])
+                    except:
+                        pass
+
+                # Create CACNT record with only the fields that exist in the model
+                CACNT.objects.create(
+                    invoice=invoice,
+                    invoice_adjusted=row.get('INVOICE_ADJUSTED', ''),
+                    pri_identity=row.get('PRI_IDENTITY', ''),
+                    customer_code=row.get('CUST_CODE', ''),
+                    full_name=row.get('FULL_NAME', ''),
+                    transaction_id=row.get('TRANS_ID', ''),
+                    transaction_type=row.get('TRANS_TYPE', ''),
+                    channel_id=row.get('CHANNEL_ID', ''),
+                    total_amount=row.get('TTC', 0),
+                    tax_amount=row.get('TVA', 0),
+                    amount_pre_tax=row.get('HT', 0),
+                    entry_date=entry_date,
+                    actel=row.get('ACTEL', ''),
+                    dot=dot_instance,
+                    dot_code=dot_code,  # Store the original code as backup
+                    customer_lev1=row.get('CUST_LEV1', ''),
+                    customer_lev2=row.get('CUST_LEV2', ''),
+                    customer_lev3=row.get('CUST_LEV3', ''),
+                    department=row.get('DEPARTEMENT', '')
+                )
+                saved_count += 1
+            except Exception as e:
+                logger.error(f"Error saving CACNT record: {str(e)}")
+                # Continue with next record
 
         logger.info(f"Saved {saved_count} records to CACNT")
         return saved_count
@@ -1005,16 +1644,52 @@ class InvoiceSaveView(APIView):
             return date_value.date()
 
         if isinstance(date_value, str):
+            # Try to handle ISO format with T separator first
+            if 'T' in date_value:
+                try:
+                    return datetime.fromisoformat(date_value.replace('Z', '+00:00')).date()
+                except ValueError:
+                    pass
+
+            # Try to handle French abbreviated month formats like "20 févr. 24"
+            french_months = {
+                'janv.': '01', 'févr.': '02', 'mars': '03', 'avr.': '04',
+                'mai': '05', 'juin': '06', 'juil.': '07', 'août': '08',
+                'sept.': '09', 'oct.': '10', 'nov.': '11', 'déc.': '12'
+            }
+
+            for month_fr, month_num in french_months.items():
+                if month_fr in date_value.lower():
+                    try:
+                        # Extract day and year
+                        parts = date_value.split()
+                        day = parts[0]
+                        year = parts[-1]
+
+                        # Handle 2-digit year
+                        if len(year) == 2:
+                            year = f"20{year}"
+
+                        # Create a standard format date
+                        standard_date = f"{day}/{month_num}/{year}"
+                        return datetime.strptime(standard_date, "%d/%m/%Y").date()
+                    except (ValueError, IndexError):
+                        pass
+
             # Try different date formats
-            formats = ['%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y',
-                       '%d.%m.%Y', '%d %b %Y', '%d %B %Y']
+            formats = [
+                '%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y',
+                '%d.%m.%Y', '%d %b %Y', '%d %B %Y',
+                '%m/%d/%Y', '%Y/%m/%d', '%d-%b-%Y',
+                '%d %b. %Y', '%d %B, %Y'
+            ]
             for fmt in formats:
                 try:
                     return datetime.strptime(date_value, fmt).date()
                 except ValueError:
                     continue
 
-        return None
+            return None
 
     def _parse_datetime(self, datetime_value):
         """Parse a datetime value from various formats"""
@@ -1040,7 +1715,7 @@ class InvoiceSaveView(APIView):
                 except ValueError:
                     continue
 
-        return None
+            return None
 
 
 class InvoiceInspectView(APIView):
@@ -1085,12 +1760,12 @@ class InvoiceInspectView(APIView):
                 preview_data, summary_data = processor.process_file(
                     file_path, file_name)
 
-                # Update the invoice with the detected file type
-                if summary_data and 'detected_file_type' in summary_data:
-                    invoice.file_type = summary_data['detected_file_type']
-                    invoice.detection_confidence = summary_data.get(
-                        'detection_confidence', 0.0)
-                    invoice.save()
+            # Update the invoice with the detected file type
+            if summary_data and 'detected_file_type' in summary_data:
+                invoice.file_type = summary_data['detected_file_type']
+                invoice.detection_confidence = summary_data.get(
+                    'detection_confidence', 0.0)
+                invoice.save()
 
             # Make sure all NaN values are handled before returning the response
             preview_data = handle_nan_values(preview_data)
@@ -1185,40 +1860,24 @@ class FacturationManuelleDetailView(generics.RetrieveUpdateDestroyAPIView):
         return FacturationManuelle.objects.filter(invoice__uploaded_by=user)
 
 
-class JournalVentesListView(generics.ListAPIView):
+class JournalVentesListView(DOTPermissionMixin, generics.ListAPIView):
     """API view for listing Journal des Ventes data"""
     permission_classes = [IsAuthenticated]
     serializer_class = JournalVentesSerializer
+    pagination_class = StandardResultsSetPagination
+    dot_field = 'dot'  # Specify the field name for DOT in this model
 
     def get_queryset(self):
-        """
-        This view should return a list of all journal ventes records
-        for the currently authenticated user.
-        """
-        user = self.request.user
+        queryset = super().get_queryset()
 
-        # Get query parameters
-        invoice_id = self.request.query_params.get('invoice_id', None)
-        organization = self.request.query_params.get('organization', None)
-        start_date = self.request.query_params.get('start_date', None)
-        end_date = self.request.query_params.get('end_date', None)
+        # Apply additional filters from query parameters
+        year = self.request.query_params.get('year')
+        month = self.request.query_params.get('month')
 
-        # Start with all records for this user
-        queryset = JournalVentes.objects.filter(
-            invoice__uploaded_by=user)
-
-        # Apply filters if provided
-        if invoice_id:
-            queryset = queryset.filter(invoice_id=invoice_id)
-        if organization:
-            queryset = queryset.filter(organization=organization)
-        if start_date and end_date:
-            queryset = queryset.filter(
-                invoice_date__range=[start_date, end_date])
-        elif start_date:
-            queryset = queryset.filter(invoice_date__gte=start_date)
-        elif end_date:
-            queryset = queryset.filter(invoice_date__lte=end_date)
+        if year:
+            queryset = queryset.filter(year=year)
+        if month:
+            queryset = queryset.filter(month=month)
 
         return queryset
 
@@ -1237,40 +1896,29 @@ class JournalVentesDetailView(generics.RetrieveUpdateDestroyAPIView):
         return JournalVentes.objects.filter(invoice__uploaded_by=user)
 
 
-class EtatFactureListView(generics.ListAPIView):
+class EtatFactureListView(DOTPermissionMixin, generics.ListAPIView):
     """API view for listing Etat de Facture et Encaissement data"""
     permission_classes = [IsAuthenticated]
     serializer_class = EtatFactureSerializer
+    dot_field = 'dot'  # Specify the field name for DOT in this model
+    queryset = EtatFacture.objects.all()
 
     def get_queryset(self):
-        """
-        This view should return a list of all etat facture records
-        for the currently authenticated user.
-        """
-        user = self.request.user
+        queryset = super().get_queryset()
 
-        # Get query parameters
-        invoice_id = self.request.query_params.get('invoice_id', None)
-        organization = self.request.query_params.get('organization', None)
-        start_date = self.request.query_params.get('start_date', None)
-        end_date = self.request.query_params.get('end_date', None)
+        # Apply additional filters from query parameters
+        year = self.request.query_params.get('year')
+        month = self.request.query_params.get('month')
 
-        # Start with all records for this user
-        queryset = EtatFacture.objects.filter(
-            invoice__uploaded_by=user)
+        if year:
+            queryset = queryset.filter(year=year)
+        if month:
+            queryset = queryset.filter(month=month)
 
-        # Apply filters if provided
+        # Get the invoice parameter from the request
+        invoice_id = self.request.query_params.get('invoice')
         if invoice_id:
             queryset = queryset.filter(invoice_id=invoice_id)
-        if organization:
-            queryset = queryset.filter(organization=organization)
-        if start_date and end_date:
-            queryset = queryset.filter(
-                invoice_date__range=[start_date, end_date])
-        elif start_date:
-            queryset = queryset.filter(invoice_date__gte=start_date)
-        elif end_date:
-            queryset = queryset.filter(invoice_date__lte=end_date)
 
         return queryset
 
@@ -1310,17 +1958,22 @@ class FileTypeListView(APIView):
 
 
 # Add these classes for the remaining models
-class ParcCorporateListView(generics.ListAPIView):
+class ParcCorporateListView(DOTPermissionMixin, generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = ParcCorporateSerializer
+    dot_field = 'dot'  # Specify the field name for DOT in this model
 
     def get_queryset(self):
-        user = self.request.user
-        invoice_id = self.request.query_params.get('invoice_id', None)
+        queryset = super().get_queryset()
 
-        queryset = ParcCorporate.objects.filter(invoice__uploaded_by=user)
-        if invoice_id:
-            queryset = queryset.filter(invoice_id=invoice_id)
+        # Apply additional filters from query parameters
+        year = self.request.query_params.get('year')
+        month = self.request.query_params.get('month')
+
+        if year:
+            queryset = queryset.filter(year=year)
+        if month:
+            queryset = queryset.filter(month=month)
 
         return queryset
 
@@ -1540,7 +2193,7 @@ class InvoiceSummaryView(APIView):
                     invoice=invoice).count()
             elif invoice.file_type == 'ca_non_periodique':
                 data_counts['ca_non_periodique'] = CANonPeriodique.objects.filter(
-                    invoice=invoice).count()
+                    invoice_id=invoice).count()
             elif invoice.file_type == 'ca_dnt':
                 data_counts['ca_dnt'] = CADNT.objects.filter(
                     invoice=invoice).count()
@@ -1598,3 +2251,2592 @@ class InvoiceSummaryView(APIView):
                 {"error": f"Failed to get invoice summary: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class ExportDataView(APIView):
+    """
+    API view for exporting data in various formats
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        try:
+            # Get query parameters
+            data_type = request.query_params.get('data_type', 'revenue')
+            export_format = request.query_params.get('format', 'excel')
+            year = request.query_params.get('year', datetime.now().year)
+            month = request.query_params.get('month', None)
+            dot = request.query_params.get('dot', None)
+
+            # Get data based on data_type
+            if data_type == 'revenue':
+                data = self._get_revenue_data(year, month, dot)
+            elif data_type == 'collection':
+                data = self._get_collection_data(year, month, dot)
+            elif data_type == 'receivables':
+                data = self._get_receivables_data(year, month, dot)
+            elif data_type == 'corporate_park':
+                data = self._get_corporate_park_data(year, month, dot)
+            else:
+                return Response(
+                    {'error': f"Invalid data_type: {data_type}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Export data in the requested format
+            if export_format == 'excel':
+                return self._export_excel(data, data_type)
+            elif export_format == 'csv':
+                return self._export_csv(data, data_type)
+            elif export_format == 'pdf':
+                return self._export_pdf(data, data_type)
+            else:
+                return Response(
+                    {'error': f"Invalid format: {export_format}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        except Exception as e:
+            logger.error(f"Error exporting data: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _get_revenue_data(self, year, month, dot):
+        # Query JournalVentes for revenue data
+        query = JournalVentes.objects.all()
+        if year:
+            query = query.filter(invoice_date__year=year)
+        if month:
+            query = query.filter(invoice_date__month=month)
+        if dot:
+            query = query.filter(organization__icontains=dot)
+
+        # Serialize the data
+        serializer = JournalVentesSerializer(query, many=True)
+        return serializer.data
+
+    def _get_collection_data(self, year, month, dot):
+        """
+        Get collection data for export
+
+        Args:
+            year: The year to filter by
+            month: The month to filter by
+            dot: The DOT to filter by
+
+        Returns:
+            Serialized collection data
+        """
+        # Query EtatFacture for collection data
+        query = EtatFacture.objects.all()
+        if year:
+            query = query.filter(invoice_date__year=year)
+        if month:
+            query = query.filter(invoice_date__month=month)
+        if dot:
+            query = query.filter(organization__icontains=dot)
+
+        # Serialize the data
+        serializer = EtatFactureSerializer(query, many=True)
+        return serializer.data
+
+    def _get_receivables_data(self, year, month, dot):
+        """
+        Get receivables data for export
+
+        Args:
+            year: The year to filter by
+            month: The month to filter by
+            dot: The DOT to filter by
+
+        Returns:
+            Serialized receivables data
+        """
+        # Query CreancesNGBSS for receivables data
+        query = CreancesNGBSS.objects.all()
+        if year:
+            query = query.filter(year=year)
+        if month:
+            query = query.filter(month=month)
+        if dot:
+            query = query.filter(dot__icontains=dot)
+
+        # Serialize the data
+        serializer = CreancesNGBSSSerializer(query, many=True)
+        return serializer.data
+
+    def _get_corporate_park_data(self, year, month, dot):
+        """
+        Get corporate park data for export
+
+        Args:
+            year: The year to filter by
+            month: The month to filter by
+            dot: The DOT to filter by
+
+        Returns:
+            Serialized corporate park data
+        """
+        # Query ParcCorporate for corporate park data
+        query = ParcCorporate.objects.all()
+        if year and month:
+            # Filter by creation_date year and month
+            query = query.filter(
+                creation_date__year=year,
+                creation_date__month=month
+            )
+        if dot:
+            query = query.filter(state__icontains=dot)
+
+        # Serialize the data
+        serializer = ParcCorporateSerializer(query, many=True)
+        return serializer.data
+
+    def _export_excel(self, data, data_type):
+        # Create an in-memory output file
+        output = io.BytesIO()
+
+        # Create a workbook and add a worksheet
+        workbook = xlsxwriter.Workbook(output)
+        worksheet = workbook.add_worksheet(data_type.capitalize())
+
+        # Add headers
+        headers = list(data[0].keys()) if data else []
+        for col, header in enumerate(headers):
+            worksheet.write(0, col, header)
+
+        # Add data
+        for row, item in enumerate(data, 1):
+            for col, header in enumerate(headers):
+                worksheet.write(row, col, item.get(header, ''))
+
+        # Close the workbook
+        workbook.close()
+
+        # Prepare response
+        output.seek(0)
+        response = HttpResponse(
+            output.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{data_type}_{datetime.now().strftime("%Y%m%d")}.xlsx"'
+
+        return response
+
+    def _export_csv(self, data, data_type):
+        """
+        Export data as CSV file
+
+        Args:
+            data: The data to export
+            data_type: The type of data being exported (used for filename)
+
+        Returns:
+            HttpResponse with CSV content
+        """
+        # Create CSV response
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{data_type}_{datetime.now().strftime("%Y%m%d")}.csv"'
+
+        # Create CSV writer
+        writer = csv.writer(response)
+
+        # Write headers
+        if data:
+            headers = data[0].keys()
+            writer.writerow(headers)
+
+            # Write data rows
+            for item in data:
+                writer.writerow([item.get(header, '') for header in headers])
+
+        return response
+
+    def _export_pdf(self, data, data_type):
+        """
+        Export data as PDF file
+
+        Args:
+            data: The data to export
+            data_type: The type of data being exported (used for filename and title)
+
+        Returns:
+            HttpResponse with PDF content
+        """
+        # Create PDF response
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{data_type}_{datetime.now().strftime("%Y%m%d")}.pdf"'
+
+        # Create PDF document
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+
+        # Add title
+        p.setFont("Helvetica-Bold", 16)
+        p.drawString(30, 750, f"{data_type.capitalize()} Report")
+        p.setFont("Helvetica", 12)
+
+        # Add date
+        p.drawString(
+            30, 730, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+        # Add data
+        y = 700
+        if data:
+            headers = list(data[0].keys())
+
+            # Draw headers
+            x = 30
+            p.setFont("Helvetica-Bold", 10)
+            for header in headers[:5]:  # Limit to 5 columns for readability
+                p.drawString(x, y, header)
+                x += 100
+
+            # Draw data rows
+            p.setFont("Helvetica", 10)
+            y -= 20
+            for item in data[:30]:  # Limit to 30 rows for simplicity
+                x = 30
+                for header in headers[:5]:
+                    value = str(item.get(header, ''))
+                    if len(value) > 15:
+                        value = value[:12] + '...'
+                    p.drawString(x, y, value)
+                    x += 100
+                y -= 20
+                if y < 50:
+                    p.showPage()
+                    p.setFont("Helvetica", 10)
+                    y = 750
+
+        p.save()
+        pdf = buffer.getvalue()
+        buffer.close()
+        response.write(pdf)
+
+        return response
+
+
+class AnomalyListView(generics.ListAPIView):
+    """API view for listing anomalies"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = AnomalySerializer
+
+    def get_queryset(self):
+        """
+        Return a filtered queryset of anomalies based on query parameters
+        """
+        queryset = Anomaly.objects.all()
+
+        # Filter by invoice ID
+        invoice_id = self.request.query_params.get('invoice', None)
+        if invoice_id:
+            queryset = queryset.filter(invoice_id=invoice_id)
+
+        # Filter by anomaly type
+        anomaly_type = self.request.query_params.get('type', None)
+        if anomaly_type:
+            queryset = queryset.filter(type=anomaly_type)
+
+        # Filter by status
+        status_param = self.request.query_params.get('status', None)
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+
+        # Filter by date range
+        start_date = self.request.query_params.get('start_date', None)
+        end_date = self.request.query_params.get('end_date', None)
+
+        if start_date:
+            try:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__gte=start_date)
+            except ValueError:
+                pass
+
+        if end_date:
+            try:
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                # Add one day to include the end date
+                end_date = end_date + timezone.timedelta(days=1)
+                queryset = queryset.filter(created_at__lt=end_date)
+            except ValueError:
+                pass
+
+        # Search by description
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(description__icontains=search)
+
+        # Order by created_at by default (newest first)
+        return queryset.order_by('-created_at')
+
+
+class AnomalyDetailView(generics.RetrieveUpdateAPIView):
+    """API view for retrieving and updating an anomaly"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = AnomalySerializer
+    queryset = Anomaly.objects.all()
+
+    def update(self, request, *args, **kwargs):
+        """
+        Update an anomaly, including status changes and resolution notes
+        """
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+
+        # If status is being changed to 'resolved', set the resolved_by field
+        if 'status' in request.data and request.data['status'] == 'resolved':
+            request.data['resolved_by'] = request.user.id
+
+        serializer = self.get_serializer(
+            instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        # Log the anomaly update
+        logger.info(f"Anomaly {instance.id} updated by {request.user.email}: "
+                    f"Status changed to {instance.status}")
+
+        return Response(serializer.data)
+
+
+class AnomalyResolveView(APIView):
+    """API view for resolving an anomaly"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        """
+        Mark an anomaly as resolved with resolution notes
+        """
+        try:
+            anomaly = get_object_or_404(Anomaly, pk=pk)
+
+            # Check if already resolved
+            if anomaly.status == 'resolved':
+                return Response({
+                    'error': 'Anomaly is already resolved'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Get resolution notes
+            resolution_notes = request.data.get('resolution_notes', '')
+            if not resolution_notes:
+                return Response({
+                    'error': 'Resolution notes are required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Update the anomaly
+            anomaly.status = 'resolved'
+            anomaly.resolved_by = request.user
+            anomaly.resolution_notes = resolution_notes
+            anomaly.save()
+
+            # Log the resolution
+            logger.info(
+                f"Anomaly {pk} resolved by {request.user.email}: {resolution_notes}")
+
+            # Return the updated anomaly
+            serializer = AnomalySerializer(anomaly)
+            return Response(serializer.data)
+
+        except Exception as e:
+            logger.error(f"Error resolving anomaly: {str(e)}")
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ProgressTrackerView(APIView):
+    """API view for tracking progress of long-running operations"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, invoice_id=None):
+        """Get progress information for an invoice"""
+        try:
+            if invoice_id:
+                # Get progress for a specific invoice
+                invoice = get_object_or_404(
+                    Invoice, pk=invoice_id, uploaded_by=request.user)
+                progress_trackers = ProgressTracker.objects.filter(
+                    invoice=invoice).order_by('-start_time')
+
+                # If there are no progress trackers, check the invoice status
+                if not progress_trackers.exists():
+                    return Response({
+                        'invoice_id': invoice.id,
+                        'status': invoice.status,
+                        'message': invoice.error_message or f'Invoice status: {invoice.status}',
+                        'progress_percent': 100 if invoice.status == 'saved' else 0
+                    })
+
+                # Get the latest progress tracker
+                latest_tracker = progress_trackers.first()
+
+                return Response({
+                    'invoice_id': invoice.id,
+                    'operation_type': latest_tracker.operation_type,
+                    'status': latest_tracker.status,
+                    'progress_percent': latest_tracker.progress_percent,
+                    'current_item': latest_tracker.current_item,
+                    'total_items': latest_tracker.total_items,
+                    'message': latest_tracker.message or invoice.error_message
+                })
+            else:
+                # Get progress for all invoices
+                invoices = Invoice.objects.filter(
+                    uploaded_by=request.user).order_by('-upload_date')[:10]
+                results = []
+
+                for invoice in invoices:
+                    latest_tracker = ProgressTracker.objects.filter(
+                        invoice=invoice).order_by('-start_time').first()
+
+                    if latest_tracker:
+                        results.append({
+                            'invoice_id': invoice.id,
+                            'invoice_number': invoice.invoice_number,
+                            'status': latest_tracker.status,
+                            'progress_percent': latest_tracker.progress_percent,
+                            'message': latest_tracker.message or invoice.error_message
+                        })
+                    else:
+                        results.append({
+                            'invoice_id': invoice.id,
+                            'invoice_number': invoice.invoice_number,
+                            'status': invoice.status,
+                            'progress_percent': 100 if invoice.status == 'saved' else 0,
+                            'message': invoice.error_message or f'Invoice status: {invoice.status}'
+                        })
+
+                return Response(results)
+
+        except Exception as e:
+            logger.error(f"Error getting progress information: {str(e)}")
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AnomalyStatsView(APIView):
+    """API view for getting anomaly statistics"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Get statistics about anomalies
+        """
+        try:
+            # Get total counts
+            total_anomalies = Anomaly.objects.count()
+            open_anomalies = Anomaly.objects.filter(status='open').count()
+            in_progress_anomalies = Anomaly.objects.filter(
+                status='in_progress').count()
+            resolved_anomalies = Anomaly.objects.filter(
+                status='resolved').count()
+            ignored_anomalies = Anomaly.objects.filter(
+                status='ignored').count()
+
+            # Get counts by type
+            type_counts = Anomaly.objects.values(
+                'type').annotate(count=Count('id'))
+
+            # Get counts by invoice
+            invoice_counts = Anomaly.objects.values(
+                'invoice').annotate(count=Count('id'))
+
+            # Get top invoices with anomalies
+            top_invoices = []
+            for item in invoice_counts.order_by('-count')[:5]:
+                invoice_id = item['invoice']
+                try:
+                    invoice = Invoice.objects.get(id=invoice_id)
+                    top_invoices.append({
+                        'invoice_id': invoice_id,
+                        'invoice_number': invoice.invoice_number,
+                        'anomaly_count': item['count']
+                    })
+                except Invoice.DoesNotExist:
+                    pass
+
+            # Get recent anomalies
+            recent_anomalies = Anomaly.objects.order_by('-created_at')[:5]
+            recent_anomalies_data = AnomalySerializer(
+                recent_anomalies, many=True).data
+
+            return Response({
+                'total_anomalies': total_anomalies,
+                'by_status': {
+                    'open': open_anomalies,
+                    'in_progress': in_progress_anomalies,
+                    'resolved': resolved_anomalies,
+                    'ignored': ignored_anomalies
+                },
+                'by_type': list(type_counts),
+                'top_invoices': top_invoices,
+                'recent_anomalies': recent_anomalies_data
+            })
+
+        except Exception as e:
+            logger.error(f"Error getting anomaly statistics: {str(e)}")
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AnomalyTypesView(APIView):
+    """API view for getting anomaly types"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Get all available anomaly types
+        """
+        try:
+            # Get the anomaly types from the model choices
+            types = [
+                {'id': type_id, 'name': type_name}
+                for type_id, type_name in Anomaly.ANOMALY_TYPES
+            ]
+
+            return Response({
+                'types': types
+            })
+
+        except Exception as e:
+            logger.error(f"Error getting anomaly types: {str(e)}")
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DatabaseAnomalyScanner:
+    """
+    Class for scanning the database to detect anomalies across records
+    and between different data models.
+    """
+
+    def __init__(self):
+        self.anomalies = []
+        self.invoice = None  # Initialize invoice attribute
+
+    def scan_all(self, invoice=None):
+        """
+        Run all anomaly detection scans
+
+        Args:
+            invoice: Optional Invoice object to limit the scan to a specific invoice
+
+        Returns:
+            List of detected anomalies
+        """
+        scan_methods = [
+            self.scan_journal_ventes_duplicates,
+            self.scan_etat_facture_duplicates,
+            self.scan_revenue_outliers,
+            self.scan_collection_outliers,
+            self.scan_journal_etat_mismatches,
+            self.scan_zero_values,
+            self.scan_temporal_patterns,
+            self.scan_empty_cells  # Add the new scan method
+        ]
+
+        self.anomalies = []  # Reset anomalies list
+        self.invoice = invoice  # Store invoice for filtering
+
+        for scan_method in scan_methods:
+            try:
+                logger.info(f"Running scan: {scan_method.__name__}")
+                scan_method()
+            except Exception as e:
+                logger.error(f"Error in {scan_method.__name__}: {str(e)}")
+                logger.error(traceback.format_exc())
+                # Continue with next scan method instead of failing completely
+
+        return self.anomalies
+
+    def scan_empty_cells(self):
+        """
+        Scan for empty cells in important fields across all data models
+        """
+        logger.info("Scanning for empty cells in important fields")
+
+        # Define important fields for each model
+        model_fields = {
+            JournalVentes: ['invoice_number', 'invoice_date', 'client', 'revenue_amount'],
+            EtatFacture: ['invoice_number', 'invoice_date', 'client', 'total_amount'],
+            ParcCorporate: ['actel_code', 'customer_l1_code', 'customer_full_name'],
+            CreancesNGBSS: ['dot', 'actel', 'invoice_amount', 'open_amount'],
+            CAPeriodique: ['dot', 'product', 'amount_pre_tax', 'total_amount'],
+            CANonPeriodique: ['dot', 'product', 'amount_pre_tax', 'total_amount'],
+            CADNT: ['transaction_id', 'customer_code', 'full_name', 'total_amount'],
+            CARFD: ['transaction_id', 'full_name', 'total_amount'],
+            CACNT: ['transaction_id', 'customer_code',
+                    'full_name', 'total_amount']
+        }
+
+        # Scan each model for empty important fields
+        for model, fields in model_fields.items():
+            queryset = model.objects.all()
+
+            # Filter by invoice if specified
+            if self.invoice:
+                queryset = queryset.filter(invoice=self.invoice)
+
+            # Limit to a reasonable number of records for performance
+            queryset = queryset[:1000]
+
+            for record in queryset:
+                empty_fields = []
+
+                for field in fields:
+                    value = getattr(record, field, None)
+                    # Check for None, empty string, or empty collections
+                    if value is None or value == '' or (hasattr(value, '__len__') and len(value) == 0):
+                        empty_fields.append(field)
+
+                if empty_fields:
+                    # Create an anomaly for this record with empty fields
+                    self._create_anomaly(
+                        invoice=record.invoice,
+                        anomaly_type='missing_data',
+                        description=f"Empty important fields in {model.__name__}: {', '.join(empty_fields)}",
+                        data={
+                            'model': model.__name__,
+                            'record_id': record.id,
+                            'empty_fields': empty_fields
+                        }
+                    )
+
+    def scan_journal_ventes_duplicates(self):
+        """Detect duplicate invoice numbers in Journal Ventes"""
+        # Find records with the same invoice_number but different data
+        duplicates = JournalVentes.objects.values('invoice_number', 'organization') \
+            .annotate(count=Count('id')) \
+            .filter(count__gt=1)
+
+        for dup in duplicates:
+            records = JournalVentes.objects.filter(
+                invoice_number=dup['invoice_number'],
+                organization=dup['organization']
+            )
+
+            # Check if these are true duplicates (different data)
+            if self._has_different_values(records, ['revenue_amount', 'client']):
+                self._create_anomaly(
+                    records[0].invoice,
+                    'duplicate_data',
+                    f"Duplicate invoice number {dup['invoice_number']} in {dup['organization']} with different values",
+                    {
+                        'invoice_number': dup['invoice_number'],
+                        'organization': dup['organization'],
+                        'record_count': dup['count'],
+                        'record_ids': list(records.values_list('id', flat=True))
+                    }
+                )
+
+    def scan_revenue_outliers(self):
+        """Detect statistical outliers in revenue amounts"""
+        # For each organization, find revenue outliers
+        orgs = JournalVentes.objects.values_list(
+            'organization', flat=True).distinct()
+
+        for org in orgs:
+            # Get revenue statistics for this organization
+            revenues = JournalVentes.objects.filter(organization=org) \
+                .values_list('revenue_amount', flat=True)
+
+            if len(revenues) < 5:  # Need enough data for meaningful statistics
+                continue
+
+            # Convert all values to float for calculations
+            float_revenues = [float(x) for x in revenues]
+
+            # Calculate mean and standard deviation
+            mean = sum(float_revenues) / len(float_revenues)
+            std_dev = (sum((x - mean) ** 2 for x in float_revenues) /
+                       len(float_revenues)) ** 0.5
+
+            # Find outliers (more than 3 standard deviations from mean)
+            threshold = 3 * std_dev
+            # Convert mean + threshold back to Decimal for database query
+            threshold_value = mean + threshold
+
+            outliers = JournalVentes.objects.filter(
+                organization=org,
+                revenue_amount__gt=threshold_value
+            )
+
+            for outlier in outliers:
+                self._create_anomaly(
+                    outlier.invoice,
+                    'outlier',
+                    f"Revenue outlier detected: {outlier.revenue_amount} (org mean: {mean:.2f})",
+                    {
+                        'record_id': outlier.id,
+                        'invoice_number': outlier.invoice_number,
+                        'organization': outlier.organization,
+                        'revenue_amount': float(outlier.revenue_amount),
+                        'mean_revenue': mean,
+                        'std_dev': std_dev,
+                        'z_score': float((float(outlier.revenue_amount) - mean) / std_dev)
+                    }
+                )
+
+    def scan_journal_etat_mismatches(self):
+        """Detect mismatches between Journal Ventes and Etat Facture"""
+        # Find invoice numbers that exist in both tables
+        journal_invoices = set(JournalVentes.objects.values_list(
+            'invoice_number', 'organization'))
+        etat_invoices = set(EtatFacture.objects.values_list(
+            'invoice_number', 'organization'))
+
+        # Find common invoice numbers
+        common_invoices = journal_invoices.intersection(etat_invoices)
+
+        for invoice_num, org in common_invoices:
+            journal = JournalVentes.objects.filter(
+                invoice_number=invoice_num, organization=org).first()
+            etat = EtatFacture.objects.filter(
+                invoice_number=invoice_num, organization=org).first()
+
+            # Check for significant revenue discrepancies
+            if journal and etat and abs(journal.revenue_amount - etat.revenue_amount) > 0.01:
+                self._create_anomaly(
+                    journal.invoice,
+                    'inconsistent_data',
+                    f"Revenue mismatch between Journal Ventes and Etat Facture for invoice {invoice_num}",
+                    {
+                        'invoice_number': invoice_num,
+                        'organization': org,
+                        'journal_revenue': float(journal.revenue_amount),
+                        'etat_revenue': float(etat.revenue_amount),
+                        'difference': float(journal.revenue_amount - etat.revenue_amount),
+                        'journal_id': journal.id,
+                        'etat_id': etat.id
+                    }
+                )
+
+    def scan_zero_values(self):
+        """Detect zero values in important financial fields"""
+        # Check for zero revenue in Journal Ventes
+        zero_revenue = JournalVentes.objects.filter(revenue_amount=0)
+
+        for record in zero_revenue:
+            self._create_anomaly(
+                record.invoice,
+                'invalid_data',
+                f"Zero revenue amount for invoice {record.invoice_number} in {record.organization}",
+                {
+                    'record_id': record.id,
+                    'invoice_number': record.invoice_number,
+                    'organization': record.organization
+                }
+            )
+
+        # Check for zero collection in Etat Facture
+        zero_collection = EtatFacture.objects.filter(
+            collection_amount=0,
+            total_amount__gt=0  # Only flag if there was an amount to collect
+        )
+
+        for record in zero_collection:
+            self._create_anomaly(
+                record.invoice,
+                'missing_data',
+                f"Zero collection amount for invoice {record.invoice_number} with total {record.total_amount}",
+                {
+                    'record_id': record.id,
+                    'invoice_number': record.invoice_number,
+                    'organization': record.organization,
+                    'total_amount': float(record.total_amount)
+                }
+            )
+
+    def scan_temporal_patterns(self):
+        """Detect unusual temporal patterns in data"""
+        # Group by month and check for unusual drops or spikes
+        current_year = datetime.now().year
+
+        # Analyze monthly revenue patterns
+        monthly_revenue = JournalVentes.objects.filter(
+            invoice_date__year=current_year
+        ).values('invoice_date__month').annotate(
+            total=Sum('revenue_amount')
+        ).order_by('invoice_date__month')
+
+        if len(monthly_revenue) < 3:  # Need at least 3 months for trend analysis
+            return
+
+        # Convert to list for easier analysis
+        revenues = [item['total'] for item in monthly_revenue]
+        months = [item['invoice_date__month'] for item in monthly_revenue]
+
+        # Check for significant drops (more than 50% from previous month)
+        for i in range(1, len(revenues)):
+            if revenues[i] < revenues[i-1] * 0.5:
+                self._create_anomaly(
+                    None,  # This is a system-level anomaly, not tied to a specific invoice
+                    'outlier',
+                    f"Significant revenue drop detected in month {months[i]}",
+                    {
+                        'month': months[i],
+                        'current_revenue': float(revenues[i]),
+                        'previous_revenue': float(revenues[i-1]),
+                        'drop_percentage': float((revenues[i-1] - revenues[i]) / revenues[i-1] * 100)
+                    }
+                )
+
+    def scan_collection_outliers(self):
+        """Detect statistical outliers in collection amounts"""
+        # For each organization, find collection outliers
+        orgs = EtatFacture.objects.values_list(
+            'organization', flat=True).distinct()
+
+        for org in orgs:
+            # Get collection statistics for this organization
+            collections = EtatFacture.objects.filter(organization=org) \
+                .values_list('collection_amount', flat=True)
+
+            if len(collections) < 5:  # Need enough data for meaningful statistics
+                continue
+
+            # Calculate mean and standard deviation
+            mean = sum(collections) / len(collections)
+            # Convert Decimal to float before performing power operations
+            std_dev = (sum((float(x) - float(mean)) ** 2 for x in collections) /
+                       len(collections)) ** 0.5
+
+            # Find outliers (more than 3 standard deviations from mean)
+            threshold = 3 * std_dev
+            outliers = EtatFacture.objects.filter(
+                organization=org,
+                collection_amount__gt=mean + threshold
+            )
+
+            for outlier in outliers:
+                self._create_anomaly(
+                    outlier.invoice,
+                    'outlier',
+                    f"Collection outlier detected: {outlier.collection_amount} (org mean: {mean:.2f})",
+                    {
+                        'record_id': outlier.id,
+                        'invoice_number': outlier.invoice_number,
+                        'organization': outlier.organization,
+                        'collection_amount': float(outlier.collection_amount),
+                        'mean_collection': float(mean),
+                        'std_dev': float(std_dev),
+                        'z_score': float((outlier.collection_amount - mean) / std_dev)
+                    }
+                )
+
+    def scan_etat_facture_duplicates(self):
+        """Detect duplicate invoice numbers in Etat Facture"""
+        # Find records with the same invoice_number but different data
+        duplicates = EtatFacture.objects.values('invoice_number', 'organization') \
+            .annotate(count=Count('id')) \
+            .filter(count__gt=1)
+
+        for dup in duplicates:
+            records = EtatFacture.objects.filter(
+                invoice_number=dup['invoice_number'],
+                organization=dup['organization']
+            )
+
+            # Check if these are true duplicates (different data)
+            if self._has_different_values(records, ['total_amount', 'client']):
+                self._create_anomaly(
+                    records[0].invoice,
+                    'duplicate_data',
+                    f"Duplicate invoice number {dup['invoice_number']} in {dup['organization']} with different values",
+                    {
+                        'invoice_number': dup['invoice_number'],
+                        'organization': dup['organization'],
+                        'record_count': dup['count'],
+                        'record_ids': list(records.values_list('id', flat=True))
+                    }
+                )
+
+    def _has_different_values(self, queryset, fields):
+        """Check if records have different values for specified fields"""
+        values = set()
+        for record in queryset:
+            value_tuple = tuple(getattr(record, field) for field in fields)
+            values.add(value_tuple)
+        return len(values) > 1
+
+    def _create_anomaly(self, invoice, anomaly_type, description, data):
+        """Create an anomaly record"""
+        # For system-level anomalies without a specific invoice, use the most recent
+        if invoice is None:
+            invoice = Invoice.objects.order_by('-upload_date').first()
+            if invoice is None:
+                return  # No invoices in system, can't create anomaly
+
+        # Create the anomaly
+        anomaly = Anomaly.objects.create(
+            invoice=invoice,
+            type=anomaly_type,
+            description=description,
+            data=data,
+            status='open'
+        )
+
+        self.anomalies.append(anomaly)
+        return anomaly
+
+    def _detect_journal_ventes_anomalies(self, data):
+        """
+        Detect anomalies in Journal des ventes data:
+        - Identify cells starting with "@" in Obj Fact
+        - Identify cells with dates ending with previous year in "Période de facturation"
+        - Identify records with zero revenue
+        - Identify records with missing important fields
+
+        Args:
+            data: List of JournalVentes records
+
+        Returns:
+            List of detected anomalies
+        """
+        anomalies = []
+        current_year = datetime.now().year
+        previous_year = current_year - 1
+
+        for record in data:
+            # Check for cells starting with "@" in Obj Fact
+            obj_fact = record.invoice_object if hasattr(
+                record, 'invoice_object') else record.get('invoice_object', '')
+            if obj_fact and isinstance(obj_fact, str) and obj_fact.startswith('@'):
+                anomalies.append({
+                    'type': 'invalid_data',
+                    'description': f"Invoice object starts with '@' (previous year invoice): {obj_fact}",
+                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
+                    'invoice_number': record.invoice_number if hasattr(record, 'invoice_number') else record.get('invoice_number', '')
+                })
+
+            # Check for dates ending with previous year in "Période de facturation"
+            billing_period = record.billing_period if hasattr(
+                record, 'billing_period') else record.get('billing_period', '')
+            if billing_period and isinstance(billing_period, str) and str(previous_year) in billing_period:
+                anomalies.append({
+                    'type': 'invalid_data',
+                    'description': f"Billing period contains previous year: {billing_period}",
+                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
+                    'invoice_number': record.invoice_number if hasattr(record, 'invoice_number') else record.get('invoice_number', '')
+                })
+
+            # Check for zero revenue
+            revenue_amount = record.revenue_amount if hasattr(
+                record, 'revenue_amount') else record.get('revenue_amount', 0)
+            if revenue_amount == 0:
+                anomalies.append({
+                    'type': 'zero_value',
+                    'description': f"Zero revenue amount for invoice {record.invoice_number if hasattr(record, 'invoice_number') else record.get('invoice_number', '')}",
+                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
+                    'invoice_number': record.invoice_number if hasattr(record, 'invoice_number') else record.get('invoice_number', '')
+                })
+
+            # Check for missing important fields
+            important_fields = ['invoice_number',
+                                'invoice_date', 'client', 'revenue_amount']
+            missing_fields = []
+
+            for field in important_fields:
+                value = getattr(record, field, None) if hasattr(
+                    record, field) else record.get(field)
+                if value is None or value == '' or (hasattr(value, '__len__') and len(value) == 0):
+                    missing_fields.append(field)
+
+            if missing_fields:
+                anomalies.append({
+                    'type': 'missing_data',
+                    'description': f"Missing important fields: {', '.join(missing_fields)}",
+                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
+                    'invoice_number': record.invoice_number if hasattr(record, 'invoice_number') else record.get('invoice_number', ''),
+                    'missing_fields': missing_fields
+                })
+
+        return anomalies
+
+    def _detect_etat_facture_anomalies(self, data):
+        """
+        Detect anomalies in Etat de facture data:
+        - Identify duplicate invoices (partial collection)
+        - Identify records with zero collection amount but non-zero total amount
+        - Identify records with missing important fields
+
+        Args:
+            data: List of EtatFacture records
+
+        Returns:
+            List of detected anomalies
+        """
+        anomalies = []
+
+        # Track duplicates
+        invoice_counts = {}
+
+        for record in data:
+            # Create a key for duplicate detection
+            org = record.organization if hasattr(
+                record, 'organization') else record.get('organization', '')
+            invoice_num = record.invoice_number if hasattr(
+                record, 'invoice_number') else record.get('invoice_number', '')
+            invoice_type = record.invoice_type if hasattr(
+                record, 'invoice_type') else record.get('invoice_type', '')
+
+            key = f"{org}_{invoice_num}_{invoice_type}"
+
+            # Count occurrences
+            invoice_counts[key] = invoice_counts.get(key, 0) + 1
+
+            # Check for zero collection with non-zero total
+            total_amount = record.total_amount if hasattr(
+                record, 'total_amount') else record.get('total_amount', 0)
+            collection_amount = record.collection_amount if hasattr(
+                record, 'collection_amount') else record.get('collection_amount', 0)
+
+            if total_amount > 0 and collection_amount == 0:
+                anomalies.append({
+                    'type': 'zero_value',
+                    'description': f"Zero collection amount for invoice {invoice_num} with total {total_amount}",
+                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
+                    'invoice_number': invoice_num,
+                    'total_amount': float(total_amount)
+                })
+
+            # Check for missing important fields
+            important_fields = ['invoice_number',
+                                'invoice_date', 'client', 'total_amount']
+            missing_fields = []
+
+            for field in important_fields:
+                value = getattr(record, field, None) if hasattr(
+                    record, field) else record.get(field)
+                if value is None or value == '' or (hasattr(value, '__len__') and len(value) == 0):
+                    missing_fields.append(field)
+
+            if missing_fields:
+                anomalies.append({
+                    'type': 'missing_data',
+                    'description': f"Missing important fields: {', '.join(missing_fields)}",
+                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
+                    'invoice_number': invoice_num,
+                    'missing_fields': missing_fields
+                })
+
+        # Add duplicate anomalies
+        for key, count in invoice_counts.items():
+            if count > 1:
+                org, invoice_num, invoice_type = key.split('_')
+                anomalies.append({
+                    'type': 'duplicate_data',
+                    'description': f"Duplicate invoice {invoice_num} in {org} (partial collection)",
+                    'invoice_number': invoice_num,
+                    'organization': org,
+                    'invoice_type': invoice_type,
+                    'count': count
+                })
+
+        return anomalies
+
+
+class TriggerAnomalyScanView(APIView):
+    """API view for triggering a database anomaly scan"""
+    permission_classes = [IsAdminUser]  # Restrict to admins
+
+    def post(self, request):
+        """
+        Trigger a full database scan for anomalies
+        This is a potentially resource-intensive operation
+        """
+        try:
+            # Get optional parameters
+            scan_types = request.data.get('scan_types', None)
+            invoice_id = request.data.get('invoice_id', None)
+
+            # Create scanner instance
+            scanner = DatabaseAnomalyScanner()
+
+            # Track start time for performance monitoring
+            start_time = timezone.now()
+
+            # Get specific invoice if ID provided
+            invoice = None
+            if invoice_id:
+                try:
+                    invoice = Invoice.objects.get(id=invoice_id)
+                except Invoice.DoesNotExist:
+                    return Response(
+                        {"error": f"Invoice with ID {invoice_id} not found"},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+            # Set the invoice attribute regardless of scan type
+            scanner.invoice = invoice
+
+            # Run specific scans or all scans
+            if scan_types:
+                anomalies = []
+                for scan_type in scan_types:
+                    scan_method = getattr(scanner, f"scan_{scan_type}", None)
+                    if scan_method and callable(scan_method):
+                        scan_method()
+                anomalies = scanner.anomalies
+            else:
+                # Run all scans
+                anomalies = scanner.scan_all(invoice=invoice)
+
+            # Calculate execution time
+            execution_time = (timezone.now() - start_time).total_seconds()
+
+            # Log the scan results
+            logger.info(
+                f"Database anomaly scan completed by {request.user.email}. "
+                f"Found {len(anomalies)} anomalies in {execution_time:.2f} seconds."
+            )
+
+            # Return detailed response
+            return Response({
+                'message': f'Scan completed. Detected {len(anomalies)} anomalies.',
+                'anomaly_count': len(anomalies),
+                'execution_time_seconds': execution_time,
+                'scan_date': timezone.now(),
+                'triggered_by': request.user.email,
+                'anomalies': AnomalySerializer(anomalies, many=True).data
+            })
+
+        except Exception as e:
+            logger.error(f"Error during anomaly scan: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ComprehensiveReportView(APIView):
+    """
+    API view for generating comprehensive reports that combine data from multiple sources
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            # Get query parameters
+            year = request.query_params.get('year', datetime.now().year)
+            month = request.query_params.get('month', None)
+            dot = request.query_params.get('dot', None)
+            report_type = request.query_params.get(
+                'type', 'revenue_collection')
+
+            # Initialize data processor
+            data_processor = DataProcessor()
+
+            # Check DOT permission
+            if dot and not self._has_dot_permission(request.user, dot):
+                return Response(
+                    {'error': f'You do not have permission to access data for DOT: {dot}'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            if report_type == 'revenue_collection':
+                # Generate revenue and collection report
+                report_data = self._generate_revenue_collection_report(
+                    data_processor, year, month, dot)
+            elif report_type == 'corporate_park':
+                # Generate corporate park report
+                report_data = self._generate_corporate_park_report(
+                    data_processor, year, month, dot)
+            elif report_type == 'receivables':
+                # Generate receivables report
+                report_data = self._generate_receivables_report(
+                    data_processor, year, month, dot)
+            else:
+                return Response(
+                    {'error': f'Invalid report type: {report_type}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            return Response(report_data)
+
+        except Exception as e:
+            logger.error(f"Error generating report: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _has_dot_permission(self, user, dot):
+        """Check if user has permission to access the specified DOT"""
+        # Admins and superusers have access to all DOTs
+        if user.is_staff or user.is_superuser:
+            return True
+
+        # Get user's authorized DOTs
+        authorized_dots = user.get_authorized_dots()
+
+        # Check if user has access to the requested DOT
+        return dot in authorized_dots
+
+    def _generate_revenue_collection_report(self, data_processor, year, month=None, dot=None):
+        """
+        Generate a comprehensive report that combines Journal des ventes and Etat de facture data
+        to provide a complete view of revenue and collection metrics.
+
+        Args:
+            data_processor: DataProcessor instance
+            year: Year to generate report for
+            month: Month to generate report for (optional)
+            dot: DOT to filter by (optional)
+
+        Returns:
+            Dictionary with comprehensive report data
+        """
+        # Get Journal des ventes data
+        journal_query = JournalVentes.objects.all()
+
+        # Apply filters
+        if year:
+            journal_query = journal_query.filter(invoice_date__year=year)
+        if month:
+            journal_query = journal_query.filter(invoice_date__month=month)
+        if dot:
+            # Clean DOT name
+            clean_dot = dot.replace('DOT_', '').replace(
+                '_', '').replace('–', '')
+            journal_query = journal_query.filter(
+                organization__icontains=clean_dot)
+
+        # For headquarters (Siège), only include DCC and DCGC
+        if dot and dot.lower() == 'siège':
+            journal_query = journal_query.filter(
+                Q(organization__icontains='DCC') |
+                Q(organization__icontains='DCGC')
+            )
+
+        # Get Etat de facture data
+        etat_query = EtatFacture.objects.all()
+
+        # Apply filters
+        if year:
+            etat_query = etat_query.filter(invoice_date__year=year)
+        if month:
+            etat_query = etat_query.filter(invoice_date__month=month)
+        if dot:
+            # Clean DOT name
+            clean_dot = dot.replace('DOT_', '').replace(
+                '_', '').replace('–', '')
+            etat_query = etat_query.filter(organization__icontains=clean_dot)
+
+        # For headquarters (Siège), only include DCC and DCGC
+        if dot and dot.lower() == 'siège':
+            etat_query = etat_query.filter(
+                Q(organization__icontains='DCC') |
+                Q(organization__icontains='DCGC')
+            )
+
+        # Process Journal des ventes data
+        journal_data = list(journal_query)
+        processed_journal, journal_categories = data_processor.process_journal_ventes_advanced(
+            journal_data)
+
+        # Process Etat de facture data
+        etat_data = list(etat_query)
+        processed_etat, etat_duplicates = data_processor.process_etat_facture_advanced(
+            etat_data)
+
+        # Match Journal des ventes with Etat de facture data
+        matched_data = data_processor.match_journal_ventes_etat_facture_advanced(
+            processed_journal, processed_etat
+        )
+
+        # Calculate KPIs
+        total_revenue = sum(record.get('revenue_amount', 0)
+                            for record in matched_data if record.get('revenue_amount'))
+        total_invoiced = sum(record.get('total_amount', 0)
+                             for record in matched_data if record.get('total_amount'))
+        total_collection = sum(record.get('collection_amount', 0)
+                               for record in matched_data if record.get('collection_amount'))
+
+        # Calculate collection rate
+        collection_rate = 0
+        if total_invoiced > 0:
+            collection_rate = (total_collection / total_invoiced) * 100
+
+        # Get revenue objectives
+        revenue_objectives = RevenueObjective.objects.filter(year=year)
+        if month:
+            revenue_objectives = revenue_objectives.filter(month=month)
+        if dot:
+            revenue_objectives = revenue_objectives.filter(dot=dot)
+
+        total_revenue_objective = sum(
+            obj.target_amount for obj in revenue_objectives)
+
+        # Calculate revenue achievement rate
+        revenue_achievement_rate = 0
+        if total_revenue_objective > 0:
+            revenue_achievement_rate = (
+                total_revenue / total_revenue_objective) * 100
+
+        # Get collection objectives
+        collection_objectives = CollectionObjective.objects.filter(year=year)
+        if month:
+            collection_objectives = collection_objectives.filter(month=month)
+        if dot:
+            collection_objectives = collection_objectives.filter(dot=dot)
+
+        total_collection_objective = sum(
+            obj.target_amount for obj in collection_objectives)
+
+        # Calculate collection achievement rate
+        collection_achievement_rate = 0
+        if total_collection_objective > 0:
+            collection_achievement_rate = (
+                total_collection / total_collection_objective) * 100
+
+        # Get previous year data for comparison
+        previous_year = int(year) - 1
+
+        # Get previous year Journal des ventes data
+        previous_journal_query = JournalVentes.objects.filter(
+            invoice_date__year=previous_year)
+        if month:
+            previous_journal_query = previous_journal_query.filter(
+                invoice_date__month=month)
+        if dot:
+            previous_journal_query = previous_journal_query.filter(
+                organization__icontains=clean_dot)
+
+        # For headquarters (Siège), only include DCC and DCGC
+        if dot and dot.lower() == 'siège':
+            previous_journal_query = previous_journal_query.filter(
+                Q(organization__icontains='DCC') |
+                Q(organization__icontains='DCGC')
+            )
+
+        previous_total_revenue = previous_journal_query.aggregate(
+            total=Coalesce(Sum('revenue_amount'), 0,
+                           output_field=DecimalField())
+        )['total']
+
+        # Get previous year Etat de facture data
+        previous_etat_query = EtatFacture.objects.filter(
+            invoice_date__year=previous_year)
+        if month:
+            previous_etat_query = previous_etat_query.filter(
+                invoice_date__month=month)
+        if dot:
+            previous_etat_query = previous_etat_query.filter(
+                organization__icontains=clean_dot)
+
+        # For headquarters (Siège), only include DCC and DCGC
+        if dot and dot.lower() == 'siège':
+            previous_etat_query = previous_etat_query.filter(
+                Q(organization__icontains='DCC') |
+                Q(organization__icontains='DCGC')
+            )
+
+        previous_total_collection = previous_etat_query.aggregate(
+            total=Coalesce(Sum('collection_amount'), 0,
+                           output_field=DecimalField())
+        )['total']
+
+        # Calculate growth rates
+        revenue_growth_rate = 0
+        if previous_total_revenue > 0:
+            revenue_growth_rate = (
+                (total_revenue - previous_total_revenue) / previous_total_revenue) * 100
+
+        collection_growth_rate = 0
+        if previous_total_collection > 0:
+            collection_growth_rate = (
+                (total_collection - previous_total_collection) / previous_total_collection) * 100
+
+        # Detect anomalies
+        journal_anomalies = self._detect_journal_ventes_anomalies(journal_data)
+        etat_anomalies = self._detect_etat_facture_anomalies(etat_data)
+
+        # Prepare report data
+        report_data = {
+            'filters': {
+                'year': year,
+                'month': month,
+                'dot': dot
+            },
+            'summary': {
+                'total_revenue': float(total_revenue),
+                'total_invoiced': float(total_invoiced),
+                'total_collection': float(total_collection),
+                'collection_rate': float(collection_rate),
+                'revenue_objective': float(total_revenue_objective),
+                'revenue_achievement_rate': float(revenue_achievement_rate),
+                'collection_objective': float(total_collection_objective),
+                'collection_achievement_rate': float(collection_achievement_rate),
+                'previous_year_revenue': float(previous_total_revenue),
+                'previous_year_collection': float(previous_total_collection),
+                'revenue_growth_rate': float(revenue_growth_rate),
+                'collection_growth_rate': float(collection_growth_rate)
+            },
+            'categories': {
+                'main_data_count': len(journal_categories['main_data']),
+                'previous_year_invoice_count': len(journal_categories['previous_year_invoice']),
+                'advance_billing_count': len(journal_categories['advance_billing']),
+                'anomalies_count': len(journal_categories['anomalies'])
+            },
+            'anomalies': {
+                'journal_anomalies': journal_anomalies,
+                'etat_anomalies': etat_anomalies,
+                'total_anomalies': len(journal_anomalies) + len(etat_anomalies)
+            },
+            # Limit to 100 records for API response
+            'data_sample': matched_data[:100]
+        }
+
+        return report_data
+
+    def _generate_corporate_park_report(self, data_processor, year, month=None, dot=None):
+        """
+        Generate a comprehensive report for Corporate NGBSS Park data.
+
+        Args:
+            data_processor: DataProcessor instance
+            year: Year to generate report for
+            month: Month to generate report for (optional)
+            dot: DOT to filter by (optional)
+
+        Returns:
+            Dictionary with comprehensive report data
+        """
+        # Get ParcCorporate data
+        query = ParcCorporate.objects.all()
+
+        # Apply filters
+        if dot:
+            query = query.filter(state=dot)
+
+        # Apply date filters based on creation_date
+        if year:
+            query = query.filter(creation_date__year=year)
+        if month:
+            query = query.filter(creation_date__month=month)
+
+        # Apply specific filters as per client requirements
+        filtered_data = data_processor.filter_parc_corporate(query)
+
+        # Calculate metrics
+        total_subscribers = filtered_data.count()
+
+        # Group by State (DOT)
+        subscribers_by_state = filtered_data.values('state').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        # Group by OFFER_NAME
+        subscribers_by_offer = filtered_data.values('offer_name').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        # Group by CODE_CUSTOMER_L2
+        subscribers_by_customer_l2 = filtered_data.values('customer_l2_code', 'customer_l2_desc').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        # Group by TELECOM_TYPE
+        subscribers_by_telecom_type = filtered_data.values('telecom_type').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        # Group by SUBSCRIBER_STATUS
+        subscribers_by_status = filtered_data.values('subscriber_status').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        # Track new creations
+        current_month = datetime.now().month
+        current_year = datetime.now().year
+
+        # Get new creations for current month
+        new_creations_query = filtered_data.filter(
+            creation_date__year=current_year,
+            creation_date__month=current_month
+        )
+
+        new_creations_count = new_creations_query.count()
+
+        # Get new creations by TELECOM_TYPE
+        new_creations_by_telecom_type = new_creations_query.values('telecom_type').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        # Compare with previous month
+        previous_month = current_month - 1 if current_month > 1 else 12
+        previous_month_year = current_year if current_month > 1 else current_year - 1
+
+        previous_month_query = ParcCorporate.objects.filter(
+            creation_date__year=previous_month_year,
+            creation_date__month=previous_month
+        )
+
+        # Apply specific filters as per client requirements
+        previous_month_filtered = data_processor.filter_parc_corporate(
+            previous_month_query)
+        previous_month_count = previous_month_filtered.count()
+
+        # Calculate growth rate
+        growth_rate = 0
+        if previous_month_count > 0:
+            growth_rate = (
+                (total_subscribers - previous_month_count) / previous_month_count) * 100
+
+        # Prepare report data
+        report_data = {
+            'filters': {
+                'year': year,
+                'month': month,
+                'dot': dot
+            },
+            'summary': {
+                'total_subscribers': total_subscribers,
+                'previous_month_subscribers': previous_month_count,
+                'growth_rate': float(growth_rate),
+                'new_creations_count': new_creations_count
+            },
+            'breakdowns': {
+                'by_state': list(subscribers_by_state),
+                'by_offer': list(subscribers_by_offer),
+                'by_customer_l2': list(subscribers_by_customer_l2),
+                'by_telecom_type': list(subscribers_by_telecom_type),
+                'by_status': list(subscribers_by_status),
+                'new_creations_by_telecom_type': list(new_creations_by_telecom_type)
+            },
+            # Limit to 100 records for API response
+            'data_sample': list(filtered_data.values()[:100])
+        }
+
+        return report_data
+
+    def _generate_receivables_report(self, data_processor, year, month=None, dot=None):
+        """
+        Generate a comprehensive report for Receivables (Créances NGBSS) data.
+
+        Args:
+            data_processor: DataProcessor instance
+            year: Year to generate report for
+            month: Month to generate report for (optional)
+            dot: DOT to filter by (optional)
+
+        Returns:
+            Dictionary with comprehensive report data
+        """
+        # Get CreancesNGBSS data
+        query = CreancesNGBSS.objects.all()
+
+        # Apply filters
+        if dot:
+            query = query.filter(dot=dot)
+        if year:
+            query = query.filter(year=year)
+        if month:
+            query = query.filter(month=month)
+
+        # Apply specific filters as per client requirements
+        filtered_data = data_processor.filter_creances_ngbss(query)
+
+        # Calculate metrics
+        total_receivables = filtered_data.aggregate(
+            total=Coalesce(Sum('creance_brut'), 0, output_field=DecimalField())
+        )['total']
+
+        # Group by age/year
+        receivables_by_year = filtered_data.values('year').annotate(
+            total=Sum('creance_brut')
+        ).order_by('year')
+
+        # Group by DOT
+        receivables_by_dot = filtered_data.values('dot').annotate(
+            total=Sum('creance_brut')
+        ).order_by('-total')
+
+        # Group by client category (CUST_LEV1)
+        receivables_by_category = filtered_data.values('customer_lev1').annotate(
+            total=Sum('creance_brut')
+        ).order_by('-total')
+
+        # Group by product
+        receivables_by_product = filtered_data.values('product').annotate(
+            total=Sum('creance_brut')
+        ).order_by('-total')
+
+        # Detect anomalies (empty cells)
+        anomalies = []
+        for record in filtered_data:
+            important_fields = ['dot', 'actel',
+                                'invoice_amount', 'open_amount']
+            missing_fields = []
+
+            for field in important_fields:
+                value = getattr(record, field, None)
+                if value is None or value == '' or (hasattr(value, '__len__') and len(value) == 0):
+                    missing_fields.append(field)
+
+            if missing_fields:
+                anomalies.append({
+                    'type': 'missing_data',
+                    'description': f"Missing important fields: {', '.join(missing_fields)}",
+                    'record_id': record.id,
+                    'missing_fields': missing_fields
+                })
+
+        # Prepare report data
+        report_data = {
+            'filters': {
+                'year': year,
+                'month': month,
+                'dot': dot
+            },
+            'summary': {
+                'total_receivables': float(total_receivables),
+                'record_count': filtered_data.count(),
+                'anomalies_count': len(anomalies)
+            },
+            'breakdowns': {
+                'by_year': list(receivables_by_year),
+                'by_dot': list(receivables_by_dot),
+                'by_category': list(receivables_by_category),
+                'by_product': list(receivables_by_product)
+            },
+            'anomalies': anomalies,
+            # Limit to 100 records for API response
+            'data_sample': list(filtered_data.values()[:100])
+        }
+
+        return report_data
+
+    def _detect_journal_ventes_anomalies(self, data):
+        """
+        Detect anomalies in Journal des ventes data
+
+        Args:
+            data: List of JournalVentes objects
+
+        Returns:
+            List of anomalies detected
+        """
+        anomalies = []
+
+        for record in data:
+            # Check for @ in invoice object
+            if record.invoice_object and '@' in record.invoice_object:
+                anomalies.append({
+                    'type': 'journal_ventes_anomaly',
+                    'description': f'Invoice object contains @ symbol: {record.invoice_object}',
+                    'record_id': record.id,
+                    'invoice_number': record.invoice_number
+                })
+
+            # Check for dates in billing period from previous year
+            if record.billing_period:
+                try:
+                    # Extract year from billing period if it's in a format like "Jan 2023"
+                    import re
+                    year_match = re.search(r'20\d{2}', record.billing_period)
+                    if year_match:
+                        period_year = int(year_match.group(0))
+                        invoice_year = record.invoice_date.year if record.invoice_date else None
+
+                        if invoice_year and period_year < invoice_year:
+                            anomalies.append({
+                                'type': 'journal_ventes_anomaly',
+                                'description': f'Billing period ({record.billing_period}) contains a previous year compared to invoice date ({record.invoice_date})',
+                                'record_id': record.id,
+                                'invoice_number': record.invoice_number
+                            })
+                except Exception as e:
+                    # If there's an error parsing, it might be an anomaly itself
+                    anomalies.append({
+                        'type': 'journal_ventes_anomaly',
+                        'description': f'Unusual billing period format: {record.billing_period}',
+                        'record_id': record.id,
+                        'invoice_number': record.invoice_number
+                    })
+
+            # Check for zero revenue
+            if record.revenue_amount == 0:
+                anomalies.append({
+                    'type': 'journal_ventes_anomaly',
+                    'description': 'Revenue amount is zero',
+                    'record_id': record.id,
+                    'invoice_number': record.invoice_number
+                })
+
+            # Check for missing important fields
+            if not record.invoice_number:
+                anomalies.append({
+                    'type': 'journal_ventes_anomaly',
+                    'description': 'Missing invoice number',
+                    'record_id': record.id,
+                    'invoice_number': 'N/A'
+                })
+
+            if not record.invoice_date:
+                anomalies.append({
+                    'type': 'journal_ventes_anomaly',
+                    'description': 'Missing invoice date',
+                    'record_id': record.id,
+                    'invoice_number': record.invoice_number or 'N/A'
+                })
+
+            if not record.client:
+                anomalies.append({
+                    'type': 'journal_ventes_anomaly',
+                    'description': 'Missing client information',
+                    'record_id': record.id,
+                    'invoice_number': record.invoice_number or 'N/A'
+                })
+
+            if record.revenue_amount is None:
+                anomalies.append({
+                    'type': 'journal_ventes_anomaly',
+                    'description': 'Missing revenue amount',
+                    'record_id': record.id,
+                    'invoice_number': record.invoice_number or 'N/A'
+                })
+
+        return anomalies
+
+    def _detect_etat_facture_anomalies(self, data):
+        """
+        Detect anomalies in Etat de facture data
+
+        Args:
+            data: List of EtatFacture objects
+
+        Returns:
+            List of anomalies detected
+        """
+        anomalies = []
+
+        # Check for duplicate invoices (partial collection)
+        invoice_numbers = {}
+
+        for record in data:
+            if record.invoice_number:
+                if record.invoice_number in invoice_numbers:
+                    # This is a duplicate invoice number
+                    invoice_numbers[record.invoice_number].append(record)
+                else:
+                    invoice_numbers[record.invoice_number] = [record]
+
+        # Check duplicates for partial collections
+        for invoice_number, records in invoice_numbers.items():
+            if len(records) > 1:
+                # Check if this is a partial collection case
+                total_collected = sum(
+                    r.collection_amount or 0 for r in records)
+                total_amount = records[0].total_amount if records[0].total_amount else 0
+
+                if total_collected < total_amount:
+                    anomalies.append({
+                        'type': 'etat_facture_anomaly',
+                        'description': f'Partial collection detected for invoice {invoice_number}. Collected: {total_collected}, Total: {total_amount}',
+                        'record_id': records[0].id,
+                        'invoice_number': invoice_number
+                    })
+
+        # Check individual records
+        for record in data:
+            # Check for zero collection but non-zero total
+            if record.collection_amount == 0 and record.total_amount and record.total_amount > 0:
+                anomalies.append({
+                    'type': 'etat_facture_anomaly',
+                    'description': 'Zero collection amount for non-zero invoice',
+                    'record_id': record.id,
+                    'invoice_number': record.invoice_number or 'N/A'
+                })
+
+            # Check for missing important fields
+            if not record.invoice_number:
+                anomalies.append({
+                    'type': 'etat_facture_anomaly',
+                    'description': 'Missing invoice number',
+                    'record_id': record.id,
+                    'invoice_number': 'N/A'
+                })
+
+            if not record.invoice_date:
+                anomalies.append({
+                    'type': 'etat_facture_anomaly',
+                    'description': 'Missing invoice date',
+                    'record_id': record.id,
+                    'invoice_number': record.invoice_number or 'N/A'
+                })
+
+            if not record.client:
+                anomalies.append({
+                    'type': 'etat_facture_anomaly',
+                    'description': 'Missing client information',
+                    'record_id': record.id,
+                    'invoice_number': record.invoice_number or 'N/A'
+                })
+
+            if record.total_amount is None:
+                anomalies.append({
+                    'type': 'etat_facture_anomaly',
+                    'description': 'Missing total amount',
+                    'record_id': record.id,
+                    'invoice_number': record.invoice_number or 'N/A'
+                })
+
+        return anomalies
+
+
+class ComprehensiveReportExportView(APIView):
+    """
+    API view for exporting comprehensive reports in various formats
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            # Get query parameters
+            year = request.query_params.get('year', datetime.now().year)
+            month = request.query_params.get('month', None)
+            dot = request.query_params.get('dot', None)
+            report_type = request.query_params.get(
+                'type', 'revenue_collection')
+            export_format = request.query_params.get('format', 'excel')
+
+            # Initialize data processor
+            data_processor = DataProcessor()
+
+            # Generate report data based on type
+            if report_type == 'revenue_collection':
+                report_data = self._generate_revenue_collection_report(
+                    data_processor, year, month, dot)
+                filename_prefix = 'revenue_collection'
+            elif report_type == 'corporate_park':
+                report_data = self._generate_corporate_park_report(
+                    data_processor, year, month, dot)
+                filename_prefix = 'corporate_park'
+            elif report_type == 'receivables':
+                report_data = self._generate_receivables_report(
+                    data_processor, year, month, dot)
+                filename_prefix = 'receivables'
+            else:
+                return Response(
+                    {'error': f'Invalid report type: {report_type}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Export data in the requested format
+            if export_format == 'excel':
+                return self._export_excel(report_data, filename_prefix)
+            elif export_format == 'csv':
+                return self._export_csv(report_data, filename_prefix)
+            elif export_format == 'pdf':
+                return self._export_pdf(report_data, filename_prefix)
+            else:
+                return Response(
+                    {'error': f'Invalid export format: {export_format}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        except Exception as e:
+            logger.error(f"Error exporting report: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _export_excel(self, data, filename_prefix):
+        # Create an in-memory output file
+        output = io.BytesIO()
+
+        # Create workbook and add a worksheet
+        workbook = xlsxwriter.Workbook(output)
+        worksheet = workbook.add_worksheet('Report')
+
+        # Add headers
+        bold = workbook.add_format({'bold': True})
+        row = 0
+        col = 0
+
+        # Add KPIs section
+        worksheet.write(row, col, 'KPIs', bold)
+        row += 1
+
+        for key, value in data['kpis'].items():
+            worksheet.write(row, col, key)
+            worksheet.write(row, col + 1, value)
+            row += 1
+
+        row += 1
+
+        # Add breakdowns section if available
+        if 'breakdowns' in data and data['breakdowns']:
+            worksheet.write(row, col, 'Breakdowns', bold)
+            row += 1
+
+            for category, breakdown_data in data['breakdowns'].items():
+                worksheet.write(row, col, category, bold)
+                row += 1
+
+                if isinstance(breakdown_data, list):
+                    # Handle list of dictionaries
+                    if breakdown_data and isinstance(breakdown_data[0], dict):
+                        # Write headers
+                        headers = breakdown_data[0].keys()
+                        for i, header in enumerate(headers):
+                            worksheet.write(row, col + i, header, bold)
+                        row += 1
+
+                        # Write data
+                        for item in breakdown_data:
+                            for i, value in enumerate(item.values()):
+                                worksheet.write(row, col + i, value)
+                            row += 1
+                    else:
+                        # Handle simple list
+                        for item in breakdown_data:
+                            worksheet.write(row, col, item)
+                            row += 1
+                elif isinstance(breakdown_data, dict):
+                    # Handle dictionary
+                    for key, value in breakdown_data.items():
+                        worksheet.write(row, col, key)
+                        worksheet.write(row, col + 1, value)
+                        row += 1
+
+                row += 1
+
+        # Add anomalies section if available
+        if 'anomalies' in data and data['anomalies']:
+            worksheet.write(row, col, 'Anomalies', bold)
+            row += 1
+
+            # Write headers
+            headers = data['anomalies'][0].keys()
+            for i, header in enumerate(headers):
+                worksheet.write(row, col + i, header, bold)
+            row += 1
+
+            # Write data
+            for anomaly in data['anomalies']:
+                for i, value in enumerate(anomaly.values()):
+                    worksheet.write(row, col + i, value)
+                row += 1
+
+        # Close the workbook
+        workbook.close()
+
+        # Seek to the beginning of the stream
+        output.seek(0)
+
+        # Create the HttpResponse with appropriate headers
+        filename = f"{filename_prefix}_report_{datetime.now().strftime('%Y%m%d')}.xlsx"
+        response = HttpResponse(
+            output.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        return response
+
+    def _export_csv(self, data, filename_prefix):
+        # Create an in-memory output file
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write KPIs section
+        writer.writerow(['KPIs'])
+        for key, value in data['kpis'].items():
+            writer.writerow([key, value])
+
+        writer.writerow([])
+
+        # Write breakdowns section if available
+        if 'breakdowns' in data and data['breakdowns']:
+            writer.writerow(['Breakdowns'])
+
+            for category, breakdown_data in data['breakdowns'].items():
+                writer.writerow([category])
+
+                if isinstance(breakdown_data, list):
+                    # Handle list of dictionaries
+                    if breakdown_data and isinstance(breakdown_data[0], dict):
+                        # Write headers
+                        writer.writerow(breakdown_data[0].keys())
+
+                        # Write data
+                        for item in breakdown_data:
+                            writer.writerow(item.values())
+                    else:
+                        # Handle simple list
+                        for item in breakdown_data:
+                            writer.writerow([item])
+                elif isinstance(breakdown_data, dict):
+                    # Handle dictionary
+                    for key, value in breakdown_data.items():
+                        writer.writerow([key, value])
+
+                writer.writerow([])
+
+        # Write anomalies section if available
+        if 'anomalies' in data and data['anomalies']:
+            writer.writerow(['Anomalies'])
+
+            # Write headers
+            if data['anomalies']:
+                writer.writerow(data['anomalies'][0].keys())
+
+                # Write data
+                for anomaly in data['anomalies']:
+                    writer.writerow(anomaly.values())
+
+        # Create the HttpResponse with appropriate headers
+        filename = f"{filename_prefix}_report_{datetime.now().strftime('%Y%m%d')}.csv"
+        response = HttpResponse(output.getvalue(), content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        return response
+
+    def _export_pdf(self, data, filename_prefix):
+        # Create an in-memory output file
+        output = io.BytesIO()
+
+        # Create the PDF object
+        p = canvas.Canvas(output, pagesize=letter)
+        width, height = letter
+
+        # Set up initial position
+        y = height - 50
+        margin = 50
+        line_height = 20
+
+        # Add title
+        p.setFont("Helvetica-Bold", 16)
+        p.drawString(
+            margin, y, f"Comprehensive Report: {filename_prefix.replace('_', ' ').title()}")
+        y -= line_height * 2
+
+        # Add KPIs section
+        p.setFont("Helvetica-Bold", 14)
+        p.drawString(margin, y, "KPIs")
+        y -= line_height
+
+        p.setFont("Helvetica", 12)
+        for key, value in data['kpis'].items():
+            # Format the value based on its type
+            if isinstance(value, (int, float)):
+                if key.endswith('rate'):
+                    formatted_value = f"{value * 100:.2f}%"
+                else:
+                    formatted_value = f"{value:,.2f}"
+            else:
+                formatted_value = str(value)
+
+            p.drawString(
+                margin, y, f"{key.replace('_', ' ').title()}: {formatted_value}")
+            y -= line_height
+
+            # Check if we need a new page
+            if y < margin:
+                p.showPage()
+                y = height - margin
+
+        y -= line_height
+
+        # Add breakdowns section if available
+        if 'breakdowns' in data and data['breakdowns']:
+            p.setFont("Helvetica-Bold", 14)
+            p.drawString(margin, y, "Breakdowns")
+            y -= line_height
+
+            for category, breakdown_data in data['breakdowns'].items():
+                p.setFont("Helvetica-Bold", 12)
+                p.drawString(margin, y, category.replace('_', ' ').title())
+                y -= line_height
+
+                p.setFont("Helvetica", 10)
+
+                # Simple representation for PDF - just key-value pairs
+                if isinstance(breakdown_data, dict):
+                    for key, value in breakdown_data.items():
+                        p.drawString(margin + 10, y, f"{key}: {value}")
+                        y -= line_height
+
+                        # Check if we need a new page
+                        if y < margin:
+                            p.showPage()
+                            y = height - margin
+                elif isinstance(breakdown_data, list):
+                    # Just indicate number of items for lists
+                    p.drawString(margin + 10, y,
+                                 f"{len(breakdown_data)} items")
+                    y -= line_height
+
+                y -= line_height
+
+                # Check if we need a new page
+                if y < margin:
+                    p.showPage()
+                    y = height - margin
+
+        # Add anomalies section if available
+        if 'anomalies' in data and data['anomalies']:
+            p.setFont("Helvetica-Bold", 14)
+            p.drawString(margin, y, "Anomalies")
+            y -= line_height
+
+            p.setFont("Helvetica", 10)
+            for anomaly in data['anomalies']:
+                p.drawString(margin + 10, y,
+                             anomaly.get('description', 'Unknown anomaly'))
+                y -= line_height
+
+                # Check if we need a new page
+                if y < margin:
+                    p.showPage()
+                    y = height - margin
+
+        # Save the PDF
+        p.showPage()
+        p.save()
+
+        # Get the value from the BytesIO buffer
+        pdf_value = output.getvalue()
+        output.close()
+
+        # Create the HttpResponse with PDF headers
+        filename = f"{filename_prefix}_report_{datetime.now().strftime('%Y%m%d')}.pdf"
+        response = HttpResponse(pdf_value, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        return response
+
+    def _generate_revenue_collection_report(self, data_processor, year, month=None, dot=None):
+        # Reuse the method from ComprehensiveReportView
+        return ComprehensiveReportView()._generate_revenue_collection_report(data_processor, year, month, dot)
+
+    def _generate_corporate_park_report(self, data_processor, year, month=None, dot=None):
+        # Reuse the method from ComprehensiveReportView
+        return ComprehensiveReportView()._generate_corporate_park_report(data_processor, year, month, dot)
+
+    def _generate_receivables_report(self, data_processor, year, month=None, dot=None):
+        # Reuse the method from ComprehensiveReportView
+        return ComprehensiveReportView()._generate_receivables_report(data_processor, year, month, dot)
+
+
+class DashboardOverviewView(APIView):
+    """
+    API view for retrieving overview statistics for the admin dashboard
+    - Number of users (active and disabled)
+    - Number of files uploaded
+    - Database size
+    - Other helpful admin metrics
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            logger.info(
+                "DashboardOverviewView: Starting to gather dashboard data")
+            User = get_user_model()
+
+            # User statistics
+            total_users = User.objects.count()
+            active_users = User.objects.filter(is_active=True).count()
+            disabled_users = User.objects.filter(is_active=False).count()
+            logger.info(
+                f"DashboardOverviewView: User stats - total: {total_users}, active: {active_users}, disabled: {disabled_users}")
+
+            # File statistics
+            total_files = Invoice.objects.count()
+            logger.info(
+                f"DashboardOverviewView: File stats - total: {total_files}")
+
+            # Get file sizes
+            total_file_size = 0
+            try:
+                if total_files > 0:
+                    # Sum the size of all invoice files
+                    for invoice in Invoice.objects.all():
+                        if invoice.file and hasattr(invoice.file, 'path') and os.path.exists(invoice.file.path):
+                            try:
+                                total_file_size += os.path.getsize(
+                                    invoice.file.path)
+                            except (OSError, IOError) as e:
+                                logger.warning(
+                                    f"Could not get size of file {invoice.file.path}: {str(e)}")
+            except Exception as e:
+                logger.error(f"Error calculating file sizes: {str(e)}")
+
+            logger.info(
+                f"DashboardOverviewView: Total file size: {total_file_size}")
+
+            # Data statistics
+            try:
+                journal_ventes_count = JournalVentes.objects.count()
+                etat_facture_count = EtatFacture.objects.count()
+                parc_corporate_count = ParcCorporate.objects.count()
+                creances_ngbss_count = CreancesNGBSS.objects.count()
+                logger.info(
+                    f"DashboardOverviewView: Data stats - JV: {journal_ventes_count}, EF: {etat_facture_count}, PC: {parc_corporate_count}, CN: {creances_ngbss_count}")
+            except Exception as e:
+                logger.error(f"Error getting data statistics: {str(e)}")
+                journal_ventes_count = 0
+                etat_facture_count = 0
+                parc_corporate_count = 0
+                creances_ngbss_count = 0
+
+            # Anomaly statistics
+            try:
+                total_anomalies = Anomaly.objects.count()
+                open_anomalies = Anomaly.objects.filter(status='open').count()
+                logger.info(
+                    f"DashboardOverviewView: Anomaly stats - total: {total_anomalies}, open: {open_anomalies}")
+            except Exception as e:
+                logger.error(f"Error getting anomaly statistics: {str(e)}")
+                total_anomalies = 0
+                open_anomalies = 0
+
+            # Recent activity
+            try:
+                recent_uploads = Invoice.objects.order_by('-upload_date')[:5].values(
+                    'invoice_number', 'upload_date', 'status', 'uploaded_by__email'
+                )
+                logger.info(
+                    f"DashboardOverviewView: Recent uploads count: {len(recent_uploads)}")
+            except Exception as e:
+                logger.error(f"Error getting recent uploads: {str(e)}")
+                recent_uploads = []
+
+            # DOT statistics
+            dots = set()
+            try:
+                for model in [JournalVentes, EtatFacture, ParcCorporate, CreancesNGBSS,
+                              CAPeriodique, CANonPeriodique, CADNT, CARFD, CACNT]:
+                    if hasattr(model, 'objects') and hasattr(model.objects, 'values_list'):
+                        # Check if the model has a 'dot' field
+                        if 'dot' in [f.name for f in model._meta.fields]:
+                            model_dots = model.objects.values_list(
+                                'dot', flat=True).distinct()
+                            dots.update([d for d in model_dots if d])
+                logger.info(f"DashboardOverviewView: DOT count: {len(dots)}")
+            except Exception as e:
+                logger.error(f"Error getting DOT statistics: {str(e)}")
+
+            # Format file size for display
+            def format_size(size_bytes):
+                if size_bytes < 1024:
+                    return f"{size_bytes} bytes"
+                elif size_bytes < 1024 * 1024:
+                    return f"{size_bytes / 1024:.2f} KB"
+                elif size_bytes < 1024 * 1024 * 1024:
+                    return f"{size_bytes / (1024 * 1024):.2f} MB"
+                else:
+                    return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+            response_data = {
+                'users': {
+                    'total': total_users,
+                    'active': active_users,
+                    'disabled': disabled_users
+                },
+                'files': {
+                    'total': total_files,
+                    'size': format_size(total_file_size)
+                },
+                'data': {
+                    'journal_ventes': journal_ventes_count,
+                    'etat_facture': etat_facture_count,
+                    'parc_corporate': parc_corporate_count,
+                    'creances_ngbss': creances_ngbss_count,
+                    'total_records': journal_ventes_count + etat_facture_count +
+                    parc_corporate_count + creances_ngbss_count
+                },
+                'anomalies': {
+                    'total': total_anomalies,
+                    'open': open_anomalies
+                },
+                'recent_uploads': list(recent_uploads),
+                'dots': {
+                    'count': len(dots),
+                    'list': list(dots)
+                }
+            }
+
+            logger.info(f"DashboardOverviewView: Returning response data")
+            return Response(response_data)
+        except Exception as e:
+            logger.error(f"DashboardOverviewView: Error occurred: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response({
+                'error': str(e),
+                'detail': 'An error occurred while gathering dashboard data'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DashboardEnhancedView(APIView):
+    """
+    API view for enhanced dashboard data with advanced analytics and visualizations.
+
+    Features:
+    1. Identify structures with zero CA or zero collections
+    2. Top/Flop structure rankings by revenue and collection
+    3. Visualization data for offer quantities and physical park
+    4. Trend analysis for CA, collections, and receivables
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Get enhanced dashboard data with advanced analytics.
+
+        Query parameters:
+        - year: Year for data filtering (default: current year)
+        - month: Month for data filtering (optional)
+        - dot: DOT code for filtering (optional)
+        - period_count: Number of periods for trend analysis (default: 6)
+        """
+        try:
+            # Get query parameters
+            year = request.query_params.get('year', datetime.now().year)
+            month = request.query_params.get('month')
+            dot = request.query_params.get('dot')
+            period_count = int(request.query_params.get('period_count', 6))
+
+            # Validate year
+            try:
+                year = int(year)
+            except (ValueError, TypeError):
+                return Response(
+                    {"error": f"Invalid year format: {year}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Validate month if provided
+            if month:
+                try:
+                    month = int(month)
+                    if month < 1 or month > 12:
+                        return Response(
+                            {"error": f"Month must be between 1 and 12, got: {month}"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except (ValueError, TypeError):
+                    return Response(
+                        {"error": f"Invalid month format: {month}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Check DOT permission if dot is provided
+            if dot and not self._has_dot_permission(request.user, dot):
+                return Response(
+                    {"error": f"You don't have permission to access data for DOT: {dot}"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Get Journal des Ventes data
+            journal_queryset = JournalVentes.objects.all()
+
+            # Apply filters
+            if year:
+                # Filter by year in invoice_date
+                journal_queryset = journal_queryset.filter(
+                    invoice_date__year=year
+                )
+
+            if month:
+                # Filter by month in invoice_date
+                journal_queryset = journal_queryset.filter(
+                    invoice_date__month=month
+                )
+
+            if dot:
+                # Filter by DOT
+                journal_queryset = journal_queryset.filter(
+                    invoice__processed_data__department=dot
+                )
+
+            # Get État de Facture data with the same filters
+            etat_queryset = EtatFacture.objects.all()
+
+            if year:
+                etat_queryset = etat_queryset.filter(
+                    invoice_date__year=year
+                )
+
+            if month:
+                etat_queryset = etat_queryset.filter(
+                    invoice_date__month=month
+                )
+
+            if dot:
+                etat_queryset = etat_queryset.filter(
+                    invoice__processed_data__department=dot
+                )
+
+            # Get Parc Corporate data
+            parc_queryset = ParcCorporate.objects.all()
+
+            # Convert querysets to lists of dictionaries
+            journal_data = JournalVentesSerializer(
+                journal_queryset, many=True).data
+            etat_data = EtatFactureSerializer(etat_queryset, many=True).data
+            parc_data = ParcCorporateSerializer(parc_queryset, many=True).data
+
+            # Get historical data for trend analysis
+            historical_data = self._get_historical_data(
+                year, month, dot, period_count)
+
+            # Initialize data processor
+            data_processor = DataProcessor()
+
+            # Generate dashboard data
+            dashboard_data = data_processor.generate_dashboard_data(
+                journal_data=journal_data,
+                etat_data=etat_data,
+                parc_data=parc_data,
+                historical_data=historical_data,
+                period_count=period_count
+            )
+
+            # Add metadata
+            dashboard_data['metadata'] = {
+                'year': year,
+                'month': month,
+                'dot': dot,
+                'generated_at': datetime.now().isoformat(),
+                'period_count': period_count
+            }
+
+            return Response(dashboard_data)
+
+        except Exception as e:
+            logger.error(f"Error in enhanced dashboard view: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _has_dot_permission(self, user, dot):
+        """Check if user has permission to access data for the specified DOT"""
+        # If user is superuser or staff, allow access to all DOTs
+        if user.is_superuser or user.is_staff:
+            return True
+
+        # Check if user has access to the specified DOT
+        return user.dots.filter(code=dot).exists()
+
+    def _get_historical_data(self, year, month, dot, period_count):
+        """Get historical data for trend analysis"""
+        historical_data = []
+
+        # Current year and month
+        current_year = datetime.now().year
+        current_month = datetime.now().month
+
+        # Calculate start year and month for historical data
+        if month:
+            # If month is specified, get data for the same month in previous years
+            # and previous months in the current year
+            start_year = year - (period_count // 12) - 1
+
+            for hist_year in range(start_year, current_year + 1):
+                # Skip future years
+                if hist_year > current_year:
+                    continue
+
+                # For current year, only include months up to the current month
+                max_month = current_month if hist_year == current_year else 12
+
+                for hist_month in range(1, max_month + 1):
+                    # Skip future periods
+                    if hist_year == current_year and hist_month > current_month:
+                        continue
+
+                    # Skip the requested period as it will be added separately
+                    if hist_year == year and hist_month == month:
+                        continue
+
+                    # Get data for this period
+                    period_data = self._get_period_data(
+                        hist_year, hist_month, dot)
+
+                    if period_data:
+                        historical_data.append(period_data)
+        else:
+            # If only year is specified, get data for previous years
+            for hist_year in range(year - period_count, current_year + 1):
+                # Skip future years and the requested year
+                if hist_year > current_year or hist_year == year:
+                    continue
+
+                # Get data for this year
+                period_data = self._get_period_data(hist_year, None, dot)
+
+                if period_data:
+                    historical_data.append(period_data)
+
+        # Sort by year and month
+        historical_data.sort(key=lambda x: (
+            x.get('year', 0), x.get('month', 0)))
+
+        # Limit to the requested number of periods
+        return historical_data[-period_count:] if len(historical_data) > period_count else historical_data
+
+    def _get_period_data(self, year, month, dot):
+        """Get aggregated data for a specific period"""
+        # Filter Journal des Ventes data
+        journal_queryset = JournalVentes.objects.all()
+
+        if year:
+            journal_queryset = journal_queryset.filter(invoice_date__year=year)
+
+        if month:
+            journal_queryset = journal_queryset.filter(
+                invoice_date__month=month)
+
+        if dot:
+            journal_queryset = journal_queryset.filter(
+                invoice__processed_data__department=dot)
+
+        # Filter État de Facture data
+        etat_queryset = EtatFacture.objects.all()
+
+        if year:
+            etat_queryset = etat_queryset.filter(invoice_date__year=year)
+
+        if month:
+            etat_queryset = etat_queryset.filter(invoice_date__month=month)
+
+        if dot:
+            etat_queryset = etat_queryset.filter(
+                invoice__processed_data__department=dot)
+
+        # Calculate aggregates
+        total_revenue = journal_queryset.aggregate(Sum('revenue_amount'))[
+            'revenue_amount__sum'] or 0
+        total_collection = etat_queryset.aggregate(Sum('collection_amount'))[
+            'collection_amount__sum'] or 0
+        total_receivables = total_revenue - total_collection
+
+        # Format period label
+        if month:
+            period_label = f"{year}-{month:02d}"
+        else:
+            period_label = str(year)
+
+        return {
+            'period': period_label,
+            'year': year,
+            'month': month,
+            'total_revenue': float(total_revenue),
+            'total_collection': float(total_collection),
+            'total_receivables': float(total_receivables)
+        }

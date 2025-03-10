@@ -1,11 +1,6 @@
 import { useState, useEffect } from "react";
 import { Route, Routes, Navigate, useLocation } from "react-router-dom";
-import {
-  styled,
-  useTheme,
-  ThemeProvider,
-  createTheme,
-} from "@mui/material/styles";
+import { styled, ThemeProvider, createTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import CssBaseline from "@mui/material/CssBaseline";
 import TopBar from "./components/TopBar";
@@ -27,9 +22,22 @@ import PivotTable from "./pages/pivot-table/PivotTable";
 import Login from "./pages/auth/Login";
 import ResetPassword from "./pages/auth/ResetPassword";
 import SetNewPassword from "./pages/auth/SetNewPassword";
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import FileUpload from "./pages/file-upload/FileUpload";
 import FileProcessingView from "./pages/file-upload/FileProcessingView";
+import UserDOTPermissions from "./pages/user-management/UserDOTPermissions";
+import AnomalyScanPage from "./pages/anomaly-scan/AnomalyScanPage";
+import ReportPage from "./pages/reports/ReportPage";
+import DOTManagement from "./pages/dot-management/DOTManagement";
+// Import KPI pages
+import {
+  RevenuePage,
+  CollectionPage,
+  ReceivablesPage,
+  CorporateParkPage,
+  UnfinishedInvoicePage,
+} from "./pages/kpi";
+import PropTypes from "prop-types";
 
 // Define drawer width for consistency
 const drawerWidth = 240;
@@ -45,65 +53,68 @@ const DrawerHeader = styled("div")(({ theme }) => ({
 
 // Protected Route component to handle authentication
 const ProtectedRoute = ({ children }) => {
-  // In a real app, you would check if the user is authenticated
-  // For now, we'll use a simple localStorage check
-  const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
+  const { isAuthenticated } = useAuth();
   const location = useLocation();
 
   if (!isAuthenticated) {
-    // Redirect to login page and save the intended destination
+    // Redirect to login if not authenticated
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return children;
 };
 
+ProtectedRoute.propTypes = {
+  children: PropTypes.node.isRequired,
+};
+
 // Layout component for authenticated pages
 const DashboardLayout = ({ children, isDarkMode, toggleTheme }) => {
-  const theme = useTheme();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
 
   const handleDrawerClose = () => {
     setOpen(false);
+  };
+
+  const handleDrawerOpen = () => {
+    setOpen(true);
   };
 
   return (
     <>
       <TopBar
         open={open}
-        setOpen={setOpen}
-        toggleTheme={toggleTheme}
+        handleDrawerOpen={handleDrawerOpen}
         isDarkMode={isDarkMode}
+        toggleTheme={toggleTheme}
       />
-      <Drawer open={open} handleDrawerClose={handleDrawerClose} theme={theme} />
+      <Drawer open={open} handleDrawerClose={handleDrawerClose} />
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
-          pt: { xs: 8, sm: 9 }, // Responsive top padding
-          width: {
-            xs: "100%",
-            sm: `calc(100% - ${open ? drawerWidth : 0}px)`,
-          },
-          marginLeft: {
-            xs: 0,
-            sm: open ? `${drawerWidth}px` : 0,
-          },
-          transition: theme.transitions.create(["width", "margin"], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.leavingScreen,
-          }),
-          minHeight: "100vh", // Use min-height instead of fixed height
-          display: "flex",
-          flexDirection: "column",
+          p: 0,
+          width: "100%",
+          minHeight: "100vh",
+          marginLeft: open ? `${drawerWidth}px` : 0,
+          transition: (theme) =>
+            theme.transitions.create("margin", {
+              easing: theme.transitions.easing.sharp,
+              duration: theme.transitions.duration.leavingScreen,
+            }),
         }}
       >
-        <DrawerHeader /> {/* Spacer for fixed header */}
+        <DrawerHeader />
         {children}
       </Box>
     </>
   );
+};
+
+DashboardLayout.propTypes = {
+  children: PropTypes.node.isRequired,
+  isDarkMode: PropTypes.bool.isRequired,
+  toggleTheme: PropTypes.func.isRequired,
 };
 
 function App() {
@@ -392,6 +403,115 @@ function App() {
                     toggleTheme={toggleTheme}
                   >
                     <FileProcessingView />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/user-management/dot-permissions"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <UserDOTPermissions />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/anomaly-scan"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <AnomalyScanPage />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/reports"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <ReportPage />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/user-dot-permissions"
+              element={<UserDOTPermissions />}
+            />
+            <Route path="/dot-management" element={<DOTManagement />} />
+            <Route
+              path="/kpi/revenue"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <RevenuePage />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/kpi/collections"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <CollectionPage />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/kpi/receivables"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <ReceivablesPage />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/kpi/corporate-park"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <CorporateParkPage />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/kpi/unfinished-invoices"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                  >
+                    <UnfinishedInvoicePage />
                   </DashboardLayout>
                 </ProtectedRoute>
               }

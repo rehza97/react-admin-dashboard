@@ -1,443 +1,166 @@
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import {
   Box,
-  Button,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
-  Collapse,
+  Grid,
+  Paper,
   Typography,
-  IconButton,
+  Card,
+  CardContent,
+  CardActionArea,
 } from "@mui/material";
+import { useNavigate } from "react-router-dom";
 import {
-  Download,
-  ExpandMore,
-  ChevronRight,
-  LocationOn,
-  Close,
+  AttachMoney,
+  AccountBalance,
+  Business,
+  Receipt,
+  Assessment,
+  TrendingUp,
 } from "@mui/icons-material";
-import PropTypes from "prop-types";
 import Row1 from "./Row1";
-import Map from "../../components/map/Map";
-import { useTheme } from "@mui/material/styles";
-import ExportButton from "../../components/ExportButton";
-import PageLayout from "../../components/PageLayout";
-
-// Fixed region definitions - removed duplicate wilayas
-const regions = {
-  Nord: ["Alger", "Blida", "Tizi Ouzou", "Bejaia", "Tipaza"],
-  Sud: [
-    "Adrar",
-    "Tamanrasset",
-    "Illizi",
-    "Tindouf",
-    "Bechar",
-    "Ouargla",
-    "El Oued",
-    "Ghardaia",
-    "Laghouat",
-    "Biskra",
-    "El Bayadh",
-    "Naama",
-    "El Mghair",
-    "El Menia",
-    "Touggourt",
-    "Djanet",
-    "In Salah",
-    "In Guezzam",
-    "Bordj Badji Mokhtar",
-    "Ouled Djellal",
-    "Beni Abbes",
-    "Timimoun",
-  ],
-  Est: [
-    "Jijel",
-    "Skikda",
-    "Annaba",
-    "El Tarf",
-    "Constantine",
-    "Mila",
-    "Setif",
-    "Batna",
-    "Khenchela",
-    "Oum El Bouaghi",
-    "Tebessa",
-    "Souk Ahras",
-    "Guelma",
-    "Bordj Bou Arreridj",
-  ],
-  Ouest: [
-    "Oran",
-    "Mostaganem",
-    "Mascara",
-    "Tlemcen",
-    "Saida",
-    "Sidi Bel Abbès",
-    "Relizane",
-    "Ain Temouchent",
-    "Chlef",
-    "Tiaret",
-    "Tissemsilt",
-    "Ain Defla",
-  ],
-  Centre: ["Medea", "Msila", "Bouira", "Djelfa", "Boumerdès"],
-};
-
-// Region Selection Component
-const RegionList = ({
-  regions,
-  expandedRegion,
-  setExpandedRegion,
-  activeLinks,
-  onWilayaClick,
-  onRegionDoubleClick,
-}) => {
-  const handleRegionClick = (region) => {
-    setExpandedRegion(expandedRegion === region ? "" : region);
-  };
-
-  return (
-    <List
-      component="nav"
-      dense
-      sx={{
-        "& .MuiListItem-root": {
-          py: 0.5,
-        },
-        "& .MuiListItemIcon-root": {
-          minWidth: 32,
-        },
-      }}
-      aria-label="Region list"
-    >
-      {Object.entries(regions).map(([region, wilayas]) => (
-        <Box key={region}>
-          <ListItem
-            component="div"
-            button
-            onClick={() => handleRegionClick(region)}
-            onDoubleClick={() => onRegionDoubleClick(region)}
-            aria-expanded={expandedRegion === region}
-            aria-label={`${region} region`}
-            sx={{
-              backgroundColor:
-                expandedRegion === region ? "primary.light" : "inherit",
-              "&:hover": { backgroundColor: "primary.light" },
-            }}
-          >
-            <ListItemIcon>
-              {expandedRegion === region ? (
-                <ExpandMore fontSize="small" aria-hidden="true" />
-              ) : (
-                <ChevronRight fontSize="small" aria-hidden="true" />
-              )}
-            </ListItemIcon>
-            <ListItemText
-              primary={region}
-              primaryTypographyProps={{ fontSize: "0.875rem" }}
-            />
-          </ListItem>
-          <Collapse in={expandedRegion === region} timeout="auto" unmountOnExit>
-            <List
-              component="div"
-              disablePadding
-              dense
-              aria-label={`${region} wilayas`}
-            >
-              {wilayas.map((wilaya) => (
-                <ListItem
-                  key={wilaya}
-                  component="div"
-                  button
-                  sx={{ pl: 4 }}
-                  onClick={() => onWilayaClick(wilaya)}
-                  selected={activeLinks[wilaya]}
-                  aria-pressed={activeLinks[wilaya]}
-                  aria-label={`${wilaya} wilaya`}
-                >
-                  <ListItemIcon>
-                    <LocationOn
-                      fontSize="small"
-                      color={activeLinks[wilaya] ? "primary" : "disabled"}
-                      aria-hidden="true"
-                    />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={wilaya}
-                    primaryTypographyProps={{ fontSize: "0.875rem" }}
-                  />
-                </ListItem>
-              ))}
-            </List>
-          </Collapse>
-        </Box>
-      ))}
-    </List>
-  );
-};
-
-// Add PropTypes validation
-RegionList.propTypes = {
-  regions: PropTypes.object.isRequired,
-  expandedRegion: PropTypes.string.isRequired,
-  setExpandedRegion: PropTypes.func.isRequired,
-  activeLinks: PropTypes.object.isRequired,
-  onWilayaClick: PropTypes.func.isRequired,
-  onRegionDoubleClick: PropTypes.func.isRequired,
-};
-
-// Selected Wilayas Component with styling similar to reference image
-const SelectedWilayasList = ({ activeLinks, onClose, theme }) => {
-  const selectedWilayas = Object.keys(activeLinks).filter(
-    (wilaya) => activeLinks[wilaya]
-  );
-
-  return (
-    <Box
-      sx={{
-        position: "absolute",
-        top: 10,
-        right: 10,
-        backgroundColor: theme.palette.background.paper,
-        borderRadius: 1,
-        boxShadow: 2,
-        maxWidth: "250px",
-        zIndex: 10,
-        border: `1px solid ${theme.palette.divider}`,
-        overflow: "hidden",
-      }}
-      aria-label="Selected wilayas list"
-    >
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          p: 1,
-          borderBottom: `1px solid ${theme.palette.divider}`,
-          backgroundColor: theme.palette.primary.main,
-          color: theme.palette.primary.contrastText,
-        }}
-      >
-        <Typography variant="subtitle2">Selected Wilayas</Typography>
-        <IconButton
-          size="small"
-          onClick={onClose}
-          aria-label="Close selected wilayas list"
-          sx={{ color: theme.palette.primary.contrastText }}
-        >
-          <Close fontSize="small" />
-        </IconButton>
-      </Box>
-      <Box
-        sx={{
-          maxHeight: "300px",
-          overflowY: "auto",
-          p: 1,
-        }}
-      >
-        {selectedWilayas.length > 0 ? (
-          selectedWilayas.map((wilaya, index) => (
-            <Box
-              key={wilaya}
-              sx={{
-                p: 0.5,
-                backgroundColor:
-                  index % 2 === 0 ? theme.palette.action.hover : "transparent",
-                borderRadius: 0.5,
-                mb: 0.5,
-              }}
-            >
-              <Typography variant="body2">{wilaya}</Typography>
-            </Box>
-          ))
-        ) : (
-          <Typography variant="body2" color="text.secondary">
-            No wilayas selected
-          </Typography>
-        )}
-      </Box>
-    </Box>
-  );
-};
-
-// Add PropTypes validation
-SelectedWilayasList.propTypes = {
-  activeLinks: PropTypes.object.isRequired,
-  onClose: PropTypes.func.isRequired,
-  theme: PropTypes.object.isRequired,
-};
+import Row2 from "./Row2";
+import { useTranslation } from "react-i18next";
+import kpiService from "../../services/kpiService";
 
 const Dashboard = () => {
-  const theme = useTheme();
-  const [panelVisible, setPanelVisible] = useState(true);
-  const [expandedRegion, setExpandedRegion] = useState(null);
-  const [activeLinks, setActiveLinks] = useState({});
-  const [selectedListVisible, setSelectedListVisible] = useState(false);
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [summaryData, setSummaryData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const handleWilayaClick = (wilaya) => {
-    setActiveLinks((prev) => ({
-      ...prev,
-      [wilaya]: !prev[wilaya],
-    }));
-  };
-
-  const handleRegionDoubleClick = (region) => {
-    const regionWilayas = regions[region];
-    const allRegionSelected = regionWilayas.every(
-      (wilaya) => activeLinks[wilaya]
-    );
-
-    setActiveLinks((prev) => ({
-      ...prev,
-      ...Object.fromEntries(
-        regionWilayas.map((wilaya) => [wilaya, !allRegionSelected])
-      ),
-    }));
-  };
-
-  const handleSelectAllRegions = () => {
-    const allWilayas = Object.values(regions).flat();
-    const allSelected = allWilayas.every((wilaya) => activeLinks[wilaya]);
-
-    setActiveLinks(
-      Object.fromEntries(allWilayas.map((wilaya) => [wilaya, !allSelected]))
-    );
-  };
-
-  const togglePanelVisibility = () => {
-    setPanelVisible((prev) => !prev);
-  };
-
-  const toggleSelectedList = () => {
-    setSelectedListVisible((prev) => !prev);
-  };
-
-  // Update the useEffect for map colors
   useEffect(() => {
-    document.documentElement.style.setProperty(
-      "--map-inactive-color",
-      theme.palette.mode === "dark" ? theme.palette.grey[800] : theme.palette.grey[300]
-    );
-    document.documentElement.style.setProperty(
-      "--map-active-color",
-      theme.palette.primary.main
-    );
-    document.documentElement.style.setProperty(
-      "--map-hover-color",
-      theme.palette.primary.light
-    );
-    document.documentElement.style.setProperty(
-      "--map-disabled-color",
-      theme.palette.mode === "dark" ? theme.palette.grey[900] : theme.palette.grey[200]
-    );
-    document.documentElement.style.setProperty(
-      "--map-stroke-color",
-      theme.palette.mode === "dark" ? theme.palette.grey[100] : theme.palette.grey[900]
-    );
-  }, [theme.palette.mode]);
+    const fetchSummaryData = async () => {
+      try {
+        const data = await kpiService.getDashboardSummary();
+        setSummaryData(data);
+      } catch (error) {
+        console.error("Error fetching dashboard summary:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const dashboardData = [
-    { region: "Nord", sales: 12361, users: 8000, growth: 14 },
-    { region: "Sud", sales: 5000, users: 3200, growth: 10 },
-    { region: "Est", sales: 8500, users: 4100, growth: 7 },
-    { region: "Ouest", sales: 9200, users: 5300, growth: 12 },
+    fetchSummaryData();
+  }, []);
+
+  const kpiCards = [
+    {
+      title: "Revenue Analysis",
+      icon: <AttachMoney sx={{ fontSize: 40 }} />,
+      color: "primary.main",
+      path: "/kpi/revenue",
+      value: summaryData?.total_revenue || 0,
+      change: summaryData?.revenue_change || 0,
+    },
+    {
+      title: "Collections Analysis",
+      icon: <TrendingUp sx={{ fontSize: 40 }} />,
+      color: "success.main",
+      path: "/kpi/collections",
+      value: summaryData?.total_collection || 0,
+      change: summaryData?.collection_rate || 0,
+    },
+    {
+      title: "Receivables Analysis",
+      icon: <AccountBalance sx={{ fontSize: 40 }} />,
+      color: "warning.main",
+      path: "/kpi/receivables",
+      value: summaryData?.total_receivables || 0,
+      change: summaryData?.receivables_change || 0,
+    },
+    {
+      title: "Corporate Park",
+      icon: <Business sx={{ fontSize: 40 }} />,
+      color: "info.main",
+      path: "/kpi/corporate-park",
+      value: summaryData?.total_subscribers || 0,
+      change: summaryData?.subscribers_change || 0,
+    },
+    {
+      title: "Unfinished Invoices",
+      icon: <Receipt sx={{ fontSize: 40 }} />,
+      color: "error.main",
+      path: "/kpi/unfinished-invoices",
+      value: summaryData?.unfinished_invoices?.total || 0,
+      change: summaryData?.unfinished_invoices?.change || 0,
+    },
   ];
 
-  const headerAction = (
-    <ExportButton 
-      data={dashboardData}
-      columns={[
-        { field: 'region', header: 'Region' },
-        { field: 'sales', header: 'Sales' },
-        { field: 'users', header: 'Users' },
-        { field: 'growth', header: 'Growth' }
-      ]}
-      fileName="dashboard_metrics"
-    />
-  );
-
   return (
-    <PageLayout
-      title="Dashboard"
-      subtitle="Welcome to your dashboard overview"
-      headerAction={headerAction}
-    >
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <Row1 />
-        
-        <Box sx={{ display: "flex", gap: 2, position: "relative" }}>
-          {panelVisible && (
-            <Box
+    <Box sx={{ flexGrow: 1, p: 3 }}>
+      <Typography variant="h4" gutterBottom>
+        {t("dashboard.overview")}
+      </Typography>
+
+      {/* KPI Navigation Cards */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        {kpiCards.map((card, index) => (
+          <Grid item xs={12} sm={6} md={4} key={index}>
+            <Card
               sx={{
-                width: "250px",
-                borderRight: "1px solid",
-                borderColor: "divider",
-                overflowY: "auto",
-                maxHeight: "400px",
-                position: "relative",
+                height: "100%",
+                transition: "transform 0.2s",
+                "&:hover": {
+                  transform: "translateY(-4px)",
+                },
               }}
             >
-              <IconButton
-                onClick={togglePanelVisibility}
-                sx={{ position: "absolute", top: 10, right: 10, zIndex: 1 }}
-                aria-label="Close panel"
+              <CardActionArea
+                onClick={() => navigate(card.path)}
+                sx={{ height: "100%" }}
               >
-                <Close />
-              </IconButton>
+                <CardContent>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      mb: 2,
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        p: 1,
+                        borderRadius: 1,
+                        bgcolor: card.color,
+                        color: "white",
+                        mr: 2,
+                      }}
+                    >
+                      {card.icon}
+                    </Box>
+                    <Typography variant="h6" component="div">
+                      {card.title}
+                    </Typography>
+                  </Box>
+                  <Typography variant="h4" color="text.primary" gutterBottom>
+                    {typeof card.value === "number"
+                      ? new Intl.NumberFormat("fr-DZ", {
+                          style: "currency",
+                          currency: "DZD",
+                          maximumFractionDigits: 0,
+                        }).format(card.value)
+                      : card.value}
+                  </Typography>
+                  {card.change !== undefined && (
+                    <Typography
+                      variant="body2"
+                      color={card.change >= 0 ? "success.main" : "error.main"}
+                    >
+                      {card.change >= 0 ? "+" : ""}
+                      {card.change.toFixed(2)}%
+                    </Typography>
+                  )}
+                </CardContent>
+              </CardActionArea>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
 
-              <RegionList
-                regions={regions}
-                expandedRegion={expandedRegion}
-                setExpandedRegion={setExpandedRegion}
-                activeLinks={activeLinks}
-                onWilayaClick={handleWilayaClick}
-                onRegionDoubleClick={handleRegionDoubleClick}
-              />
-
-              <ListItem
-                component="div"
-                button
-                onClick={handleSelectAllRegions}
-                aria-label="Select or deselect all regions"
-              >
-                <ListItemText primary="Select/Deselect All Regions" />
-              </ListItem>
-            </Box>
-          )}
-
-          <Box
-            sx={{
-              flex: 1,
-              position: "relative",
-              height: "400px",
-              backgroundColor: "background.default",
-            }}
-          >
-            {!panelVisible && (
-              <IconButton
-                onClick={togglePanelVisibility}
-                sx={{ position: "absolute", top: 10, left: 10, zIndex: 1 }}
-                aria-label="Open panel"
-              >
-                <ChevronRight />
-              </IconButton>
-            )}
-
-            <Map activeLinks={activeLinks} />
-
-            {selectedListVisible && (
-              <SelectedWilayasList
-                activeLinks={activeLinks}
-                onClose={toggleSelectedList}
-                theme={theme}
-              />
-            )}
-          </Box>
-        </Box>
-      </Box>
-    </PageLayout>
+      {/* Overview Rows */}
+      <Row1 />
+      <Row2 />
+    </Box>
   );
 };
 

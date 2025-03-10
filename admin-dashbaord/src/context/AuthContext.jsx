@@ -1,5 +1,6 @@
 import { createContext, useState, useEffect, useContext } from "react";
 import { authService } from "../services/api";
+import PropTypes from "prop-types";
 
 const AuthContext = createContext(null);
 
@@ -36,18 +37,16 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (credentials) => {
     try {
-      const response = await authService.login(credentials);
-      if (response.data.token) {
-        localStorage.setItem("token", response.data.token);
-        setCurrentUser(response.data.user);
-        return { success: true };
-      }
+      setLoading(true);
+      const response = await authService.post("/users/login/", credentials);
+      localStorage.setItem("token", response.data.token);
+      setCurrentUser(response.data.user);
+      return response.data;
     } catch (error) {
       console.error("Login error:", error);
-      return {
-        success: false,
-        error: error.response?.data?.error || "Login failed",
-      };
+      throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -70,10 +69,15 @@ export const AuthProvider = ({ children }) => {
     error,
     login,
     logout,
+    setCurrentUser,
     isAuthenticated: !!currentUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+AuthProvider.propTypes = {
+  children: PropTypes.node.isRequired,
 };
 
 export const useAuth = () => {

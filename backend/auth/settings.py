@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'knox',
     'corsheaders',
     'django_rest_passwordreset',
+    'drf_yasg',
     # myapps
     'users',
     'data',
@@ -72,8 +73,13 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug mode
 if not DEBUG:
     CORS_ALLOWED_ORIGINS = [
         "http://localhost:5173",  # Your React dev server
+        "http://localhost:5174",  # Alternative React dev server port
         # Add your production domain when deploying
     ]
+else:
+    # In debug mode, we'll log CORS requests for debugging
+    CORS_ALLOW_ALL_ORIGINS = True
+    print("DEBUG mode: CORS_ALLOW_ALL_ORIGINS is enabled")
 
 # Add these additional CORS settings for better control
 CORS_ALLOW_CREDENTIALS = True
@@ -261,3 +267,33 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 10737418240  # 10GB
 MAX_UPLOAD_SIZE = 10737418240  # Remove any custom size limit
 # Maximum request body size
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
+
+# Cache configuration
+if DEBUG:
+    # Use local memory cache for development
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'unique-snowflake',
+        }
+    }
+else:
+    # Use Redis for production
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': 'redis://127.0.0.1:6379/1',
+        }
+    }
+SWAGGER_SETTINGS = {
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    },
+    'USE_SESSION_AUTH': False,
+    'JSON_EDITOR': True,
+    'VALIDATOR_URL': None,
+}

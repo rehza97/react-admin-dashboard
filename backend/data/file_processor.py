@@ -129,7 +129,7 @@ class FileTypeDetector:
                 for delimiter in [',', ';', '\t']:
                     try:
                         df = pd.read_csv(
-                            file_path, delimiter=delimiter, nrows=5)
+                            file_path, delimiter=delimiter, nrows=5, dtype=str)
                         if len(df.columns) > 1:  # If we got more than one column, it worked
                             columns = [str(col).lower() for col in df.columns]
 
@@ -931,7 +931,8 @@ class FileProcessor:
             # Convert numeric columns
             for col in ['HT', 'TAX', 'TTC', 'DISCOUNT']:
                 if col in df.columns:
-                    df[col] = df[col].astype(str).str.replace(' ', '').str.replace(',', '.')
+                    df[col] = df[col].astype(str).str.replace(
+                        ' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
 
             # Prepare summary data
@@ -957,15 +958,41 @@ class FileProcessor:
         try:
             df = pd.read_csv(file_path, delimiter=';')
 
+            # Log the original column names
+            logger.info(
+                f"Original CA Non Periodique columns: {df.columns.tolist()}")
+
             # Clean up column names
             df.columns = [col.strip() for col in df.columns]
+
+            # Log the cleaned column names
+            logger.info(
+                f"Cleaned CA Non Periodique columns: {df.columns.tolist()}")
+
+            # Log the first few rows to check data
+            logger.info(
+                f"First 3 rows of CA Non Periodique data: {df.head(3).to_dict('records')}")
 
             # Convert numeric columns
             for col in ['HT', 'TAX', 'TTC', 'DISCOUNT']:
                 if col in df.columns:
                     # Remove spaces and replace commas with dots
-                    df[col] = df[col].astype(str).str.replace(' ', '').str.replace(',', '.')
+                    df[col] = df[col].astype(str).str.replace(
+                        ' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
+                else:
+                    logger.warning(
+                        f"Expected column '{col}' not found in CA Non Periodique data")
+
+            # Check for 'DO' column
+            if 'DO' not in df.columns:
+                logger.warning(
+                    "'DO' column not found in CA Non Periodique data")
+                logger.info(f"Available columns: {df.columns.tolist()}")
+            else:
+                # Log unique DOT values
+                logger.info(
+                    f"Unique DOT values in CA Non Periodique: {df['DO'].unique().tolist()}")
 
             # Prepare summary data
             summary = {
@@ -990,15 +1017,43 @@ class FileProcessor:
         try:
             df = pd.read_csv(file_path, delimiter=';')
 
+            # Log the original column names
+            logger.info(f"Original CA DNT columns: {df.columns.tolist()}")
+
             # Clean up column names
             df.columns = [col.strip() for col in df.columns]
+
+            # Log the cleaned column names
+            logger.info(f"Cleaned CA DNT columns: {df.columns.tolist()}")
+
+            # Log the first few rows to check data
+            logger.info(
+                f"First 3 rows of CA DNT data: {df.head(3).to_dict('records')}")
 
             # Convert numeric columns
             for col in ['TTC', 'TVA', 'HT']:
                 if col in df.columns:
                     # Remove spaces and replace commas with dots
-                    df[col] = df[col].astype(str).str.replace(' ', '').str.replace(',', '.')
+                    df[col] = df[col].astype(str).str.replace(
+                        ' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
+                else:
+                    logger.warning(
+                        f"Expected column '{col}' not found in CA DNT data")
+
+            # Check for key columns
+            for col in ['DO', 'DEPARTEMENT', 'TRANS_ID']:
+                if col not in df.columns:
+                    logger.warning(f"'{col}' column not found in CA DNT data")
+                    logger.info(f"Available columns: {df.columns.tolist()}")
+                elif col == 'DO':
+                    # Log unique DOT values
+                    logger.info(
+                        f"Unique DOT values in CA DNT: {df['DO'].unique().tolist()}")
+                elif col == 'DEPARTEMENT':
+                    # Log unique department values
+                    logger.info(
+                        f"Unique department values in CA DNT: {df['DEPARTEMENT'].unique().tolist()}")
 
             # Prepare summary data
             summary = {
@@ -1026,6 +1081,13 @@ class FileProcessor:
             # Clean up column names
             df.columns = [col.strip() for col in df.columns]
 
+            # Log the cleaned column names
+            logger.info(f"Cleaned CA RFD columns: {df.columns.tolist()}")
+
+            # Log the first few rows to check data
+            logger.info(
+                f"First 3 rows of CA RFD data: {df.head(3).to_dict('records')}")
+
             # Convert numeric columns
             for col in ['TTC', 'DROIT_TIMBRE', 'TVA', 'HT']:
                 if col in df.columns:
@@ -1033,23 +1095,34 @@ class FileProcessor:
                     df[col] = df[col].astype(str).str.replace(
                         ' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
+                else:
+                    logger.warning(
+                        f"Expected column '{col}' not found in CA RFD data")
 
-            # Calculate totals by DO
-            do_summary = df.groupby('DO').agg({
-                'TTC': 'sum',
-                'TVA': 'sum',
-                'HT': 'sum',
-                'DROIT_TIMBRE': 'sum'
-            }).reset_index() if 'DO' in df.columns else None
+            # Check for key columns
+            for col in ['DO', 'DEPARTEMENT', 'TRANS_ID']:
+                if col not in df.columns:
+                    logger.warning(f"'{col}' column not found in CA RFD data")
+                    logger.info(f"Available columns: {df.columns.tolist()}")
+                elif col == 'DO':
+                    # Log unique DOT values
+                    logger.info(
+                        f"Unique DOT values in CA RFD: {df['DO'].unique().tolist()}")
+                elif col == 'DEPARTEMENT':
+                    # Log unique department values
+                    logger.info(
+                        f"Unique department values in CA RFD: {df['DEPARTEMENT'].unique().tolist()}")
 
+            # Log the DataFrame to check the data being processed
+            logger.info(f"DataFrame for CA RFD: {df.head()}")
+
+            # Prepare summary data
             summary = {
                 "row_count": len(df),
                 "column_count": len(df.columns),
-                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns else 0,
-                "total_tva": float(df['TVA'].sum()) if 'TVA' in df.columns else 0,
-                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns else 0,
-                "total_droit_timbre": float(df['DROIT_TIMBRE'].sum()) if 'DROIT_TIMBRE' in df.columns else 0,
-                "do_summary": do_summary.to_dict('records') if do_summary is not None else None,
+                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns else 0.0,
+                "total_tva": float(df['TVA'].sum()) if 'TVA' in df.columns else 0.0,
+                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns else 0.0,
                 "columns": generate_column_info(df)
             }
 
@@ -1066,8 +1139,18 @@ class FileProcessor:
         try:
             df = pd.read_csv(file_path, delimiter=';')
 
+            # Log the original column names
+            logger.info(f"Original CA CNT columns: {df.columns.tolist()}")
+
             # Clean up column names
             df.columns = [col.strip() for col in df.columns]
+
+            # Log the cleaned column names
+            logger.info(f"Cleaned CA CNT columns: {df.columns.tolist()}")
+
+            # Log the first few rows to check data
+            logger.info(
+                f"First 3 rows of CA CNT data: {df.head(3).to_dict('records')}")
 
             # Convert numeric columns
             for col in ['TTC', 'TVA', 'HT']:
@@ -1076,21 +1159,31 @@ class FileProcessor:
                     df[col] = df[col].astype(str).str.replace(
                         ' ', '').str.replace(',', '.')
                     df[col] = pd.to_numeric(df[col], errors='coerce')
+                else:
+                    logger.warning(
+                        f"Expected column '{col}' not found in CA CNT data")
 
-            # Calculate totals by DO
-            do_summary = df.groupby('DO').agg({
-                'TTC': 'sum',
-                'TVA': 'sum',
-                'HT': 'sum'
-            }).reset_index() if 'DO' in df.columns else None
+            # Check for key columns
+            for col in ['DO', 'DEPARTEMENT', 'TRANS_ID', 'INVOICE_ADJUSTED']:
+                if col not in df.columns:
+                    logger.warning(f"'{col}' column not found in CA CNT data")
+                    logger.info(f"Available columns: {df.columns.tolist()}")
+                elif col == 'DO':
+                    # Log unique DOT values
+                    logger.info(
+                        f"Unique DOT values in CA CNT: {df['DO'].unique().tolist()}")
+                elif col == 'DEPARTEMENT':
+                    # Log unique department values
+                    logger.info(
+                        f"Unique department values in CA CNT: {df['DEPARTEMENT'].unique().tolist()}")
 
+            # Prepare summary data
             summary = {
                 "row_count": len(df),
                 "column_count": len(df.columns),
-                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns else 0,
-                "total_tva": float(df['TVA'].sum()) if 'TVA' in df.columns else 0,
-                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns else 0,
-                "do_summary": do_summary.to_dict('records') if do_summary is not None else None,
+                "total_ttc": float(df['TTC'].sum()) if 'TTC' in df.columns else 0.0,
+                "total_tva": float(df['TVA'].sum()) if 'TVA' in df.columns else 0.0,
+                "total_ht": float(df['HT'].sum()) if 'HT' in df.columns else 0.0,
                 "columns": generate_column_info(df)
             }
 
@@ -1105,34 +1198,56 @@ class FileProcessor:
     def process_parc_corporate(file_path):
         """Process Parc Corporate NGBSS CSV files"""
         try:
-            df = pd.read_csv(file_path, delimiter=';')
+            df = pd.read_csv(file_path, delimiter=';',
+                             dtype=str)  # Specify dtype
 
             # Clean up column names
             df.columns = [col.strip() for col in df.columns]
 
-            # Calculate counts by telecom type
-            telecom_summary = df.groupby('TELECOM_TYPE').size().reset_index(
-                name='count') if 'TELECOM_TYPE' in df.columns else None
-
-            # Calculate counts by offer type
-            offer_summary = df.groupby('OFFER_TYPE').size().reset_index(
-                name='count') if 'OFFER_TYPE' in df.columns else None
-
-            # Calculate counts by customer type
-            customer_summary = df.groupby('DESCRIPTION_CUSTOMER_L2').size().reset_index(
-                name='count') if 'DESCRIPTION_CUSTOMER_L2' in df.columns else None
-
-            summary = {
-                "row_count": len(df),
-                "column_count": len(df.columns),
-                "telecom_summary": telecom_summary.to_dict('records') if telecom_summary is not None else None,
-                "offer_summary": offer_summary.to_dict('records') if offer_summary is not None else None,
-                "customer_summary": customer_summary.to_dict('records') if customer_summary is not None else None,
-                "columns": generate_column_info(df)
+            # Create a mapping from CSV column names to model fields
+            column_mapping = {
+                'ACTEL_CODE': 'actel_code',
+                'CODE_CUSTOMER_L1': 'customer_l1_code',
+                'DESCRIPTION_CUSTOMER_L1': 'customer_l1_desc',
+                'CODE_CUSTOMER_L2': 'customer_l2_code',
+                'DESCRIPTION_CUSTOMER_L2': 'customer_l2_desc',
+                'CODE_CUSTOMER_L3': 'customer_l3_code',
+                'DESCRIPTION_CUSTOMER_L3': 'customer_l3_desc',
+                'TELECOM_TYPE': 'telecom_type',
+                'OFFER_TYPE': 'offer_type',
+                'OFFER_NAME': 'offer_name',
+                'SUBSCRIBER_STATUS': 'subscriber_status',
+                'CREATION_DATE': 'creation_date',
+                'STATE': 'state',
+                'CUSTOMER_FULL_NAME': 'customer_full_name'
             }
 
-            # Return preview data and summary
-            return df.to_dict('records'), summary
+            # Rename columns based on mapping
+            df.rename(columns=column_mapping, inplace=True)
+
+            # Create a list to store the processed data
+            processed_data = []
+
+            for _, row in df.iterrows():
+                item = {
+                    'actel_code': row.get('actel_code', ''),
+                    'customer_l1_code': row.get('customer_l1_code', ''),
+                    'customer_l1_desc': row.get('customer_l1_desc', ''),
+                    'customer_l2_code': row.get('customer_l2_code', ''),
+                    'customer_l2_desc': row.get('customer_l2_desc', ''),
+                    'customer_l3_code': row.get('customer_l3_code', ''),
+                    'customer_l3_desc': row.get('customer_l3_desc', ''),
+                    'telecom_type': row.get('telecom_type', ''),
+                    'offer_type': row.get('offer_type', ''),
+                    'offer_name': row.get('offer_name', ''),
+                    'subscriber_status': row.get('subscriber_status', ''),
+                    'creation_date': row.get('creation_date', ''),
+                    'state': row.get('state', ''),
+                    'customer_full_name': row.get('customer_full_name', '')
+                }
+                processed_data.append(item)
+
+            return processed_data, {"row_count": len(processed_data)}
 
         except Exception as e:
             logger.error(f"Error processing Parc Corporate: {str(e)}")
@@ -1143,31 +1258,26 @@ class FileProcessor:
         """Process Créances NGBSS CSV files"""
         try:
             # Read the CSV file with semicolon delimiter
-            df = pd.read_csv(file_path, delimiter=';')
+            df = pd.read_csv(file_path, delimiter=';', dtype=str)
 
-            # Clean up column names - strip spaces and store original mapping
-            original_columns = df.columns.tolist()
-            cleaned_columns = [col.strip() for col in original_columns]
-            column_mapping = dict(zip(original_columns, cleaned_columns))
+            # Clean up column names - strip spaces
+            df.columns = [col.strip() for col in df.columns]
 
-            # Rename columns to cleaned versions
-            df.columns = cleaned_columns
-
-            # List of expected numeric columns (without extra spaces)
+            # List of expected numeric columns
             expected_numeric_cols = [
                 'INVOICE_AMT', 'OPEN_AMT', 'TAX_AMT', 'INVOICE_AMT_HT',
                 'DISPUTE_AMT', 'DISPUTE_TAX_AMT', 'DISPUTE_NET_AMT',
                 'CREANCE_BRUT', 'CREANCE_NET', 'CREANCE_HT'
             ]
 
-            # Convert numeric columns - handle any column that contains these names
+            # Convert numeric columns
             for col in df.columns:
-                # Check if this column is one of our numeric columns (after stripping spaces)
-                col_clean = col.strip()
-                if col_clean in expected_numeric_cols:
-                    # Remove spaces and replace commas with dots in the data
+                # Check if this column is one of our numeric columns
+                if col in expected_numeric_cols:
+                    # Replace tab characters and spaces, then replace commas with dots
                     df[col] = df[col].astype(str).str.replace(
-                        ' ', '').str.replace(',', '.')
+                        '\t', '').str.replace(' ', '').str.replace(',', '.')
+                    # Convert to numeric
                     df[col] = pd.to_numeric(df[col], errors='coerce')
                     # Replace NaN with None for JSON serialization
                     df[col] = df[col].replace({np.nan: None})
@@ -1270,18 +1380,51 @@ class FileProcessor:
                         # If conversion fails, set to NaN
                         df[col] = pd.NA
 
+            # Create a mapping from French to English column names
+            column_mapping = {
+                'Organisation': 'organization',
+                'Source': 'source',
+                'N Fact': 'invoice_number',
+                'Typ Fact': 'invoice_type',
+                'Date Fact': 'invoice_date',
+                'Client': 'client',
+                'Obj Fact': 'invoice_object',
+                'Periode': 'period',
+                'Termine Flag': 'terminated_flag',
+                'Montant Ht': 'amount_pre_tax',
+                'Montant Taxe': 'tax_amount',
+                'Montant Ttc': 'total_amount',
+                'Chiffre Aff Exe': 'revenue_amount',
+                'Encaissement': 'collection_amount',
+                'Date Rglt': 'payment_date',
+                'Facture Avoir / Annulation': 'invoice_credit_amount'
+            }
+
+            # Rename columns based on mapping
+            renamed_columns = {}
+            for col in df.columns:
+                col_stripped = col.strip()
+                for fr_col, en_col in column_mapping.items():
+                    if fr_col in col_stripped:
+                        renamed_columns[col] = en_col
+                        break
+
+            # Apply the renaming
+            df = df.rename(columns=renamed_columns)
+
             # Calculate totals by organization
             org_summary = None
-            if 'Organisation' in df.columns:
+            if 'organization' in df.columns:
                 try:
                     # Use only numeric columns that exist
                     agg_cols = {}
-                    for col in numeric_cols:
-                        if col in df.columns:
-                            agg_cols[col] = 'sum'
+                    for old_col, new_col in renamed_columns.items():
+                        if new_col in ['amount_pre_tax', 'tax_amount', 'total_amount', 'revenue_amount', 'collection_amount', 'invoice_credit_amount']:
+                            if new_col in df.columns:
+                                agg_cols[new_col] = 'sum'
 
                     if agg_cols:
-                        org_summary = df.groupby('Organisation').agg(
+                        org_summary = df.groupby('organization').agg(
                             agg_cols).reset_index()
                 except Exception as e:
                     logger.warning(
@@ -1289,17 +1432,18 @@ class FileProcessor:
 
             # Calculate totals by type
             type_summary = None
-            if 'Typ Fact' in df.columns:
+            if 'invoice_type' in df.columns:
                 try:
                     # Use only numeric columns that exist
                     agg_cols = {}
-                    for col in numeric_cols:
-                        if col in df.columns:
-                            agg_cols[col] = 'sum'
+                    for old_col, new_col in renamed_columns.items():
+                        if new_col in ['amount_pre_tax', 'tax_amount', 'total_amount', 'revenue_amount', 'collection_amount', 'invoice_credit_amount']:
+                            if new_col in df.columns:
+                                agg_cols[new_col] = 'sum'
 
-                        if agg_cols:
-                            type_summary = df.groupby('Typ Fact').agg(
-                                agg_cols).reset_index()
+                    if agg_cols:
+                        type_summary = df.groupby('invoice_type').agg(
+                            agg_cols).reset_index()
                 except Exception as e:
                     logger.warning(f"Error calculating type summary: {str(e)}")
 
@@ -1311,14 +1455,15 @@ class FileProcessor:
             }
 
             # Add totals only for columns that exist
-            for col in numeric_cols:
-                if col in df.columns:
-                    try:
-                        col_key = col.strip().lower().replace(' ', '_')
-                        summary[f"total_{col_key}"] = float(df[col].sum())
-                    except Exception as e:
-                        logger.warning(
-                            f"Error calculating sum for {col}: {str(e)}")
+            for old_col, new_col in renamed_columns.items():
+                if new_col in ['amount_pre_tax', 'tax_amount', 'total_amount', 'revenue_amount', 'collection_amount', 'invoice_credit_amount']:
+                    if new_col in df.columns:
+                        try:
+                            summary[f"total_{new_col}"] = float(
+                                df[new_col].sum())
+                        except Exception as e:
+                            logger.warning(
+                                f"Error calculating sum for {new_col}: {str(e)}")
 
             # Add summaries if they exist
             if org_summary is not None:

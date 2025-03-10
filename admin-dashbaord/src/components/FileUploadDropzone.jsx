@@ -12,10 +12,12 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Collapse,
 } from "@mui/material";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import PropTypes from "prop-types";
 import fileService from "../services/fileService";
+import ProgressTracker from "./ProgressTracker";
 
 const FileUploadDropzone = ({ onUploadSuccess, onUploadError }) => {
   const [file, setFile] = useState(null);
@@ -24,6 +26,8 @@ const FileUploadDropzone = ({ onUploadSuccess, onUploadError }) => {
   const [error, setError] = useState(null);
   const [fileTypes, setFileTypes] = useState([]);
   const [selectedFileType, setSelectedFileType] = useState("");
+  const [uploadedInvoiceId, setUploadedInvoiceId] = useState(null);
+  const [showProgress, setShowProgress] = useState(false);
 
   // Fetch available file types when component mounts
   useEffect(() => {
@@ -80,10 +84,9 @@ const FileUploadDropzone = ({ onUploadSuccess, onUploadError }) => {
         selectedFileType
       );
 
-      // Clear form after successful upload
-      setFile(null);
-      setInvoiceNumber("");
-      setSelectedFileType("");
+      // Set the uploaded invoice ID for progress tracking
+      setUploadedInvoiceId(response.id);
+      setShowProgress(true);
 
       // Notify parent component
       if (onUploadSuccess) {
@@ -91,14 +94,69 @@ const FileUploadDropzone = ({ onUploadSuccess, onUploadError }) => {
       }
     } catch (error) {
       console.error("Upload error:", error);
-      setError(error.message || "Failed to upload file");
 
-      if (onUploadError) {
-        onUploadError(error);
+      // Reset progress tracking state on error
+      setUploadedInvoiceId(null);
+      setShowProgress(false);
+
+      // Check if it's a duplicate invoice number error
+      if (
+        error.response &&
+        error.response.data &&
+        error.response.data.error &&
+        error.response.data.error.includes("UNIQUE constraint failed")
+      ) {
+        setError(
+          "An invoice with this number already exists. The existing invoice will be updated with this new file."
+        );
+
+        // Try again after a short delay - the backend should handle the update now
+        setTimeout(async () => {
+          try {
+            const response = await fileService.uploadFile(
+              file,
+              invoiceNumber,
+              selectedFileType
+            );
+
+            // Set the uploaded invoice ID for progress tracking
+            setUploadedInvoiceId(response.id);
+            setShowProgress(true);
+
+            // Notify parent component
+            if (onUploadSuccess) {
+              onUploadSuccess(response);
+            }
+
+            setError(null);
+          } catch (retryError) {
+            console.error("Retry upload error:", retryError);
+            setError(retryError.message || "Failed to upload file after retry");
+
+            if (onUploadError) {
+              onUploadError(retryError);
+            }
+          }
+        }, 1000);
+      } else {
+        setError(error.message || "Failed to upload file");
+
+        if (onUploadError) {
+          onUploadError(error);
+        }
       }
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleProgressComplete = () => {
+    // Reset the form after processing is complete
+    setFile(null);
+    setInvoiceNumber("");
+    setSelectedFileType("");
+    setUploadedInvoiceId(null);
+    setShowProgress(false);
   };
 
   return (
@@ -121,98 +179,123 @@ const FileUploadDropzone = ({ onUploadSuccess, onUploadError }) => {
         </Alert>
       )}
 
-      <Box
-        {...getRootProps()}
-        sx={{
-          border: "2px dashed",
-          borderColor: isDragActive ? "primary.main" : "grey.400",
-          borderRadius: 2,
-          p: 3,
-          mb: 2,
-          textAlign: "center",
-          cursor: "pointer",
-          backgroundColor: isDragActive ? "rgba(0, 0, 0, 0.05)" : "transparent",
-          transition: "all 0.2s ease",
-          "&:hover": {
-            borderColor: "primary.main",
-            backgroundColor: "rgba(0, 0, 0, 0.05)",
-          },
-        }}
-      >
-        <input {...getInputProps()} />
-        <CloudUploadIcon sx={{ fontSize: 48, color: "primary.main", mb: 1 }} />
-        {isDragActive ? (
-          <Typography>Drop the file here...</Typography>
-        ) : (
-          <Typography>
-            Drag and drop a file here, or click to select a file
-          </Typography>
-        )}
-        <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-          Supported formats: CSV, XLS, XLSX
-        </Typography>
-      </Box>
-
-      {file && (
+      <Collapse in={!showProgress}>
         <Box
+          {...getRootProps()}
           sx={{
-            p: 2,
+            border: "2px dashed",
+            borderColor: isDragActive ? "primary.main" : "grey.400",
+            borderRadius: 2,
+            p: 3,
             mb: 2,
-            backgroundColor: "rgba(0, 0, 0, 0.03)",
-            borderRadius: 1,
+            textAlign: "center",
+            cursor: "pointer",
+            backgroundColor: isDragActive
+              ? "rgba(0, 0, 0, 0.05)"
+              : "transparent",
+            transition: "all 0.2s ease",
+            "&:hover": {
+              borderColor: "primary.main",
+              backgroundColor: "rgba(0, 0, 0, 0.05)",
+            },
           }}
         >
-          <Typography variant="subtitle2">Selected File:</Typography>
-          <Typography variant="body2">{file.name}</Typography>
-          <Typography variant="body2" color="textSecondary">
-            {(file.size / 1024).toFixed(2)} KB
+          <input {...getInputProps()} />
+          <CloudUploadIcon
+            sx={{ fontSize: 48, color: "primary.main", mb: 1 }}
+          />
+          {isDragActive ? (
+            <Typography>Drop the file here...</Typography>
+          ) : (
+            <Typography>
+              Drag and drop a file here, or click to select a file
+            </Typography>
+          )}
+          <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+            Supported formats: CSV, XLS, XLSX
           </Typography>
         </Box>
-      )}
 
-      <TextField
-        fullWidth
-        label="Invoice Number"
-        variant="outlined"
-        value={invoiceNumber}
-        onChange={(e) => setInvoiceNumber(e.target.value)}
-        sx={{ mb: 2 }}
-        disabled={uploading}
-      />
+        {file && (
+          <Box
+            sx={{
+              p: 2,
+              mb: 2,
+              backgroundColor: "rgba(0, 0, 0, 0.03)",
+              borderRadius: 1,
+            }}
+          >
+            <Typography variant="subtitle2">Selected File:</Typography>
+            <Typography variant="body2">{file.name}</Typography>
+            <Typography variant="body2" color="textSecondary">
+              {(file.size / 1024).toFixed(2)} KB
+            </Typography>
+          </Box>
+        )}
 
-      <FormControl fullWidth sx={{ mb: 2 }}>
-        <InputLabel id="file-type-select-label">
-          File Type (Optional)
-        </InputLabel>
-        <Select
-          labelId="file-type-select-label"
-          id="file-type-select"
-          value={selectedFileType}
-          label="File Type (Optional)"
-          onChange={(e) => setSelectedFileType(e.target.value)}
+        <TextField
+          fullWidth
+          label="Invoice Number"
+          variant="outlined"
+          value={invoiceNumber}
+          onChange={(e) => setInvoiceNumber(e.target.value)}
+          sx={{ mb: 2 }}
           disabled={uploading}
-        >
-          <MenuItem value="">
-            <em>Auto-detect</em>
-          </MenuItem>
-          {fileTypes.map((type) => (
-            <MenuItem key={type.id} value={type.id}>
-              {type.name}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
+        />
 
-      <Button
-        variant="contained"
-        color="primary"
-        onClick={handleUpload}
-        disabled={!file || uploading}
-        startIcon={uploading ? <CircularProgress size={20} /> : null}
-        fullWidth
-      >
-        {uploading ? "Uploading..." : "Upload"}
-      </Button>
+        <FormControl fullWidth sx={{ mb: 2 }}>
+          <InputLabel id="file-type-select-label">
+            File Type (Optional)
+          </InputLabel>
+          <Select
+            labelId="file-type-select-label"
+            id="file-type-select"
+            value={selectedFileType}
+            label="File Type (Optional)"
+            onChange={(e) => setSelectedFileType(e.target.value)}
+            disabled={uploading}
+          >
+            <MenuItem value="">
+              <em>Auto-detect</em>
+            </MenuItem>
+            {fileTypes.map((type) => (
+              <MenuItem key={type.id} value={type.id}>
+                {type.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={handleUpload}
+          disabled={!file || uploading}
+          startIcon={uploading ? <CircularProgress size={20} /> : null}
+          fullWidth
+        >
+          {uploading ? "Uploading..." : "Upload"}
+        </Button>
+      </Collapse>
+
+      {/* Show progress tracker after upload */}
+      <Collapse in={showProgress}>
+        {uploadedInvoiceId && (
+          <ProgressTracker
+            invoiceId={uploadedInvoiceId}
+            onComplete={handleProgressComplete}
+          />
+        )}
+        <Button
+          variant="outlined"
+          color="primary"
+          onClick={() => setShowProgress(false)}
+          fullWidth
+          sx={{ mt: 2 }}
+        >
+          Upload Another File
+        </Button>
+      </Collapse>
     </Paper>
   );
 };

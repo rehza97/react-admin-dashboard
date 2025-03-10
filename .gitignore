@@ -29,3 +29,24 @@ backend/venv
 *.sw?
 backend/db.sqlite3
 backend/db.sqlite3
+backend/db.sqlite3
+*.csv
+*.xlsx
+/backend/media
+bfg-1.15.0.jar
+Manil/Requêtes existantes/Moachir (NGBSS)/CA CNT.csv
+Manil/Requêtes existantes/Moachir (NGBSS)/CA DNT.csv
+Manil/Requêtes existantes/Moachir (NGBSS)/CA non periodique.csv
+Manil/Requêtes existantes/Moachir (NGBSS)/CA periodique.csv
+Manil/Requêtes existantes/Moachir (NGBSS)/Créances NGBSS.csv
+Manil/Requêtes existantes/Moachir (NGBSS)/CA RFD.csv
+Manil/Requêtes existantes/Moachir (NGBSS)/Parc Corporate NGBSS.csv
+/Manil
+backend/media
+backend/db.sqlite3
+backend/db.sqlite3
+backend/media/invoices/CA_DNT.csv
+backend/media/invoices/CA_non_periodique.csv
+backend/media/invoices/CA_RFD.csv
+backend/media/invoices/CA_periodique.csv
+backend/media/invoices/Parc_Corporate_NGBSS.csv

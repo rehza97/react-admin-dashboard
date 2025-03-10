@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Box,
   Button,
@@ -20,6 +20,7 @@ import GoogleIcon from "@mui/icons-material/Google";
 import FacebookIcon from "@mui/icons-material/Facebook";
 import TwitterIcon from "@mui/icons-material/Twitter";
 import { authService } from "../../services/api";
+import { useAuth } from "../../context/AuthContext";
 
 const Login = () => {
   const theme = useTheme();
@@ -29,10 +30,11 @@ const Login = () => {
     password: "",
     rememberMe: false,
   });
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState({ email: "", password: "" });
   const [generalError, setGeneralError] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
+  const { setCurrentUser } = useAuth();
 
   const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
@@ -73,26 +75,29 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setGeneralError("");
-    
+
     if (validate()) {
       try {
         const response = await authService.login({
           email: formData.email,
-          password: formData.password
+          password: formData.password,
         });
-        
+
         // Store token and authentication status
         localStorage.setItem("token", response.token);
         localStorage.setItem("isAuthenticated", "true");
-        
+
+        // Update currentUser in AuthContext
+        setCurrentUser(response.user);
+
         // Redirect to the intended page or dashboard
         const from = location.state?.from?.pathname || "/";
         navigate(from, { replace: true });
       } catch (error) {
         console.error("Login error:", error);
         setGeneralError(
-          error.response?.data?.error || 
-          "Invalid credentials. Please try again."
+          error.response?.data?.error ||
+            "Invalid credentials. Please try again."
         );
       }
     }
@@ -237,7 +242,7 @@ const Login = () => {
 
             <Box sx={{ textAlign: "center", mt: 1, mb: 2 }}>
               <Typography variant="body2">
-                Don't have an account?{" "}
+                Don&apos;t have an account?{" "}
                 <Link
                   component={RouterLink}
                   to="/register"

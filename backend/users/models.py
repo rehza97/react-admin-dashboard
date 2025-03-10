@@ -118,6 +118,44 @@ class CustomUser(AbstractUser):
             "profile_picture": self.profile_picture.url if self.profile_picture else None,
         }
 
+    def get_authorized_dots(self):
+        """Return a list of DOTs the user has access to."""
+        # Admins have access to all DOTs
+        if self.is_admin:
+            return ['all']
+
+        # Get DOTs from user permissions
+        user_dots = list(
+            self.dot_permissions.values_list('dot_code', flat=True))
+
+        # If no specific permissions, return empty list
+        if not user_dots:
+            return []
+
+        return user_dots
+
+
+# DOT Permission Model
+class UserDOTPermission(models.Model):
+    """Model to store DOT-specific permissions for users"""
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='dot_permissions'
+    )
+    dot_code = models.CharField(max_length=50)
+    dot_name = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'dot_code')
+        indexes = [
+            models.Index(fields=['user', 'dot_code']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.email} - {self.dot_name} ({self.dot_code})"
+
 
 @receiver(reset_password_token_created)
 def password_reset_token_created(reset_password_token, *args, **kwargs):
