@@ -8,12 +8,9 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 import traceback
 import logging
-from .kpi_views import (
-    RevenueKPIView, CollectionKPIView, ReceivablesKPIView,
-    CorporateNGBSSParkKPIView, UnifiedKPIView, PeriodicRevenueKPIView,
-    NonPeriodicRevenueKPIView, SpecialRevenueKPIView
-)
+from . import export_views
 
+from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 router = DefaultRouter()
@@ -140,10 +137,14 @@ urlpatterns = [
     path('dashboard/enhanced/', views.DashboardEnhancedView.as_view(),
          name='dashboard-enhanced'),
 
+    # Comprehensive report endpoints
+    path('reports/', views.ComprehensiveReportView.as_view(),
+         name='comprehensive-reports'),
+    path('reports/export/<str:report_type>/',
+         views.ComprehensiveReportExportView.as_view(), name='report-export'),
+
     # File upload and processing - Using DebugUploadView instead of non-existent FileUploadView
     path('upload/', views.DebugUploadView.as_view(), name='file-upload'),
-
-
 
     # KPI endpoints - Keep only the ones that exist
     path('kpi/dashboard-summary/', kpi_views.DashboardSummaryView.as_view(),
@@ -163,28 +164,15 @@ urlpatterns = [
     path('kpi/unfinished-invoice/', kpi_views.UnfinishedInvoiceKPIView.as_view(),
          name='kpi-unfinished-invoice'),
 
+    path('kpi/performance-ranking/', kpi_views.PerformanceRankingView.as_view(),
+         name='kpi-performance-ranking'),
+
+    path('reports/export/revenue_collection/',
+         export_views.RevenueCollectionExportView.as_view(), name='export_revenue_collection'),
+    path('reports/export/corporate_park/',
+         export_views.CorporateParkExportView.as_view(), name='export_corporate_park'),
+    path('reports/export/receivables/',
+         export_views.ReceivablesExportView.as_view(), name='export_receivables'),
 ]
 
 urlpatterns += router.urls
-
-
-class DebugUploadView(APIView):
-    parser_classes = (MultiPartParser, FormParser)
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, *args, **kwargs):
-        try:
-            file = request.FILES.get('file')
-            if not file:
-                return Response({"error": "No file provided"}, status=400)
-
-            # Log file details
-            logger.info(
-                f"Debug upload - File name: {file.name}, Size: {file.size}, Content type: {file.content_type}")
-
-            # Don't save the file, just return success
-            return Response({"message": "File received successfully", "size": file.size}, status=200)
-        except Exception as e:
-            logger.error(f"Debug upload error: {str(e)}")
-            logger.error(traceback.format_exc())
-            return Response({"error": str(e)}, status=500)

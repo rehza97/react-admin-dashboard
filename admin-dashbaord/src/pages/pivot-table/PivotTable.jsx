@@ -14,6 +14,7 @@ import {
   Button,
   Tooltip,
   Divider,
+  Menu,
 } from "@mui/material";
 import PivotTableUI from "react-pivottable/PivotTableUI";
 import "react-pivottable/pivottable.css";
@@ -40,6 +41,7 @@ const PivotTable = () => {
   const [error, setError] = useState(null);
   const [dataSource, setDataSource] = useState("facturation_manuelle");
   const [zoomLevel, setZoomLevel] = useState(100);
+  const [exportAnchorEl, setExportAnchorEl] = useState(null);
 
   // Define available data sources
   const dataSources = [
@@ -183,29 +185,70 @@ const PivotTable = () => {
     }
   };
 
-  const handleExportData = () => {
-    // Simple CSV export
-    if (data.length === 0) return;
+  const handleExportClick = (event) => {
+    setExportAnchorEl(event.currentTarget);
+  };
 
-    const headers = Object.keys(data[0]).join(",");
-    const csvRows = data.map((row) =>
-      Object.values(row)
-        .map((value) =>
-          typeof value === "string" ? `"${value.replace(/"/g, '""')}"` : value
+  const handleExportClose = () => {
+    setExportAnchorEl(null);
+  };
+
+  const handleExportData = (format) => {
+    handleExportClose();
+    const pivotTable = document.querySelector(".pvtTable");
+    if (!pivotTable) {
+      alert(t("pivotTable.noDataToExport"));
+      return;
+    }
+
+    const rows = pivotTable.querySelectorAll("tr");
+    const tableData = [];
+
+    // Convert table to 2D array
+    rows.forEach((row) => {
+      const cells = row.querySelectorAll("th, td");
+      const rowData = Array.from(cells).map((cell) => cell.textContent.trim());
+      tableData.push(rowData);
+    });
+
+    const timestamp = new Date().toISOString().split("T")[0];
+
+    if (format === "csv") {
+      // Export as CSV
+      const csvContent = tableData
+        .map((row) =>
+          row
+            .map((cell) => {
+              if (cell.includes(",")) {
+                return `"${cell}"`;
+              }
+              return cell;
+            })
+            .join(",")
         )
-        .join(",")
-    );
+        .join("\n");
 
-    const csvContent = [headers, ...csvRows].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `pivot_data_${dataSource}.csv`);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute(
+        "download",
+        `pivot_table_${dataSource}_${timestamp}.csv`
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } else if (format === "excel") {
+      // Export as Excel
+      import("xlsx").then((XLSX) => {
+        const ws = XLSX.utils.aoa_to_sheet(tableData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Pivot Table");
+        XLSX.writeFile(wb, `pivot_table_${dataSource}_${timestamp}.xlsx`);
+      });
+    }
   };
 
   const handleRefreshData = () => {
@@ -328,10 +371,22 @@ const PivotTable = () => {
               <Button
                 variant="outlined"
                 startIcon={<FileDownloadIcon />}
-                onClick={handleExportData}
+                onClick={handleExportClick}
               >
                 {t("pivotTable.exportTable")}
               </Button>
+              <Menu
+                anchorEl={exportAnchorEl}
+                open={Boolean(exportAnchorEl)}
+                onClose={handleExportClose}
+              >
+                <MenuItem onClick={() => handleExportData("csv")}>
+                  {t("pivotTable.exportAsCsv")}
+                </MenuItem>
+                <MenuItem onClick={() => handleExportData("excel")}>
+                  {t("pivotTable.exportAsExcel")}
+                </MenuItem>
+              </Menu>
             </Box>
           </Paper>
 

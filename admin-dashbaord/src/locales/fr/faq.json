@@ -1,0 +1,96 @@
+{
+  "frequentlyAskedQuestions": "Questions Fréquemment Posées",
+  "findAnswers": "Trouvez des réponses aux questions courantes",
+  "expandAll": "Tout Développer",
+  "collapseAll": "Tout Réduire",
+  "searchFAQ": "Rechercher dans la FAQ",
+  "noResults": "Aucun résultat trouvé pour votre recherche",
+  "helpfulAnswer": "Cette réponse vous a-t-elle été utile ?",
+  "yes": "Oui",
+  "no": "Non",
+  "moreQuestions": "Vous avez encore des questions ?",
+  "contactSupport": "Contacter le Support",
+
+  "categories": {
+    "all": "Toutes les Catégories",
+    "general": "Général",
+    "pivot": "Tableau Croisé Dynamique",
+    "data": "Gestion des Données",
+    "technical": "Technique",
+    "account": "Compte"
+  },
+  "general": {
+    "navigation": {
+      "question": "Comment naviguer dans le tableau de bord ?",
+      "answer": "Le tableau de bord utilise un menu de navigation latéral. Vous pouvez cliquer sur différents éléments du menu pour accéder aux différentes fonctionnalités comme le Tableau Croisé Dynamique, les Rapports et les Paramètres. Vous pouvez également réduire la barre latérale à l'aide du bouton de basculement pour plus d'espace à l'écran."
+    },
+    "language": {
+      "question": "Puis-je changer la langue de l'interface ?",
+      "answer": "Oui, vous pouvez changer la langue de l'interface en utilisant le sélecteur de langue dans la barre de navigation supérieure. L'application prend en charge plusieurs langues et mémorisera votre préférence."
+    },
+    "theme": {
+      "question": "Comment puis-je personnaliser le thème ou l'apparence ?",
+      "answer": "L'application prend en charge la personnalisation du thème. Vous pouvez basculer entre les modes clair et sombre, et ajuster d'autres préférences visuelles via le menu des paramètres."
+    }
+  },
+  "pivot": {
+    "usage": {
+      "question": "Comment utiliser la fonction Tableau Croisé Dynamique ?",
+      "answer": "Le Tableau Croisé Dynamique vous permet d'analyser les données de manière dynamique. Vous pouvez faire glisser et déposer des champs dans les lignes et les colonnes, appliquer des filtres et choisir différentes méthodes d'agrégation. Vous pouvez également enregistrer vos configurations pour une utilisation ultérieure."
+    },
+    "export": {
+      "question": "Comment exporter des données depuis le Tableau Croisé Dynamique ?",
+      "answer": "Vous pouvez exporter les données du Tableau Croisé Dynamique en cliquant sur le bouton d'exportation et en choisissant le format CSV ou Excel. Le fichier exporté inclura la vue actuelle de votre tableau, y compris toutes les agrégations et les calculs."
+    },
+    "saveConfig": {
+      "question": "Puis-je sauvegarder mes configurations de Tableau Croisé Dynamique ?",
+      "answer": "Oui, vous pouvez sauvegarder vos configurations de Tableau Croisé Dynamique en utilisant le bouton 'Sauvegarder la Configuration'. Vous pouvez ensuite charger ces configurations sauvegardées en utilisant le bouton 'Charger la Configuration'."
+    },
+    "refresh": {
+      "question": "Comment actualiser les données du Tableau Croisé Dynamique ?",
+      "answer": "Vous pouvez actualiser les données du Tableau Croisé Dynamique en cliquant sur l'icône d'actualisation à côté du sélecteur de source de données. Cela récupérera les dernières données du serveur."
+    },
+    "zoom": {
+      "question": "Comment faire un zoom avant/arrière dans le Tableau Croisé Dynamique ?",
+      "answer": "Utilisez les contrôles de zoom (icônes + et -) au-dessus du Tableau Croisé Dynamique pour ajuster la taille de la vue. Vous pouvez également utiliser le curseur pour définir un niveau de zoom spécifique, ou cliquer sur l'icône de réinitialisation pour revenir à un zoom de 100%."
+    }
+  },
+  "data": {
+    "sources": {
+      "question": "Quelles sources de données sont disponibles dans le Tableau Croisé Dynamique ?",
+      "answer": "Le Tableau Croisé Dynamique prend en charge plusieurs sources de données, notamment la Facturation Manuelle, le Journal des Ventes, l'État des Factures, le Parc Corporate, les Créances NGBSS et diverses données liées au CA (Chiffre d'Affaires)."
+    },
+    "updates": {
+      "question": "À quelle fréquence les données sont-elles mises à jour ?",
+      "answer": "Les données sont mises à jour en temps réel lorsque des changements surviennent. Vous pouvez actualiser manuellement les données en utilisant le bouton d'actualisation pour vous assurer de voir les informations les plus récentes."
+    },
+    "filters": {
+      "question": "Puis-je filtrer les données dans le Tableau Croisé Dynamique ?",
+      "answer": "Oui, vous pouvez appliquer des filtres à n'importe quel champ dans le Tableau Croisé Dynamique. Utilisez les options de filtrage dans les en-têtes de champs pour sélectionner des valeurs ou des plages spécifiques que vous souhaitez analyser."
+    }
+  },
+  "technical": {
+    "browsers": {
+      "question": "Quels navigateurs sont pris en charge ?",
+      "answer": "Le tableau de bord fonctionne mieux avec les navigateurs modernes comme Chrome, Firefox, Safari et Edge. Pour des performances optimales, assurez-vous que votre navigateur est mis à jour à la dernière version."
+    },
+    "troubleshoot": {
+      "question": "Que dois-je faire si le Tableau Croisé Dynamique ne se charge pas ?",
+      "answer": "Si le Tableau Croisé Dynamique ne se charge pas, essayez ces étapes : 1) Actualisez la page 2) Videz le cache de votre navigateur 3) Vérifiez votre connexion Internet 4) Contactez le support si le problème persiste."
+    },
+    "security": {
+      "question": "Mes données sont-elles sécurisées ?",
+      "answer": "Oui, toutes les données sont transmises de manière sécurisée à l'aide du chiffrement. Nous mettons en œuvre des mesures de sécurité conformes aux normes de l'industrie pour protéger vos informations."
+    }
+  },
+  "account": {
+    "password": {
+      "question": "Comment changer mon mot de passe ?",
+      "answer": "Vous pouvez changer votre mot de passe via les paramètres du profil. Cliquez sur votre icône de profil, sélectionnez 'Paramètres', puis choisissez l'option 'Changer le mot de passe'."
+    },
+    "locked": {
+      "question": "Que dois-je faire si je suis bloqué de mon compte ?",
+      "answer": "Si vous êtes bloqué, utilisez l'option 'Mot de passe oublié' sur la page de connexion. Si vous continuez à avoir des problèmes, contactez votre administrateur système ou l'équipe de support."
+    }
+  }
+}

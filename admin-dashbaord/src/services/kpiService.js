@@ -23,12 +23,21 @@ const kpiService = {
         queryParams.append("dot", filters.dot);
       }
 
+      console.log(`Fetching dashboard summary with filters:`, filters);
+      console.log(
+        `Query URL: /data/kpi/dashboard-summary/?${queryParams.toString()}`
+      );
+
       const response = await api.get(
         `/data/kpi/dashboard-summary/?${queryParams.toString()}`
       );
+
+      console.log("Dashboard summary response:", response.data);
       return response.data;
     } catch (error) {
-      return handleApiError(error, "dashboard summary");
+      console.error("Error fetching dashboard summary:", error);
+      // For dashboard summary, we'll throw the error to be handled by the component
+      throw error;
     }
   },
 
@@ -87,20 +96,24 @@ const kpiService = {
   // Receivables KPIs
   getReceivablesKPIs: async (filters = {}) => {
     try {
-      // Build query parameters
+      // Build query parameters properly
       const queryParams = new URLSearchParams();
 
       // Only add parameters that have values
       if (filters.year) {
         queryParams.append("year", filters.year);
       }
-      if (filters.month && filters.month !== "") {
-        queryParams.append("month", filters.month);
-      }
-      if (filters.dot && filters.dot !== "") {
+      if (filters.dot) {
         queryParams.append("dot", filters.dot);
       }
+      if (filters.product) {
+        queryParams.append("product", filters.product);
+      }
+      if (filters.customer_lev1) {
+        queryParams.append("customer_lev1", filters.customer_lev1);
+      }
 
+      // Make the API call with the formatted query string
       const response = await api.get(
         `/data/kpi/receivables/?${queryParams.toString()}`
       );

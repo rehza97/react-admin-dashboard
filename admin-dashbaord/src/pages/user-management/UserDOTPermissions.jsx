@@ -139,24 +139,62 @@ const UserDOTPermissions = () => {
 
       console.log("Adding DOT permission with data:", dotData);
 
-      const response = await userService.assignDOTPermission(
-        selectedUser.id,
-        dotData
-      );
+      try {
+        const response = await userService.assignDOTPermission(
+          selectedUser.id,
+          dotData
+        );
 
-      console.log("DOT permission added:", response);
+        console.log("DOT permission added:", response);
 
-      // Refresh the user list to show updated permissions
-      const updatedUsers = await userService.getUsers(true);
-      setUsers(updatedUsers.results || []);
+        // Refresh the user list to show updated permissions
+        const updatedUsers = await userService.getUsers(true);
+        setUsers(updatedUsers.results || []);
 
-      setSnackbar({
-        open: true,
-        message: `DOT permission added successfully for ${selectedUser.email}`,
-        severity: "success",
-      });
+        setSnackbar({
+          open: true,
+          message: `DOT permission added successfully for ${selectedUser.email}`,
+          severity: "success",
+        });
 
-      handleCloseDialog();
+        handleCloseDialog();
+      } catch (apiError) {
+        // Enhanced error handling to show more details
+        console.error("API error details:", apiError);
+
+        let errorMessage = "Failed to add DOT permission";
+
+        // Extract error message from response if available
+        if (apiError.response && apiError.response.data) {
+          if (typeof apiError.response.data === "string") {
+            errorMessage = apiError.response.data;
+          } else if (apiError.response.data.error) {
+            errorMessage = apiError.response.data.error;
+          } else if (apiError.response.data.detail) {
+            errorMessage = apiError.response.data.detail;
+          } else if (typeof apiError.response.data === "object") {
+            // Try to extract field errors
+            const fieldErrors = Object.entries(apiError.response.data)
+              .map(([field, errors]) => {
+                if (Array.isArray(errors)) {
+                  return `${field}: ${errors.join(", ")}`;
+                }
+                return `${field}: ${errors}`;
+              })
+              .join("; ");
+
+            if (fieldErrors) {
+              errorMessage = `Validation errors: ${fieldErrors}`;
+            }
+          }
+        }
+
+        setSnackbar({
+          open: true,
+          message: errorMessage,
+          severity: "error",
+        });
+      }
     } catch (error) {
       handleApiError(error, "adding DOT permission", setSnackbar);
     } finally {
@@ -175,17 +213,52 @@ const UserDOTPermissions = () => {
         return;
       }
 
-      await userService.removeDOTPermission(userId, dotCode);
+      // Special handling for "all" DOT code
+      if (dotCode === "all") {
+        setSnackbar({
+          open: true,
+          message:
+            "Cannot remove admin access to all DOTs directly. Please change the user's role instead.",
+          severity: "warning",
+        });
+        return;
+      }
 
-      // Refresh the user list to show updated permissions
-      const updatedUsers = await userService.getUsers(true);
-      setUsers(updatedUsers.results || []);
+      try {
+        await userService.removeDOTPermission(userId, dotCode);
 
-      setSnackbar({
-        open: true,
-        message: "DOT permission removed successfully",
-        severity: "success",
-      });
+        // Refresh the user list to show updated permissions
+        const updatedUsers = await userService.getUsers(true);
+        setUsers(updatedUsers.results || []);
+
+        setSnackbar({
+          open: true,
+          message: "DOT permission removed successfully",
+          severity: "success",
+        });
+      } catch (apiError) {
+        // Enhanced error handling
+        console.error("API error details:", apiError);
+
+        let errorMessage = "Failed to remove DOT permission";
+
+        // Extract error message from response if available
+        if (apiError.response && apiError.response.data) {
+          if (typeof apiError.response.data === "string") {
+            errorMessage = apiError.response.data;
+          } else if (apiError.response.data.error) {
+            errorMessage = apiError.response.data.error;
+          } else if (apiError.response.data.detail) {
+            errorMessage = apiError.response.data.detail;
+          }
+        }
+
+        setSnackbar({
+          open: true,
+          message: errorMessage,
+          severity: "error",
+        });
+      }
     } catch (error) {
       handleApiError(error, "removing DOT permission", setSnackbar);
     }

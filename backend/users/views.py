@@ -433,44 +433,63 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         Assign a DOT permission to a user
         """
         user = self.get_object()
-        serializer = self.get_serializer(data=request.data)
+
+        # Log incoming data for debugging
+        logger.info(f"Assign DOT request data: {request.data}")
+
+        # Create a serializer with ONLY the DOT data
+        serializer = DOTPermissionAssignmentSerializer(data=request.data)
 
         if serializer.is_valid():
             dot_code = serializer.validated_data['dot_code']
             dot_name = serializer.validated_data['dot_name']
 
-            # Create or update the permission
-            permission, created = UserDOTPermission.objects.update_or_create(
-                user=user,
-                dot_code=dot_code,
-                defaults={'dot_name': dot_name}
-            )
+            try:
+                # Create or update the permission
+                permission, created = UserDOTPermission.objects.update_or_create(
+                    user=user,
+                    dot_code=dot_code,
+                    defaults={'dot_name': dot_name}
+                )
 
-            # Log the action
-            action_type = 'create_dot_permission' if created else 'update_dot_permission'
-            log_admin_action(
-                request.user,
-                action_type,
-                target=user.email,
-                details=f"DOT: {dot_code} ({dot_name})"
-            )
+                # Log the action
+                action_type = 'create_dot_permission' if created else 'update_dot_permission'
+                log_admin_action(
+                    request.user,
+                    action_type,
+                    target=user.email,
+                    details=f"DOT: {dot_code} ({dot_name})"
+                )
 
-            return Response({
-                'message': f"DOT permission {'created' if created else 'updated'} successfully",
-                'permission': UserDOTPermissionSerializer(permission).data
-            })
+                return Response({
+                    'message': f"DOT permission {'created' if created else 'updated'} successfully",
+                    'permission': UserDOTPermissionSerializer(permission).data
+                })
+            except Exception as e:
+                logger.error(f"Error creating DOT permission: {str(e)}")
+                return Response(
+                    {'error': f"Error assigning DOT permission: {str(e)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        else:
+            # Log validation errors for debugging
+            logger.error(
+                f"DOT assignment validation errors: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(detail=True, methods=['delete'])
-    def remove_dot(self, request, pk=None):
+    @action(detail=True, methods=['delete'], url_path='remove-dot/(?P<dot_code>[^/.]+)')
+    def remove_dot_by_path(self, request, pk=None, dot_code=None):
         """
-        Remove a DOT permission from a user
+        Remove a DOT permission from a user using path parameter
         """
         user = self.get_object()
-        dot_code = request.query_params.get('dot_code')
+
+        # Log request details for debugging
+        logger.info(
+            f"Remove DOT by path request. User: {pk}, DOT code: {dot_code}")
 
         if not dot_code:
+            logger.error("DOT code not provided in path")
             return Response(
                 {'error': 'DOT code is required'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -492,6 +511,8 @@ class UserManagementViewSet(viewsets.ModelViewSet):
 
             return Response({'message': 'DOT permission removed successfully'})
         except UserDOTPermission.DoesNotExist:
+            logger.error(
+                f"DOT permission not found: user={user.id}, dot_code={dot_code}")
             return Response(
                 {'error': f'DOT permission with code {dot_code} not found'},
                 status=status.HTTP_404_NOT_FOUND

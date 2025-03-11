@@ -209,5 +209,14 @@ class DOTPermissionAssignmentSerializer(serializers.Serializer):
     def validate(self, attrs):
         # Ensure dot_code is not empty
         if not attrs.get('dot_code'):
-            raise serializers.ValidationError("DOT code cannot be empty")
+            raise serializers.ValidationError(
+                {"dot_code": ["DOT code cannot be empty"]})
+        # Ensure dot_name is not empty
+        if not attrs.get('dot_name'):
+            raise serializers.ValidationError(
+                {"dot_name": ["DOT name cannot be empty"]})
         return attrs
+
+    class Meta:
+        # Explicitly define fields to prevent inheriting from other serializers
+        fields = ['dot_code', 'dot_name']

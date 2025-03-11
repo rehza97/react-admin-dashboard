@@ -23,6 +23,8 @@ import {
   Snackbar,
   Alert,
   CircularProgress,
+  Chip,
+  AlertTitle,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
@@ -50,7 +52,7 @@ const DOTManagement = () => {
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
-    severity: "success",
+    severity: "info",
   });
   const [confirmDialog, setConfirmDialog] = useState({
     open: false,
@@ -228,6 +230,22 @@ const DOTManagement = () => {
       confirmDialog.action();
     }
     handleConfirmDialogClose();
+  };
+
+  const showSuccessSnackbar = (message) => {
+    setSnackbar({
+      open: true,
+      message,
+      severity: "success",
+    });
+  };
+
+  const showErrorSnackbar = (message) => {
+    setSnackbar({
+      open: true,
+      message,
+      severity: "error",
+    });
   };
 
   const handleSnackbarClose = () => {

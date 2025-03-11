@@ -68,10 +68,18 @@ const handleApiError = (error, serviceName, mockData) => {
         errorMessage = `Server error while fetching ${serviceName} data`;
         break;
       default:
-        errorMessage =
-          errorData && typeof errorData === "object" && "error" in errorData
-            ? errorData.error
-            : `Error (${statusCode}) in ${serviceName}`;
+        if (
+          errorData &&
+          typeof errorData === "object" &&
+          "error" in errorData &&
+          typeof errorData.error === "string"
+        ) {
+          errorMessage = errorData.error;
+        } else {
+          errorMessage = `Error ${
+            statusCode ? `(${statusCode})` : ""
+          } in ${serviceName}`;
+        }
     }
   }
 
@@ -85,7 +93,7 @@ const handleApiError = (error, serviceName, mockData) => {
 
   // Only use mock data in development mode AND when the server is unreachable
   // (network error) or returns a server error (500+)
-  const isServerError = statusCode && statusCode >= 500;
+  const isServerError = typeof statusCode === "number" && statusCode >= 500;
   const isNetworkError =
     !statusCode &&
     error &&
@@ -180,7 +188,10 @@ const reportService = {
       );
 
       // Transform data to expected format
-      return transformReportData(response.data, "revenue_collection");
+      return reportService.transformReportData(
+        response.data,
+        "revenue_collection"
+      );
     } catch (error) {
       // Handle error and log it
       console.error("Error fetching revenue collection report:", error);
@@ -208,7 +219,7 @@ const reportService = {
       };
 
       // Transform mock data
-      return transformReportData(mockData, "revenue_collection");
+      return reportService.transformReportData(mockData, "revenue_collection");
     }
   },
 
@@ -245,7 +256,7 @@ const reportService = {
       );
 
       // Transform data to expected format
-      return transformReportData(response.data, "corporate_park");
+      return reportService.transformReportData(response.data, "corporate_park");
     } catch (error) {
       // Handle error and log it
       console.error("Error fetching corporate park report:", error);
@@ -271,7 +282,7 @@ const reportService = {
       };
 
       // Transform mock data
-      return transformReportData(mockData, "corporate_park");
+      return reportService.transformReportData(mockData, "corporate_park");
     }
   },
 
@@ -306,7 +317,7 @@ const reportService = {
       );
 
       // Transform data to expected format
-      return transformReportData(response.data, "receivables");
+      return reportService.transformReportData(response.data, "receivables");
     } catch (error) {
       // Handle error and log it
       console.error("Error fetching receivables report:", error);
@@ -336,7 +347,7 @@ const reportService = {
       };
 
       // Transform mock data
-      return transformReportData(mockData, "receivables");
+      return reportService.transformReportData(mockData, "receivables");
     }
   },
 

@@ -69,11 +69,9 @@ const ReceivablesKPI = () => {
       setLoading(true);
       setError(null);
       try {
-        const params = {};
-        if (yearFilter) params.year = yearFilter;
-        if (dotFilter) params.dot = dotFilter;
-
-        const data = await kpiService.getReceivablesKPIs(params);
+        const data = await kpiService.getReceivablesKPIs({
+          year: getCurrentYear(),
+        });
         setReceivablesData(data);
       } catch (err) {
         console.error("Error fetching receivables data:", err);
@@ -84,7 +82,7 @@ const ReceivablesKPI = () => {
     };
 
     fetchData();
-  }, [yearFilter, dotFilter]);
+  }, []);
 
   // Handle tab change
   const handleTabChange = (event, newValue) => {

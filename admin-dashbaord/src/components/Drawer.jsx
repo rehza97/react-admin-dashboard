@@ -35,6 +35,7 @@ import { useAuth } from "../context/AuthContext";
 import { Box, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
+import { styled as muiStyled } from "@mui/material/styles";
 
 const drawerWidth = 260;
 
@@ -60,7 +61,7 @@ const closedMixin = (theme) => ({
   },
 });
 
-const DrawerHeader = styled("div")(({ theme }) => ({
+const DrawerHeader = muiStyled("div")(({ theme }) => ({
   display: "flex",
   alignItems: "center",
   justifyContent: "flex-end",
@@ -68,36 +69,25 @@ const DrawerHeader = styled("div")(({ theme }) => ({
   ...theme.mixins.toolbar,
 }));
 
-const StyledDrawer = styled(MuiDrawer, {
+const StyledDrawer = muiStyled(MuiDrawer, {
   shouldForwardProp: (prop) => prop !== "open",
-})`
-  width: ${drawerWidth}px;
-  flex-shrink: 0;
-  white-space: nowrap;
-  box-sizing: border-box;
-  ${({ theme, open }) =>
-    open && {
-      ...openedMixin(theme),
-      "& .MuiDrawer-paper": {
-        ...openedMixin(theme),
-        border: "none",
-      },
-    }}
-  ${({ theme, open }) =>
-    !open && {
-      ...closedMixin(theme),
-      "& .MuiDrawer-paper": {
-        ...closedMixin(theme),
-        border: "none",
-      },
-    }}
-  ${({ theme }) => ({
-    [theme.breakpoints.down("sm")]: {
-      width: "100%",
-      flexShrink: 0,
-    },
-  })}
-`;
+})(({ theme, open }) => ({
+  width: drawerWidth,
+  flexShrink: 0,
+  whiteSpace: "nowrap",
+  boxSizing: "border-box",
+  ...(open && openedMixin(theme)),
+  ...(!open && closedMixin(theme)),
+  "& .MuiDrawer-paper": {
+    border: "none",
+    ...(open && openedMixin(theme)),
+    ...(!open && closedMixin(theme)),
+  },
+  [theme.breakpoints.down("sm")]: {
+    width: "100%",
+    flexShrink: 0,
+  },
+}));
 
 const UserProfile = ({ open, currentUser, theme }) => (
   <Box
@@ -244,11 +234,6 @@ export default function Drawer({ open, handleDrawerClose }) {
       ],
     },
     {
-      text: t("common.permissions"),
-      icon: <BusinessIcon />,
-      path: "/user-management/dot-permissions",
-    },
-    {
       text: t("common.reports"),
       icon: <BarChartOutlinedIcon />,
       path: "/reports",
@@ -273,28 +258,10 @@ export default function Drawer({ open, handleDrawerClose }) {
       icon: <BarChartOutlinedIcon />,
       path: "/anomaly-scan",
     },
-  ];
-
-  const Array2 = [
     {
       text: t("common.pivot"),
       icon: <TableChartIcon />,
       path: "/pivot-table",
-    },
-    {
-      text: t("common.bar"),
-      icon: <BarChartIcon />,
-      path: "/bar",
-    },
-    {
-      text: t("common.pie"),
-      icon: <PieChartIcon />,
-      path: "/pie",
-    },
-    {
-      text: t("common.line"),
-      icon: <LineChartIcon />,
-      path: "/line",
     },
     {
       text: t("common.faq"),
@@ -410,38 +377,6 @@ export default function Drawer({ open, handleDrawerClose }) {
       </List>
 
       <Divider sx={{ my: 2 }} />
-
-      <List sx={{ px: 1 }}>
-        {Array2.map((item) => (
-          <ListItem key={item.path} sx={listItemStyles} disablePadding>
-            <ListItemButton
-              component={NavLink}
-              to={item.path}
-              sx={listItemButtonStyles(theme, open)}
-            >
-              <ListItemIcon
-                sx={{
-                  minWidth: 0,
-                  justifyContent: "center",
-                  mr: open ? 2 : "auto",
-                  color: theme.palette.text.primary,
-                }}
-              >
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText
-                primary={item.text}
-                sx={{
-                  opacity: open ? 1 : 0,
-                  "& .MuiTypography-root": {
-                    fontWeight: 500,
-                  },
-                }}
-              />
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
     </StyledDrawer>
   );
 }

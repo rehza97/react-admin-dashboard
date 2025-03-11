@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Route, Routes, Navigate, useLocation } from "react-router-dom";
+import { Route, Routes, Navigate, useLocation, Outlet } from "react-router-dom";
 import { styled, ThemeProvider, createTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import CssBaseline from "@mui/material/CssBaseline";
@@ -38,9 +38,10 @@ import {
   UnfinishedInvoicePage,
 } from "./pages/kpi";
 import PropTypes from "prop-types";
+import CircularProgress from "@mui/material/CircularProgress";
 
 // Define drawer width for consistency
-const drawerWidth = 240;
+const drawerWidth = 40;
 
 // Drawer header component
 const DrawerHeader = styled("div")(({ theme }) => ({
@@ -53,8 +54,24 @@ const DrawerHeader = styled("div")(({ theme }) => ({
 
 // Protected Route component to handle authentication
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
+
+  // Show nothing while checking authentication
+  if (loading) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+        }}
+      >
+        <CircularProgress />
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     // Redirect to login if not authenticated
@@ -69,7 +86,7 @@ ProtectedRoute.propTypes = {
 };
 
 // Layout component for authenticated pages
-const DashboardLayout = ({ children, isDarkMode, toggleTheme }) => {
+const DashboardLayout = ({ isDarkMode, toggleTheme }) => {
   const [open, setOpen] = useState(true);
 
   const handleDrawerClose = () => {
@@ -105,14 +122,13 @@ const DashboardLayout = ({ children, isDarkMode, toggleTheme }) => {
         }}
       >
         <DrawerHeader />
-        {children}
+        <Outlet />
       </Box>
     </>
   );
 };
 
 DashboardLayout.propTypes = {
-  children: PropTypes.node.isRequired,
   isDarkMode: PropTypes.bool.isRequired,
   toggleTheme: PropTypes.func.isRequired,
 };
@@ -200,322 +216,222 @@ function App() {
 
             {/* Protected routes - inside the dashboard layout */}
             <Route
-              path="/"
               element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                <DashboardLayout
+                  isDarkMode={isDarkMode}
+                  toggleTheme={toggleTheme}
+                />
+              }
+            >
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
                     <Dashboard />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/manage-users"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/manage-users"
+                element={
+                  <ProtectedRoute>
                     <ManageUsers />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/manage-users/details"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/manage-users/details"
+                element={
+                  <ProtectedRoute>
                     <UserDetails />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/manage-users/add"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/manage-users/add"
+                element={
+                  <ProtectedRoute>
                     <AddUser />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/contacts-information"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/contacts-information"
+                element={
+                  <ProtectedRoute>
                     <ContactsInformation />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/invoices"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/invoices"
+                element={
+                  <ProtectedRoute>
                     <InvoiceBalance />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/form"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/form"
+                element={
+                  <ProtectedRoute>
                     <ProfileForm />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/calendar"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/calendar"
+                element={
+                  <ProtectedRoute>
                     <Calendar />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/faq"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/faq"
+                element={
+                  <ProtectedRoute>
                     <FAQ />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/bar"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/bar"
+                element={
+                  <ProtectedRoute>
                     <BarChart />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/pie"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/pie"
+                element={
+                  <ProtectedRoute>
                     <PieChart />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/line"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/line"
+                element={
+                  <ProtectedRoute>
                     <LineChart />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/pivot-table"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/pivot-table"
+                element={
+                  <ProtectedRoute>
                     <PivotTable />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/manage-users/edit/:id"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/manage-users/edit/:id"
+                element={
+                  <ProtectedRoute>
                     <UserDetails />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/file-upload"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/file-upload"
+                element={
+                  <ProtectedRoute>
                     <FileUpload />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/file-upload/process/:fileId"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/file-upload/process/:fileId"
+                element={
+                  <ProtectedRoute>
                     <FileProcessingView />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/user-management/dot-permissions"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/user-management/dot-permissions"
+                element={
+                  <ProtectedRoute>
                     <UserDOTPermissions />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/anomaly-scan"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/anomaly-scan"
+                element={
+                  <ProtectedRoute>
                     <AnomalyScanPage />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/reports"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/reports"
+                element={
+                  <ProtectedRoute>
                     <ReportPage />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/user-dot-permissions"
-              element={<UserDOTPermissions />}
-            />
-            <Route path="/dot-management" element={<DOTManagement />} />
-            <Route
-              path="/kpi/revenue"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/user-dot-permissions"
+                element={
+                  <ProtectedRoute>
+                    <UserDOTPermissions />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dot-management"
+                element={
+                  <ProtectedRoute>
+                    <DOTManagement />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/revenue"
+                element={
+                  <ProtectedRoute>
                     <RevenuePage />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/kpi/collections"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/collections"
+                element={
+                  <ProtectedRoute>
                     <CollectionPage />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/kpi/receivables"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/receivables"
+                element={
+                  <ProtectedRoute>
                     <ReceivablesPage />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/kpi/corporate-park"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/corporate-park"
+                element={
+                  <ProtectedRoute>
                     <CorporateParkPage />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/kpi/unfinished-invoices"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout
-                    isDarkMode={isDarkMode}
-                    toggleTheme={toggleTheme}
-                  >
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/unfinished-invoices"
+                element={
+                  <ProtectedRoute>
                     <UnfinishedInvoicePage />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
+                  </ProtectedRoute>
+                }
+              />
+            </Route>
 
             {/* Catch-all route */}
             <Route path="*" element={<NotFound />} />

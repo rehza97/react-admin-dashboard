@@ -1,28 +1,50 @@
 import React, { useState, useEffect } from "react";
+import PropTypes from "prop-types";
+import { useTranslation } from "react-i18next";
+// Fix imports to match how the services are exported
+import kpiService from "../../services/kpiService";
+import reportService from "../../services/reportService";
 import {
   Box,
-  Typography,
-  Paper,
-  Tabs,
-  Tab,
-  CircularProgress,
-  Alert,
   Grid,
+  Typography,
+  CircularProgress,
+  Paper,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
+  Alert,
+  Tabs,
+  Tab,
+  Divider,
   Button,
   Snackbar,
+  Card,
+  CardContent,
+  List,
+  ListItem,
+  ListItemText,
 } from "@mui/material";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 import { DownloadOutlined } from "@mui/icons-material";
-import reportService from "../../services/reportService";
-import { exportReport } from "../../services/exportService";
-import useDOTPermissions from "../../hooks/useDOTPermissions";
-import { handleApiError } from "../../utils/errorHandler";
-import PerformanceMetricsCard from "../../components/PerformanceMetricsCard";
 import PageLayout from "../../components/PageLayout";
-import { useTranslation } from "react-i18next";
+import useDOTPermissions from "../../hooks/useDOTPermissions";
+import { handleApiError } from "../../services/utils/errorHandling";
+import PerformanceMetricsCard from "../../components/PerformanceMetricsCard";
+import { exportReport } from "../../services/exportService";
 
 // Tab panel component
 function TabPanel(props) {
@@ -90,8 +112,8 @@ const ReportPage = () => {
 
   // State for filters
   const [year, setYear] = useState(getCurrentYear());
-  const [month, setMonth] = useState(getCurrentMonth());
-  const [dot, setDot] = useState("");
+  const [month, setMonth] = useState("");
+  const [selectedDot, setSelectedDot] = useState("");
 
   // State for report data
   const [revenueCollectionReport, setRevenueCollectionReport] = useState(null);
@@ -121,6 +143,10 @@ const ReportPage = () => {
   // Add setExporting state variable
   const [exporting, setExporting] = useState(false);
 
+  // Add state for dashboard summary
+  const [dashboardSummary, setDashboardSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+
   // Effect to fetch report data based on selected tab and filters
   useEffect(() => {
     const fetchReportData = async () => {
@@ -132,7 +158,7 @@ const ReportPage = () => {
         const params = {
           year,
           ...(month ? { month } : {}),
-          ...(dot ? { dot } : {}),
+          ...(selectedDot ? { dot: selectedDot } : {}),
         };
 
         // Fetch data based on selected tab
@@ -163,7 +189,31 @@ const ReportPage = () => {
     };
 
     fetchReportData();
-  }, [tabValue, year, month, dot, t]);
+    // Add a call to fetch dashboard summary
+    fetchDashboardSummary();
+  }, [tabValue, year, month, selectedDot, t]);
+
+  // Add function to fetch dashboard summary
+  const fetchDashboardSummary = async () => {
+    setSummaryLoading(true);
+
+    const filters = {
+      year,
+      month: month || undefined,
+      dot: selectedDot || undefined,
+    };
+
+    try {
+      const summaryData = await kpiService.getDashboardSummary(filters);
+      setDashboardSummary(summaryData);
+      console.log("Dashboard summary data:", summaryData);
+    } catch (error) {
+      console.error("Error fetching dashboard summary:", error);
+      // Don't show an error message for this, as it's supplementary information
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
 
   // Handle tab change
   const handleTabChange = (event, newValue) => {
@@ -185,7 +235,7 @@ const ReportPage = () => {
 
     // If empty (All DOTs) or user has permission, set the DOT
     if (!selectedDot || hasDOTPermission(selectedDot)) {
-      setDot(selectedDot);
+      setSelectedDot(selectedDot);
     } else {
       // Show error if user doesn't have permission
       setSnackbar({
@@ -215,7 +265,7 @@ const ReportPage = () => {
       const params = {
         year,
         ...(month ? { month } : {}),
-        ...(dot ? { dot } : {}),
+        ...(selectedDot ? { dot: selectedDot } : {}),
       };
 
       // Call the export function
@@ -502,11 +552,99 @@ const ReportPage = () => {
     <PageLayout
       title={t("reports.generateReport")}
       subtitle="View detailed reports combining data from multiple sources"
+      headerAction={
+        <Button
+          variant="contained"
+          color="primary"
+          startIcon={<DownloadOutlined />}
+          onClick={() => handleExport("excel")}
+        >
+          {t("reports.exportDefault")}
+        </Button>
+      }
     >
       {dotsError && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {dotsError}
         </Alert>
+      )}
+
+      {/* Add Dashboard Summary Card */}
+      {dashboardSummary && (
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            {t("dashboard.summary.title")}
+          </Typography>
+          <Grid container spacing={3}>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box sx={{ textAlign: "center", p: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  {t("dashboard.summary.totalRevenue")}
+                </Typography>
+                <Typography variant="h5">
+                  {formatCurrency(dashboardSummary.total_revenue)}
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box sx={{ textAlign: "center", p: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  {t("dashboard.summary.totalCollection")}
+                </Typography>
+                <Typography variant="h5">
+                  {formatCurrency(dashboardSummary.total_collection)}
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box sx={{ textAlign: "center", p: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  {t("dashboard.summary.totalReceivables")}
+                </Typography>
+                <Typography variant="h5">
+                  {formatCurrency(dashboardSummary.total_receivables)}
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box sx={{ textAlign: "center", p: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  {t("dashboard.summary.totalSubscribers")}
+                </Typography>
+                <Typography variant="h5">
+                  {dashboardSummary.total_subscribers.toLocaleString()}
+                </Typography>
+              </Box>
+            </Grid>
+          </Grid>
+          {(dashboardSummary.anomalies.empty_fields_receivables > 0 ||
+            dashboardSummary.anomalies.empty_fields_park > 0) && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" color="warning.main">
+                {t("dashboard.summary.anomaliesDetected")}:
+              </Typography>
+              <Typography variant="body2">
+                {dashboardSummary.anomalies.empty_fields_receivables > 0 &&
+                  `${dashboardSummary.anomalies.empty_fields_receivables} ${t(
+                    "dashboard.summary.emptyFieldsReceivables"
+                  )}`}
+                {dashboardSummary.anomalies.empty_fields_receivables > 0 &&
+                  dashboardSummary.anomalies.empty_fields_park > 0 &&
+                  ", "}
+                {dashboardSummary.anomalies.empty_fields_park > 0 &&
+                  `${dashboardSummary.anomalies.empty_fields_park} ${t(
+                    "dashboard.summary.emptyFieldsPark"
+                  )}`}
+              </Typography>
+            </Box>
+          )}
+        </Paper>
+      )}
+
+      {summaryLoading && !dashboardSummary && (
+        <Paper sx={{ p: 2, mb: 3, display: "flex", justifyContent: "center" }}>
+          <CircularProgress size={24} />
+        </Paper>
       )}
 
       <Paper sx={{ p: 2, mb: 3 }}>
@@ -564,7 +702,7 @@ const ReportPage = () => {
               <Select
                 labelId="dot-select-label"
                 id="dot-select"
-                value={dot}
+                value={selectedDot}
                 label="DOT"
                 onChange={handleDotChange}
                 disabled={dotsLoading}
@@ -656,7 +794,14 @@ const ReportPage = () => {
       >
         <Alert
           onClose={handleSnackbarClose}
-          severity={snackbar.severity}
+          severity={
+            snackbar.severity === "success" ||
+            snackbar.severity === "error" ||
+            snackbar.severity === "warning" ||
+            snackbar.severity === "info"
+              ? snackbar.severity
+              : "info"
+          }
           sx={{ width: "100%" }}
         >
           {snackbar.message}

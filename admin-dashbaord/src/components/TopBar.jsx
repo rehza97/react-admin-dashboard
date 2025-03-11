@@ -1,4 +1,11 @@
-import { IconButton, Toolbar, Stack, Badge, AppBar } from "@mui/material";
+import {
+  IconButton,
+  Toolbar,
+  Stack,
+  Badge,
+  AppBar,
+  Tooltip,
+} from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import PropTypes from "prop-types";
 import InputBase from "@mui/material/InputBase";
@@ -6,6 +13,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import { alpha, styled } from "@mui/material/styles";
 import { useState } from "react";
 import NotificationsIcon from "@mui/icons-material/Notifications";
+import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import SettingsIcon from "@mui/icons-material/Settings";
 import AccountCircle from "@mui/icons-material/AccountCircle";
 import Brightness4Icon from "@mui/icons-material/Brightness4";
@@ -15,6 +23,8 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
 import LanguageSwitcher from "./LanguageSwitcher";
+import { useNotification } from "../context/NotificationContext";
+import NotificationMenu from "./NotificationMenu";
 
 const drawerWidth = 240;
 
@@ -57,6 +67,25 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
   },
 }));
 
+const NotificationBadge = styled(Badge)(({ theme }) => ({
+  "& .MuiBadge-badge": {
+    backgroundColor: theme.palette.error.main,
+    color: theme.palette.error.contrastText,
+    fontWeight: "bold",
+    boxShadow: `0 0 0 2px ${theme.palette.background.paper}`,
+    "&::after": {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      width: "100%",
+      height: "100%",
+      borderRadius: "50%",
+      border: "1px solid currentColor",
+      content: '""',
+    },
+  },
+}));
+
 export default function TopBar({
   open,
   handleDrawerOpen,
@@ -67,6 +96,20 @@ export default function TopBar({
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [searchValue, setSearchValue] = useState("");
+  const { notifications, removeNotification, clearNotifications } =
+    useNotification();
+
+  // State for notification menu
+  const [anchorEl, setAnchorEl] = useState(null);
+  const openNotifications = Boolean(anchorEl);
+
+  const handleNotificationsOpen = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleNotificationsClose = () => {
+    setAnchorEl(null);
+  };
 
   const handleSearchChange = (event) => {
     setSearchValue(event.target.value);
@@ -83,6 +126,14 @@ export default function TopBar({
     if (event.key === "Enter" || event.key === " ") {
       action();
     }
+  };
+
+  const handleNotificationClick = (notification) => {
+    // Handle notification click based on type or action
+    console.log("Clicked notification:", notification);
+
+    // Additional custom handling can be done here
+    // This will be passed to the NotificationMenu component
   };
 
   return (
@@ -156,15 +207,43 @@ export default function TopBar({
           >
             {isDarkMode ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>
-          <IconButton
-            color="inherit"
-            aria-label={t("common.notifications")}
-            aria-haspopup="true"
-          >
-            <Badge badgeContent={4} color="secondary">
-              <NotificationsIcon />
-            </Badge>
-          </IconButton>
+
+          {/* Notification Button with Badge */}
+          <Tooltip title={t("common.notifications")}>
+            <IconButton
+              color="inherit"
+              aria-label={t("common.notifications")}
+              aria-controls={
+                openNotifications ? "notification-menu" : undefined
+              }
+              aria-haspopup="true"
+              aria-expanded={openNotifications ? "true" : undefined}
+              onClick={handleNotificationsOpen}
+            >
+              <NotificationBadge
+                badgeContent={notifications.length}
+                color="error"
+              >
+                {notifications.length > 0 ? (
+                  <NotificationsActiveIcon />
+                ) : (
+                  <NotificationsIcon />
+                )}
+              </NotificationBadge>
+            </IconButton>
+          </Tooltip>
+
+          {/* Notification Menu Component */}
+          <NotificationMenu
+            anchorEl={anchorEl}
+            open={openNotifications}
+            onClose={handleNotificationsClose}
+            notifications={notifications}
+            onRemoveNotification={removeNotification}
+            onClearAll={clearNotifications}
+            onItemClick={handleNotificationClick}
+          />
+
           <IconButton
             color="inherit"
             aria-label={t("common.settings")}

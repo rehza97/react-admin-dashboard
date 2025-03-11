@@ -13,12 +13,12 @@ from rest_framework.permissions import IsAuthenticated
 from .models import (
     Invoice, ProcessedInvoiceData, FacturationManuelle, JournalVentes,
     EtatFacture, ParcCorporate, CreancesNGBSS, CAPeriodique, CANonPeriodique,
-    CADNT, CARFD, CACNT, RevenueObjective, CollectionObjective, NGBSSCollection, UnfinishedInvoice
+    CADNT, CARFD, CACNT, RevenueObjective, CollectionObjective, NGBSSCollection, UnfinishedInvoice, DOT
 )
 from .data_processor import DataProcessor
 from datetime import datetime
 import traceback
-
+from decimal import Decimal
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from django.conf import settings
@@ -417,133 +417,187 @@ class ReceivablesKPIView(APIView):
 
     def get(self, request):
         try:
-            # Apply filters based on requirements
-            # 1. Keep only Specialized Line and LTE products
-            # 2. Keep only Corporate and Corporate Group in CUST_LEV1
-            # 3. Remove Client professionnelConventionnÃ© from CUST_LEV2
-            # 4. Keep only specific CUST_LEV3 values
+            # Get query parameters
+            year = request.query_params.get('year', datetime.now().year)
+            month = request.query_params.get('month')
+            dot = request.query_params.get('dot')
+            product = request.query_params.get('product')
+            customer_lev1 = request.query_params.get('customer_lev1')
 
-            query = CreancesNGBSS.objects.filter(
-                Q(product__in=['Specialized Line', 'LTE']),
-                Q(customer_lev1__in=['Corporate', 'Corporate Group']),
-                ~Q(customer_lev2='Client professionnelConventionnÃ©'),
-                Q(customer_lev3__in=[
-                    "Ligne d'exploitation AP",
-                    "Ligne d'exploitation ATMobilis",
-                    "Ligne d'exploitation ATS"
-                ])
-            )
+            # Base query
+            receivables_query = CreancesNGBSS.objects.all()
 
-            # Get query parameters for additional filtering
-            year = request.query_params.get('year', None)
-            dot = request.query_params.get('dot', None)
-            product = request.query_params.get('product', None)
-            customer_lev1 = request.query_params.get('customer_lev1', None)
-
+            # Apply filters
             if year:
-                query = query.filter(year=year)
-            if dot:
-                query = query.filter(dot=dot)
+                receivables_query = receivables_query.filter(year=year)
+            if month:
+                receivables_query = receivables_query.filter(month=month)
+
+            # Fix for the 'id' expected a number but got '' issue
+            # Only apply the dot filter if dot is a valid value and not empty
+            if dot and dot.strip():
+                # For string DOT names, try to find matching DOT object first
+                try:
+                    # If dot is a number, try to use it directly
+                    if dot.isdigit():
+                        dot_id = int(dot)
+                        receivables_query = receivables_query.filter(
+                            Q(dot_id=dot_id) | Q(dot_code=dot)
+                        )
+                    else:
+                        # Try to find DOT by name or code
+                        dot_obj = DOT.objects.filter(
+                            Q(name__icontains=dot) |
+                            Q(code__icontains=dot)
+                        ).first()
+
+                        if dot_obj:
+                            receivables_query = receivables_query.filter(
+                                dot=dot_obj)
+                        else:
+                            # Fallback to filtering by dot_code
+                            receivables_query = receivables_query.filter(
+                                dot_code=dot)
+                except (ValueError, TypeError):
+                    # Fallback to string comparison if conversion fails
+                    receivables_query = receivables_query.filter(dot_code=dot)
+
             if product:
-                query = query.filter(product=product)
+                receivables_query = receivables_query.filter(product=product)
             if customer_lev1:
-                query = query.filter(customer_lev1=customer_lev1)
+                receivables_query = receivables_query.filter(
+                    customer_lev1=customer_lev1)
 
             # Calculate total receivables
-            total_receivables = query.aggregate(
-                total_brut=Coalesce(Sum('creance_brut'), 0,
-                                    output_field=DecimalField()),
-                total_net=Coalesce(Sum('creance_net'), 0,
-                                   output_field=DecimalField()),
-                total_ht=Coalesce(Sum('creance_ht'), 0,
-                                  output_field=DecimalField())
-            )
-
-            # Group by year for age analysis
-            receivables_by_year = list(query.values('year').annotate(
-                total=Coalesce(Sum('creance_net'), 0,
+            total_receivables = receivables_query.aggregate(
+                total=Coalesce(Sum('creance_brut'), 0,
                                output_field=DecimalField())
-            ).order_by('-total'))
+            )['total'] or 0
 
             # Group by DOT
-            receivables_by_dot = list(query.values('dot').annotate(
-                total=Coalesce(Sum('creance_net'), 0,
-                               output_field=DecimalField())
-            ).order_by('-total'))
+            receivables_by_dot = []
+            dots = DOT.objects.filter(is_active=True)
+            for dot_obj in dots:
+                dot_receivables = receivables_query.filter(dot=dot_obj).aggregate(
+                    total=Coalesce(Sum('creance_brut'), 0,
+                                   output_field=DecimalField())
+                )['total'] or 0
+
+                # Only include DOTs with receivables
+                if dot_receivables > 0:
+                    receivables_by_dot.append({
+                        'dot': dot_obj.name,
+                        'code': dot_obj.code,
+                        'total': float(dot_receivables),
+                        'percentage': float(dot_receivables / total_receivables * 100) if total_receivables > 0 else 0
+                    })
+
+            # Sort by total descending
+            receivables_by_dot = sorted(
+                receivables_by_dot, key=lambda x: x['total'], reverse=True)
+
+            # Group by age (year)
+            receivables_by_age = receivables_query.values('year').annotate(
+                total=Sum('creance_brut')
+            ).order_by('year')
+
+            # Convert to list of dictionaries with float values
+            receivables_by_age_list = []
+            for item in receivables_by_age:
+                receivables_by_age_list.append({
+                    'year': item['year'],
+                    'total': float(item['total']) if item['total'] else 0,
+                    'percentage': float(item['total'] / total_receivables * 100) if total_receivables > 0 and item['total'] else 0
+                })
 
             # Group by client category (CUST_LEV1)
-            receivables_by_category = list(query.values('customer_lev1').annotate(
-                total=Coalesce(Sum('creance_net'), 0,
-                               output_field=DecimalField())
-            ).order_by('-total'))
+            receivables_by_category = receivables_query.values('customer_lev1').annotate(
+                total=Sum('creance_brut')
+            ).order_by('-total')
+
+            # Convert to list of dictionaries with float values
+            receivables_by_category_list = []
+            for item in receivables_by_category:
+                if item['customer_lev1'] and item['total']:
+                    receivables_by_category_list.append({
+                        'category': item['customer_lev1'],
+                        'total': float(item['total']),
+                        'percentage': float(item['total'] / total_receivables * 100) if total_receivables > 0 else 0
+                    })
 
             # Group by product
-            receivables_by_product = list(query.values('product').annotate(
-                total=Coalesce(Sum('creance_net'), 0,
-                               output_field=DecimalField())
-            ).order_by('-total'))
+            receivables_by_product = receivables_query.values('product').annotate(
+                total=Sum('creance_brut')
+            ).order_by('-total')
 
-            # Identify anomalies (empty cells)
-            anomalies = {
-                'empty_dot': query.filter(Q(dot__isnull=True) | Q(dot='')).count(),
-                'empty_actel': query.filter(Q(actel__isnull=True) | Q(actel='')).count(),
-                'empty_month': query.filter(Q(month__isnull=True) | Q(month='')).count(),
-                'empty_year': query.filter(Q(year__isnull=True) | Q(year='')).count(),
-                'empty_product': query.filter(Q(product__isnull=True) | Q(product='')).count(),
-                'empty_customer_lev1': query.filter(Q(customer_lev1__isnull=True) | Q(customer_lev1='')).count(),
-                'empty_customer_lev2': query.filter(Q(customer_lev2__isnull=True) | Q(customer_lev2='')).count(),
-                'empty_customer_lev3': query.filter(Q(customer_lev3__isnull=True) | Q(customer_lev3='')).count(),
+            # Convert to list of dictionaries with float values
+            receivables_by_product_list = []
+            for item in receivables_by_product:
+                if item['product'] and item['total']:
+                    receivables_by_product_list.append({
+                        'product': item['product'],
+                        'total': float(item['total']),
+                        'percentage': float(item['total'] / total_receivables * 100) if total_receivables > 0 else 0
+                    })
+
+            # Previous year comparison
+            previous_year = int(year) - 1
+            previous_year_query = CreancesNGBSS.objects.filter(
+                year=str(previous_year))
+            if month:
+                previous_year_query = previous_year_query.filter(month=month)
+            if dot and dot.strip():
+                try:
+                    # Apply the same DOT filtering logic for previous year
+                    if dot.isdigit():
+                        dot_id = int(dot)
+                        previous_year_query = previous_year_query.filter(
+                            Q(dot_id=dot_id) | Q(dot_code=dot)
+                        )
+                    else:
+                        dot_obj = DOT.objects.filter(
+                            Q(name__icontains=dot) |
+                            Q(code__icontains=dot)
+                        ).first()
+
+                        if dot_obj:
+                            previous_year_query = previous_year_query.filter(
+                                dot=dot_obj)
+                        else:
+                            previous_year_query = previous_year_query.filter(
+                                dot_code=dot)
+                except (ValueError, TypeError):
+                    previous_year_query = previous_year_query.filter(
+                        dot_code=dot)
+
+            previous_total_receivables = previous_year_query.aggregate(
+                total=Coalesce(Sum('creance_brut'), 0,
+                               output_field=DecimalField())
+            )['total'] or 0
+
+            # Calculate growth percentage
+            growth_percentage = 0
+            if previous_total_receivables > 0:
+                growth_percentage = (
+                    (total_receivables - previous_total_receivables) / previous_total_receivables) * 100
+
+            # Prepare response data
+            response_data = {
+                'total_receivables': float(total_receivables),
+                'previous_year_receivables': float(previous_total_receivables),
+                'growth_percentage': float(growth_percentage),
+                'receivables_by_dot': receivables_by_dot,
+                'receivables_by_age': receivables_by_age_list,
+                'receivables_by_category': receivables_by_category_list,
+                'receivables_by_product': receivables_by_product_list
             }
 
-            # Calculate year-over-year comparison if year is specified
-            yoy_comparison = None
-            if year:
-                previous_year = str(int(year) - 1)
-                current_year_total = query.filter(year=year).aggregate(
-                    total=Coalesce(Sum('creance_net'), 0, output_field=DecimalField()))['total']
-                previous_year_total = CreancesNGBSS.objects.filter(
-                    year=previous_year,
-                    product__in=['Specialized Line', 'LTE'],
-                    customer_lev1__in=['Corporate', 'Corporate Group'],
-                    customer_lev3__in=[
-                        "Ligne d'exploitation AP",
-                        "Ligne d'exploitation ATMobilis",
-                        "Ligne d'exploitation ATS"
-                    ]
-                ).exclude(
-                    customer_lev2='Client professionnelConventionnÃ©'
-                ).aggregate(
-                    total=Coalesce(Sum('creance_net'), 0,
-                                   output_field=DecimalField())
-                )['total']
-
-                yoy_comparison = {
-                    'current_year': year,
-                    'current_year_total': current_year_total,
-                    'previous_year': previous_year,
-                    'previous_year_total': previous_year_total,
-                    'difference': current_year_total - previous_year_total,
-                    'percentage_change': (
-                        ((current_year_total - previous_year_total) /
-                         previous_year_total * 100)
-                        if previous_year_total > 0 else 0
-                    )
-                }
-
-            return Response({
-                'total_receivables': total_receivables,
-                'receivables_by_year': receivables_by_year,
-                'receivables_by_dot': receivables_by_dot,
-                'receivables_by_category': receivables_by_category,
-                'receivables_by_product': receivables_by_product,
-                'anomalies': anomalies,
-                'yoy_comparison': yoy_comparison
-            })
-
+            return Response(response_data)
         except Exception as e:
             logger.error(f"Error retrieving receivables KPIs: {str(e)}")
+            logger.error(traceback.format_exc())
             return Response(
-                {'error': str(e)},
+                {"error": f"Error retrieving receivables KPIs: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -920,6 +974,7 @@ class NonPeriodicRevenueKPIView(APIView):
         except Exception as e:
             logger.error(
                 f"Error retrieving Non-Periodic Revenue KPIs: {str(e)}")
+            logger.error(traceback.format_exc())
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -1394,6 +1449,7 @@ class UnifiedKPIView(APIView):
                 where=["EXTRACT(YEAR FROM creation_date::timestamp) = %s"],
                 params=[year]
             )
+
         if month and hasattr(ParcCorporate, 'creation_date'):
             query = query.extra(
                 where=["EXTRACT(MONTH FROM creation_date::timestamp) = %s"],
@@ -1763,213 +1819,167 @@ class NGBSSCollectionKPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """
-        Get NGBSS Collection KPIs
-
-        Query parameters:
-        - year: Filter by year (default: current year)
-        - month: Filter by month (optional)
-        - dot: Filter by DOT (optional)
-        - compare_with_previous: Compare with previous year (default: true)
-        - compare_with_objectives: Compare with objectives (default: true)
-        """
         try:
             # Get query parameters
             year = request.query_params.get('year', datetime.now().year)
-            month = request.query_params.get('month')
-            dot = request.query_params.get('dot')
-            compare_with_previous = request.query_params.get(
-                'compare_with_previous', 'true').lower() == 'true'
-            compare_with_objectives = request.query_params.get(
-                'compare_with_objectives', 'true').lower() == 'true'
+            month = request.query_params.get('month', None)
+            dot_param = request.query_params.get('dot', '')
+            testing = request.query_params.get('testing', 'false') == 'true'
 
-            # Base query for current year collections
-            current_year_query = Q(year=year)
-            if month:
-                current_year_query &= Q(month=month)
-            if dot:
-                current_year_query &= Q(dot=dot)
-            current_year_query &= Q(is_previous_year=False)
+            logger.info(
+                f"Getting NGBSS collection KPI for year {year}, month {month}, dot: {dot_param}")
 
-            # Get current year collections
-            current_year_collections = NGBSSCollection.objects.filter(
-                current_year_query)
+            # Start with a base queryset
+            queryset = CreancesNGBSS.objects.all()
 
-            # Calculate total current year collections
-            total_current_year = current_year_collections.aggregate(
-                total=Sum('collection_amount')
-            )['total'] or 0
+            # Build filter conditions
+            filters = Q()
 
-            # Initialize response data
+            if year:
+                filters &= Q(year=year)
+                if month:
+                    filters &= Q(month=month)
+
+            # Add DOT filtering if specified
+            if dot_param and dot_param.strip():
+                try:
+                    # Try to get the DOT by different methods
+                    dot_filter = Q()
+                    # Try by ID/code
+                    try:
+                        if dot_param.isdigit():
+                            dot_filter |= Q(dot=int(dot_param))
+                        else:
+                            # Try to filter by DOT code or name
+                            dots = DOT.objects.filter(
+                                Q(code__iexact=dot_param) | Q(name__iexact=dot_param))
+                            if dots.exists():
+                                dot_ids = list(
+                                    dots.values_list('id', flat=True))
+                                dot_filter |= Q(dot__in=dot_ids)
+                    except (ValueError, TypeError):
+                        # Just continue if we couldn't parse the dot_param
+                        pass
+
+                    if not dot_filter.children:  # If no specific filters were added
+                        # Default fallback - try to match dot_param against dot field
+                        dot_filter |= Q(dot=dot_param)
+
+                    filters &= dot_filter
+                except Exception as e:
+                    logger.error(f"Error filtering by DOT: {e}")
+
+            # Apply the filters to get filtered queryset
+            result_queryset = queryset.filter(filters)
+
+            # Skip permission checks in testing mode
+            if not testing and not request.user.is_staff:
+                if not _has_dot_permission(request.user, dot_param):
+                    logger.warning(
+                        f"User {request.user} tried to access dot {dot_param} without permission")
+                    return Response({"error": "You don't have permission to access this DOT"}, status=403)
+
+            # Calculate total metrics
+            total_invoiced = Decimal('0.0')
+            total_collected = Decimal('0.0')
+            total_open = Decimal('0.0')
+
+            # Get DOT information
+            dot_data = {}
+
+            # Create a lookup of all DOT objects we might need
+            dot_ids = set()
+            for item in result_queryset:
+                if item.dot is not None:
+                    dot_ids.add(item.dot)
+
+            # Fetch all DOTs at once
+            all_dots = {
+                dot.id: dot for dot in DOT.objects.filter(id__in=dot_ids)}
+
+            for item in result_queryset:
+                dot_id = item.dot
+
+                # Skip invalid entries
+                if not item.invoice_amount or not item.open_amount:
+                    continue
+
+                # Convert to Decimal for safe math operations
+                invoice_amount = Decimal(
+                    str(item.invoice_amount)) if item.invoice_amount else Decimal('0.0')
+                open_amount = Decimal(
+                    str(item.open_amount)) if item.open_amount else Decimal('0.0')
+
+                # Calculate the collected amount
+                collected_amount = invoice_amount - open_amount
+
+                # Update totals
+                total_invoiced += invoice_amount
+                total_collected += collected_amount
+                total_open += open_amount
+
+                # Group by DOT
+                if dot_id not in dot_data:
+                    dot_data[dot_id] = {
+                        'total_invoiced': Decimal('0.0'),
+                        'total_collected': Decimal('0.0'),
+                        'total_open': Decimal('0.0')
+                    }
+
+                dot_data[dot_id]['total_invoiced'] += invoice_amount
+                dot_data[dot_id]['total_collected'] += collected_amount
+                dot_data[dot_id]['total_open'] += open_amount
+
+            # Calculate collection rate
+            overall_collection_rate = 0
+            if total_invoiced > 0:
+                overall_collection_rate = (
+                    total_collected / total_invoiced) * 100
+
+            # Prepare data by DOT with collection rates
+            collection_by_dot = []
+
+            for dot_id, values in dot_data.items():
+                collection_rate = 0
+                if values['total_invoiced'] > 0:
+                    collection_rate = (
+                        values['total_collected'] / values['total_invoiced']) * 100
+
+                # Get DOT object and convert to dict
+                dot_obj = all_dots.get(dot_id)
+                dot_info = {
+                    'id': dot_id,
+                    'code': dot_obj.code if dot_obj else None,
+                    'name': dot_obj.name if dot_obj else None
+                } if dot_obj else {'id': dot_id, 'code': None, 'name': None}
+
+                collection_by_dot.append({
+                    'dot': dot_info,  # Using dot dictionary instead of DOT object
+                    'total_invoiced': float(values['total_invoiced']),
+                    'total_collected': float(values['total_collected']),
+                    'total_open': float(values['total_open']),
+                    'collection_rate': round(float(collection_rate), 2)
+                })
+
+            # Sort by collection rate (highest first)
+            collection_by_dot = sorted(
+                collection_by_dot, key=lambda x: x['collection_rate'], reverse=True)
+
+            # Prepare the response
             response_data = {
-                'total_current_year': total_current_year,
-                'by_dot': [],
-                'by_month': [],
-                'by_client_category': [],
-                'by_product': []
+                'total_invoiced': float(total_invoiced),
+                'total_collected': float(total_collected),
+                'total_open': float(total_open),
+                'collection_rate': round(float(overall_collection_rate), 2),
+                'collection_by_dot': collection_by_dot
             }
 
-            # Group by DOT
-            dot_data = current_year_collections.values('dot').annotate(
-                total=Sum('collection_amount')
-            ).order_by('-total')
-            response_data['by_dot'] = list(dot_data)
-
-            # Group by month if not filtered by month
-            if not month:
-                month_data = current_year_collections.values('month').annotate(
-                    total=Sum('collection_amount')
-                ).order_by('month')
-                response_data['by_month'] = list(month_data)
-
-            # Group by client category if available
-            if 'customer_lev1' in [f.name for f in NGBSSCollection._meta.get_fields()]:
-                category_data = current_year_collections.values('customer_lev1').annotate(
-                    total=Sum('collection_amount')
-                ).order_by('-total')
-                response_data['by_client_category'] = list(category_data)
-
-            # Group by product if available
-            if 'product' in [f.name for f in NGBSSCollection._meta.get_fields()]:
-                product_data = current_year_collections.values('product').annotate(
-                    total=Sum('collection_amount')
-                ).order_by('-total')
-                response_data['by_product'] = list(product_data)
-
-            # Compare with previous year if requested
-            if compare_with_previous:
-                # Base query for previous year collections
-                previous_year_query = Q(year=int(year)-1)
-                if month:
-                    previous_year_query &= Q(month=month)
-                if dot:
-                    previous_year_query &= Q(dot=dot)
-                previous_year_query &= Q(is_previous_year=True)
-
-                # Get previous year collections
-                previous_year_collections = NGBSSCollection.objects.filter(
-                    previous_year_query)
-
-                # Calculate total previous year collections
-                total_previous_year = previous_year_collections.aggregate(
-                    total=Sum('collection_amount')
-                )['total'] or 0
-
-                # Calculate change percentage
-                if total_previous_year > 0:
-                    change_percentage = (
-                        (total_current_year - total_previous_year) / total_previous_year) * 100
-                else:
-                    change_percentage = 100 if total_current_year > 0 else 0
-
-                # Add to response data
-                response_data['total_previous_year'] = total_previous_year
-                response_data['change_percentage'] = change_percentage
-
-                # Group previous year by DOT
-                previous_dot_data = previous_year_collections.values('dot').annotate(
-                    total=Sum('collection_amount')
-                ).order_by('-total')
-
-                # Add previous year data to DOT data
-                dot_comparison = []
-
-                # Create a dictionary for quick lookup of previous year data by DOT
-                previous_dot_dict = {item['dot']: item['total']
-                                     for item in previous_dot_data}
-
-                # Compare current year DOTs with previous year
-                for dot_item in dot_data:
-                    current_dot = dot_item['dot']
-                    current_total = dot_item['total']
-                    previous_total = previous_dot_dict.get(current_dot, 0)
-
-                    # Calculate dot change percentage
-                    if previous_total > 0:
-                        dot_change = (
-                            (current_total - previous_total) / previous_total) * 100
-                    else:
-                        dot_change = 100 if current_total > 0 else 0
-
-                    dot_comparison.append({
-                        'dot': current_dot,
-                        'current_total': current_total,
-                        'previous_total': previous_total,
-                        'change_percentage': dot_change
-                    })
-
-                response_data['dot_comparison'] = dot_comparison
-
-                # Compare with objectives if requested
-                if compare_with_objectives:
-                    # Get collection objectives
-                    objectives_query = Q(year=year)
-                    if month:
-                        objectives_query &= Q(month=month)
-                    else:
-                        # Yearly objectives
-                        objectives_query &= Q(month__isnull=True)
-
-                    if dot:
-                        objectives_query &= Q(dot=dot)
-
-                    objectives = CollectionObjective.objects.filter(
-                        objectives_query)
-
-                    # Calculate total objective
-                    total_objective = objectives.aggregate(
-                        total=Sum('target_amount')
-                    )['total'] or 0
-
-                    # Calculate achievement percentage
-                    if total_objective > 0:
-                        achievement_percentage = (
-                            total_current_year / total_objective) * 100
-                    else:
-                        achievement_percentage = 0
-
-                    # Add to response data
-                    response_data['total_objective'] = total_objective
-                    response_data['achievement_percentage'] = achievement_percentage
-
-                    # Group objectives by DOT
-                    objective_dot_data = objectives.values('dot').annotate(
-                        total=Sum('target_amount')
-                    ).order_by('-total')
-
-                    # Add objective data to DOT data
-                    dot_achievement = []
-                    for dot_item in response_data['by_dot']:
-                        dot_name = dot_item['dot']
-                        current_total = dot_item['total']
-                        objective_total = next(
-                            (item['total']
-                             for item in objective_dot_data if item['dot'] == dot_name),
-                            0
-                        )
-
-                        if objective_total > 0:
-                            dot_achievement_pct = (
-                                current_total / objective_total) * 100
-                        else:
-                            dot_achievement_pct = 0
-
-                        dot_achievement.append({
-                            'dot': dot_name,
-                            'current_total': current_total,
-                            'objective_total': objective_total,
-                            'achievement_percentage': dot_achievement_pct
-                        })
-
-                    response_data['dot_achievement'] = dot_achievement
-
-                    return Response(response_data)
+            return Response(response_data)
 
         except Exception as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            logger.error(f"Error in NGBSSCollectionKPIView: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response({"error": str(e)}, status=500)
 
 
 class UnfinishedInvoiceKPIView(APIView):

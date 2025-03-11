@@ -1,0 +1,96 @@
+{
+  "frequentlyAskedQuestions": "Frequently Asked Questions",
+  "findAnswers": "Find answers to common questions",
+  "expandAll": "Expand All",
+  "collapseAll": "Collapse All",
+  "searchFAQ": "Search FAQ",
+  "noResults": "No results found for your search",
+  "helpfulAnswer": "Was this answer helpful?",
+  "yes": "Yes",
+  "no": "No",
+  "moreQuestions": "Still have questions?",
+  "contactSupport": "Contact Support",
+
+  "categories": {
+    "all": "All Categories",
+    "general": "General",
+    "pivot": "Pivot Table",
+    "data": "Data Management",
+    "technical": "Technical",
+    "account": "Account"
+  },
+  "general": {
+    "navigation": {
+      "question": "How do I navigate through the dashboard?",
+      "answer": "The dashboard uses a sidebar navigation menu. You can click on different menu items to access various features like the Pivot Table, Reports, and Settings. You can also collapse the sidebar using the toggle button for more screen space."
+    },
+    "language": {
+      "question": "Can I change the language of the interface?",
+      "answer": "Yes, you can change the interface language using the language selector in the top navigation bar. The application supports multiple languages and will remember your preference."
+    },
+    "theme": {
+      "question": "How can I customize the theme or appearance?",
+      "answer": "The application supports theme customization. You can toggle between light and dark modes, and adjust other visual preferences through the settings menu."
+    }
+  },
+  "pivot": {
+    "usage": {
+      "question": "How do I use the Pivot Table feature?",
+      "answer": "The Pivot Table allows you to analyze data dynamically. You can drag and drop fields to rows and columns, apply filters, and choose different aggregation methods. You can also save your configurations for future use."
+    },
+    "export": {
+      "question": "How can I export data from the Pivot Table?",
+      "answer": "You can export Pivot Table data by clicking the export button and choosing either CSV or Excel format. The exported file will include the current view of your pivot table, including all aggregations and calculations."
+    },
+    "saveConfig": {
+      "question": "Can I save my Pivot Table configurations?",
+      "answer": "Yes, you can save your Pivot Table configurations using the 'Save Configuration' button. You can later load these saved configurations using the 'Load Configuration' button."
+    },
+    "refresh": {
+      "question": "How do I refresh the Pivot Table data?",
+      "answer": "You can refresh the Pivot Table data by clicking the refresh icon next to the data source selector. This will fetch the latest data from the server."
+    },
+    "zoom": {
+      "question": "How can I zoom in/out of the Pivot Table?",
+      "answer": "Use the zoom controls (+ and - icons) above the Pivot Table to adjust the view size. You can also use the slider to set a specific zoom level, or click the reset icon to return to 100% zoom."
+    }
+  },
+  "data": {
+    "sources": {
+      "question": "What data sources are available in the Pivot Table?",
+      "answer": "The Pivot Table supports multiple data sources including Facturation Manuelle, Journal Ventes, Etat Facture, Parc Corporate, Creances NGBSS, and various CA (Chiffre d'Affaires) related data."
+    },
+    "updates": {
+      "question": "How often is the data updated?",
+      "answer": "Data is updated in real-time when changes occur. You can manually refresh the data using the refresh button to ensure you're viewing the latest information."
+    },
+    "filters": {
+      "question": "Can I filter the data in the Pivot Table?",
+      "answer": "Yes, you can apply filters to any field in the Pivot Table. Use the filter options in the field headers to select specific values or ranges you want to analyze."
+    }
+  },
+  "technical": {
+    "browsers": {
+      "question": "What browsers are supported?",
+      "answer": "The dashboard works best with modern browsers like Chrome, Firefox, Safari, and Edge. For optimal performance, please ensure your browser is updated to the latest version."
+    },
+    "troubleshoot": {
+      "question": "What should I do if the Pivot Table is not loading?",
+      "answer": "If the Pivot Table isn't loading, try these steps: 1) Refresh the page 2) Clear your browser cache 3) Check your internet connection 4) Contact support if the issue persists."
+    },
+    "security": {
+      "question": "Is my data secure?",
+      "answer": "Yes, all data is transmitted securely using encryption. We implement industry-standard security measures to protect your information."
+    }
+  },
+  "account": {
+    "password": {
+      "question": "How do I change my password?",
+      "answer": "You can change your password through the profile settings. Click on your profile icon, select 'Settings', and choose the 'Change Password' option."
+    },
+    "locked": {
+      "question": "What should I do if I'm locked out of my account?",
+      "answer": "If you're locked out, use the 'Forgot Password' option on the login page. If you continue to have issues, contact your system administrator or support team."
+    }
+  }
+}

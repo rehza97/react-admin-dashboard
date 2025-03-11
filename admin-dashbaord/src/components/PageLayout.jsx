@@ -11,7 +11,7 @@ const PageLayout = ({
   paperProps = {},
 }) => {
   return (
-    <Box sx={{ p: 3, maxWidth, mx: "auto", width: "100%" }}>
+    <Box>
       <Box
         sx={{
           mb: 3,

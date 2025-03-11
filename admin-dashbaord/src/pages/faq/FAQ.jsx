@@ -9,7 +9,6 @@ import {
   Button,
   TextField,
   InputAdornment,
-  IconButton,
   Divider,
   Chip,
 } from "@mui/material";
@@ -47,40 +46,100 @@ const FAQ = () => {
 
   const faqItems = [
     {
-      id: "general1",
+      id: "faq.general.navigation",
       category: "general",
-      question: t("faq.generalQuestion1"),
-      answer: t("faq.generalAnswer1"),
+      question: t("faq.general.navigation.question"),
+      answer: t("faq.general.navigation.answer"),
     },
     {
-      id: "general2",
+      id: "faq.general.language",
       category: "general",
-      question: t("faq.generalQuestion2"),
-      answer: t("faq.generalAnswer2"),
+      question: t("faq.general.language.question"),
+      answer: t("faq.general.language.answer"),
     },
     {
-      id: "account1",
-      category: "account",
-      question: t("faq.accountQuestion1"),
-      answer: t("faq.accountAnswer1"),
+      id: "faq.general.theme",
+      category: "general",
+      question: t("faq.general.theme.question"),
+      answer: t("faq.general.theme.answer"),
     },
     {
-      id: "account2",
-      category: "account",
-      question: t("faq.accountQuestion2"),
-      answer: t("faq.accountAnswer2"),
+      id: "faq.pivot.usage",
+      category: "pivot",
+      question: t("faq.pivot.usage.question"),
+      answer: t("faq.pivot.usage.answer"),
     },
     {
-      id: "technical1",
+      id: "faq.pivot.export",
+      category: "pivot",
+      question: t("faq.pivot.export.question"),
+      answer: t("faq.pivot.export.answer"),
+    },
+    {
+      id: "faq.pivot.saveConfig",
+      category: "pivot",
+      question: t("faq.pivot.saveConfig.question"),
+      answer: t("faq.pivot.saveConfig.answer"),
+    },
+    {
+      id: "faq.pivot.refresh",
+      category: "pivot",
+      question: t("faq.pivot.refresh.question"),
+      answer: t("faq.pivot.refresh.answer"),
+    },
+    {
+      id: "faq.pivot.zoom",
+      category: "pivot",
+      question: t("faq.pivot.zoom.question"),
+      answer: t("faq.pivot.zoom.answer"),
+    },
+    {
+      id: "faq.data.sources",
+      category: "data",
+      question: t("faq.data.sources.question"),
+      answer: t("faq.data.sources.answer"),
+    },
+    {
+      id: "faq.data.updates",
+      category: "data",
+      question: t("faq.data.updates.question"),
+      answer: t("faq.data.updates.answer"),
+    },
+    {
+      id: "faq.data.filters",
+      category: "data",
+      question: t("faq.data.filters.question"),
+      answer: t("faq.data.filters.answer"),
+    },
+    {
+      id: "faq.technical.browsers",
       category: "technical",
-      question: t("faq.technicalQuestion1"),
-      answer: t("faq.technicalAnswer1"),
+      question: t("faq.technical.browsers.question"),
+      answer: t("faq.technical.browsers.answer"),
     },
     {
-      id: "technical2",
+      id: "faq.technical.troubleshoot",
       category: "technical",
-      question: t("faq.technicalQuestion2"),
-      answer: t("faq.technicalAnswer2"),
+      question: t("faq.technical.troubleshoot.question"),
+      answer: t("faq.technical.troubleshoot.answer"),
+    },
+    {
+      id: "faq.technical.security",
+      category: "technical",
+      question: t("faq.technical.security.question"),
+      answer: t("faq.technical.security.answer"),
+    },
+    {
+      id: "faq.account.password",
+      category: "account",
+      question: t("faq.account.password.question"),
+      answer: t("faq.account.password.answer"),
+    },
+    {
+      id: "faq.account.locked",
+      category: "account",
+      question: t("faq.account.locked.question"),
+      answer: t("faq.account.locked.answer"),
     },
   ];
 
@@ -93,10 +152,12 @@ const FAQ = () => {
   );
 
   const categories = [
-    { id: "all", label: t("faq.allCategories") },
-    { id: "general", label: t("faq.general") },
-    { id: "account", label: t("faq.account") },
-    { id: "technical", label: t("faq.technical") },
+    { id: "all", label: t("faq.categories.all") },
+    { id: "general", label: t("faq.categories.general") },
+    { id: "pivot", label: t("faq.categories.pivot") },
+    { id: "data", label: t("faq.categories.data") },
+    { id: "technical", label: t("faq.categories.technical") },
+    { id: "account", label: t("faq.categories.account") },
   ];
 
   const headerAction = (

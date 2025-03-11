@@ -88,7 +88,12 @@ export const authService = {
   login: async (credentials) => {
     try {
       const response = await api.post("/users/api/login/", credentials);
-      return response.data;
+      // Ensure we're returning data in a consistent format
+      return {
+        token: response.data.token,
+        user: response.data.user,
+        ...response.data,
+      };
     } catch (error) {
       console.error("Login error:", error);
       throw error;
@@ -253,45 +258,33 @@ export const authService = {
 
   removeDOTPermission: async (userId, dotCode) => {
     try {
-      console.log("Removing DOT permission:", { userId, dotCode });
-
+      // First try with query parameters
       try {
+        console.log(
+          `Removing DOT permission with query params: user=${userId}, dot=${dotCode}`
+        );
         const response = await api.delete(
           `/users/api/users/${userId}/remove-dot/`,
           {
-            data: { dot_code: dotCode },
+            params: { dot_code: dotCode },
           }
         );
         return response.data;
       } catch (error) {
-        // If we get an error, try an alternative approach
-        if (error.response && error.response.status >= 400) {
+        if (error.response && error.response.status === 404) {
+          // If 404, try with path parameter approach
           console.log(
-            "Error removing DOT permission, trying alternative approach"
+            `Retrying with path parameter: user=${userId}, dot=${dotCode}`
           );
-
-          try {
-            // Try a direct approach - use the DOT endpoints if available
-            const directResponse = await api.delete(
-              `/users/api/users/${userId}/dot-permissions/${dotCode}/`
-            );
-            return directResponse.data;
-          } catch (directError) {
-            console.error("Alternative approach failed:", directError);
-
-            // If all else fails, throw the original error
-            throw error;
-          }
+          const response = await api.delete(
+            `/users/api/users/${userId}/remove-dot/${dotCode}/`
+          );
+          return response.data;
         }
-
         throw error;
       }
     } catch (error) {
-      console.error("Remove DOT permission error:", error);
-      if (error.response) {
-        console.error("Error response data:", error.response.data);
-        console.error("Error response status:", error.response.status);
-      }
+      console.error("Error removing DOT permission:", error);
       throw error;
     }
   },
@@ -521,11 +514,76 @@ export const userService = {
     }
   },
 
+  assignDOTPermission: async (userId, dotData) => {
+    try {
+      // Log the request for debugging
+      console.log("Sending DOT permission data:", {
+        userId,
+        dotData,
+        url: `/users/api/users/${userId}/assign-dot/`,
+      });
+
+      // Ensure we're sending data in the exact format expected by the backend
+      const payload = {
+        dot_code: dotData.dot_code,
+        dot_name: dotData.dot_name,
+      };
+
+      try {
+        const response = await api.post(
+          `/users/api/users/${userId}/assign-dot/`,
+          payload
+        );
+        return response.data;
+      } catch (error) {
+        // If the first attempt fails with 400 and mentions email/role validation
+        if (
+          error.response &&
+          error.response.status === 400 &&
+          (error.response.data.email || error.response.data.role)
+        ) {
+          console.log(
+            "Received user validation error, trying alternative approach"
+          );
+
+          // Try a different endpoint structure if available
+          try {
+            // Try adding a /permissions/ segment
+            const altResponse = await api.post(
+              `/users/api/users/${userId}/permissions/dot/`,
+              payload
+            );
+            return altResponse.data;
+          } catch (altError) {
+            // If both approaches fail, throw the original error
+            console.error("All approaches failed:", altError);
+            throw error;
+          }
+        }
+
+        // For other errors, just pass them along
+        throw error;
+      }
+    } catch (error) {
+      console.error("Error assigning DOT permission:", error);
+      // Log the error response for debugging
+      if (error.response) {
+        console.error("Error response:", error.response.data);
+      }
+      throw error;
+    }
+  },
+
   removeDOTPermission: async (userId, dotCode) => {
     try {
-      const response = await api.delete(
-        `/users/api/users/${userId}/remove-dot/${dotCode}/`
-      );
+      // Change the URL format to match what the backend expects
+      // If the backend uses a different format for the "all" DOT code, handle it specially
+      const url =
+        dotCode === "all"
+          ? `/users/api/users/${userId}/remove-all-dots/`
+          : `/users/api/users/${userId}/remove-dot/${dotCode}/`;
+
+      const response = await api.delete(url);
       return response.data;
     } catch (error) {
       console.error("Error removing DOT permission:", error);

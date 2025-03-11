@@ -83,20 +83,44 @@ const Login = () => {
           password: formData.password,
         });
 
+        // Get token and user from the response
+        const token = response.token || response.data?.token;
+        const userData = response.user || response.data?.user;
+
+        if (!token) {
+          throw new Error("No token received from the server");
+        }
+
         // Store token and authentication status
-        localStorage.setItem("token", response.token);
+        localStorage.setItem("token", token);
         localStorage.setItem("isAuthenticated", "true");
 
-        // Update currentUser in AuthContext
-        setCurrentUser(response.user);
+        // Also cache the user data for offline use
+        localStorage.setItem("cachedUser", JSON.stringify(userData));
 
-        // Redirect to the intended page or dashboard
-        const from = location.state?.from?.pathname || "/";
-        navigate(from, { replace: true });
+        // Update currentUser in AuthContext
+        setCurrentUser(userData);
+
+        // Add console logs to debug
+        console.log("Login successful, redirecting...");
+        console.log("Redirect path:", location.state?.from?.pathname || "/");
+
+        // Force navigation to dashboard with a slight delay to ensure state is updated
+        setTimeout(() => {
+          // Redirect to the intended page or dashboard
+          const from = location.state?.from?.pathname || "/";
+          navigate(from, { replace: true });
+
+          // As a fallback, also try direct window location change if navigate doesn't work
+          if (from === "/") {
+            window.location.href = "/";
+          }
+        }, 100);
       } catch (error) {
         console.error("Login error:", error);
         setGeneralError(
           error.response?.data?.error ||
+            error.message ||
             "Invalid credentials. Please try again."
         );
       }
@@ -240,62 +264,6 @@ const Login = () => {
               Sign In
             </Button>
 
-            <Box sx={{ textAlign: "center", mt: 1, mb: 2 }}>
-              <Typography variant="body2">
-                Don&apos;t have an account?{" "}
-                <Link
-                  component={RouterLink}
-                  to="/register"
-                  variant="body2"
-                  sx={{ textDecoration: "none", fontWeight: "bold" }}
-                >
-                  Sign Up
-                </Link>
-              </Typography>
-            </Box>
-
-            <Divider sx={{ my: 2 }}>
-              <Typography variant="body2" color="text.secondary">
-                OR CONTINUE WITH
-              </Typography>
-            </Divider>
-
-            <Box
-              sx={{
-                display: "flex",
-                justifyContent: "center",
-                gap: { xs: 1, sm: 2 },
-                mt: 2,
-              }}
-            >
-              <IconButton
-                sx={{
-                  border: `1px solid ${theme.palette.divider}`,
-                  borderRadius: 1,
-                  p: { xs: 0.75, sm: 1 },
-                }}
-              >
-                <GoogleIcon color="error" />
-              </IconButton>
-              <IconButton
-                sx={{
-                  border: `1px solid ${theme.palette.divider}`,
-                  borderRadius: 1,
-                  p: { xs: 0.75, sm: 1 },
-                }}
-              >
-                <FacebookIcon color="primary" />
-              </IconButton>
-              <IconButton
-                sx={{
-                  border: `1px solid ${theme.palette.divider}`,
-                  borderRadius: 1,
-                  p: { xs: 0.75, sm: 1 },
-                }}
-              >
-                <TwitterIcon sx={{ color: "#1DA1F2" }} />
-              </IconButton>
-            </Box>
           </Box>
         </Paper>
       </Box>

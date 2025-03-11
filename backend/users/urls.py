@@ -43,6 +43,8 @@ urlpatterns = [
          UserManagementViewSet.as_view({'post': 'assign_dot'}), name='user-assign-dot'),
     path('api/users/<int:pk>/remove-dot/',
          UserManagementViewSet.as_view({'delete': 'remove_dot'}), name='user-remove-dot'),
+    path('api/users/<int:pk>/remove-dot/<str:dot_code>/',
+         UserManagementViewSet.as_view({'delete': 'remove_dot_by_path'}), name='user-remove-dot-by-path'),
     path('api/dots/', DOTListView.as_view(), name='dot-list'),
     path('api/dots/<int:pk>/', DOTDetailView.as_view(), name='dot-detail'),
 ]
