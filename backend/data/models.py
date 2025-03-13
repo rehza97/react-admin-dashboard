@@ -520,7 +520,7 @@ class CreancesNGBSS(models.Model):
     # Constants for filtering
     VALID_PRODUCTS = ['Specialized Line', 'LTE']
     VALID_CUSTOMER_LEV1 = ['Corporate', 'Corporate Group']
-    EXCLUDED_CUSTOMER_LEV2 = ['Client professionnelConventionnÃ©']
+    EXCLUDED_CUSTOMER_LEV2 = ['Client professionnelConventionné']
     VALID_CUSTOMER_LEV3 = [
         "Ligne d'exploitation AP",
         "Ligne d'exploitation ATMobilis",

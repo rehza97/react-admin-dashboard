@@ -50,3 +50,4 @@ backend/media/invoices/CA_non_periodique.csv
 backend/media/invoices/CA_RFD.csv
 backend/media/invoices/CA_periodique.csv
 backend/media/invoices/Parc_Corporate_NGBSS.csv
+backend/db copy.sqlite3

@@ -107,7 +107,7 @@ urlpatterns = [
     # Export data endpoint
     path('export/', views.ExportDataView.as_view(), name='export-data'),
 
-    # Anomaly endpoints
+    # Anomalies endpoints
     path('anomalies/', views.AnomalyListView.as_view(), name='anomaly-list'),
     path('anomalies/<int:pk>/', views.AnomalyDetailView.as_view(),
          name='anomaly-detail'),
@@ -118,10 +118,18 @@ urlpatterns = [
     path('anomalies/scan/', views.TriggerAnomalyScanView.as_view(),
          name='anomaly-scan'),
 
+    # Data validation endpoints
+    path('validation/', views.DataValidationView.as_view(), name='data-validation'),
+    path('cleaning/', views.DataValidationView.as_view(), name='data-cleaning'),
+
     # Progress tracking
     path('progress/', views.ProgressTrackerView.as_view(), name='progress-list'),
     path('progress/<int:invoice_id>/',
          views.ProgressTrackerView.as_view(), name='progress-detail'),
+
+    # Validation progress
+    path('validation-progress/', views.ValidationProgressView.as_view(),
+         name='validation-progress'),
 
     # Comprehensive reports
     path('reports/', views.ComprehensiveReportView.as_view(),

@@ -66,6 +66,10 @@ from users.permissions import DOTPermissionMixin
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from io import BytesIO
+from django.db import transaction
+import time
+import threading
+from django.core.cache import cache
 
 
 logger = logging.getLogger(__name__)
@@ -2088,7 +2092,6 @@ class CAPeriodiqueListView(generics.ListAPIView):
     def get_queryset(self):
         user = self.request.user
         invoice_id = self.request.query_params.get('invoice_id', None)
-
         queryset = CAPeriodique.objects.filter(invoice__uploaded_by=user)
         if invoice_id:
             queryset = queryset.filter(invoice_id=invoice_id)
@@ -5038,3 +5041,1229 @@ class ReceivablesExportView(BaseExportView):
     def get(self, request, format=None):
         # Implement receivables export logic
         pass
+
+
+class DataValidationView(APIView):
+    """
+    API view for performing a second validation to ensure 
+    that the first data treatment was executed correctly.
+    This performs a comprehensive scan across all relevant tables
+    to check for any issues with the data filtering and processing.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Analyzes the database to check if the first treatment was correctly executed.
+        Returns a detailed report of any issues found.
+        """
+        try:
+            # Get optional filter parameters
+            dot_filter = request.query_params.get('dot', None)
+            start_date = request.query_params.get('start_date', None)
+            end_date = request.query_params.get('end_date', None)
+
+            # Create a unique task ID for tracking this validation operation
+            task_id = f"validation_{request.user.id}_{int(time.time())}"
+
+            # Initialize validation progress tracking
+            cache.set(f"validation_progress_{task_id}", {
+                'status': 'initializing',
+                'progress': 0,
+                # We have 6 validation steps (one for each model)
+                'total_steps': 6,
+                'current_step': 0,
+                'step_name': 'Preparing validation',
+                'time_started': timezone.now().isoformat(),
+                'estimated_completion': None,
+                'time_elapsed': 0,
+                'time_remaining': None
+            }, timeout=3600)  # 1 hour timeout
+
+            # Start validation in a background thread to allow progress tracking
+            validation_thread = threading.Thread(
+                target=self._run_validation_process,
+                args=(request, dot_filter, start_date, end_date, task_id)
+            )
+            validation_thread.daemon = True
+            validation_thread.start()
+
+            return Response({
+                'status': 'started',
+                'message': 'Validation process started',
+                'task_id': task_id
+            })
+
+        except Exception as e:
+            logger.error(f"Error starting data validation: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response({
+                'status': 'error',
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _run_validation_process(self, request, dot_filter, start_date, end_date, task_id):
+        """Run the validation process in a background thread with progress tracking"""
+        try:
+            start_time = time.time()
+
+            # Initialize validation report
+            validation_report = {
+                'status': 'success',
+                'validation_date': timezone.now(),
+                'performed_by': request.user.email,
+                'validation_results': {},
+                'total_issues_found': 0,
+                'tables_validated': 0,
+                'records_checked': 0,
+                'records_with_issues': 0,
+                'client_cleaning_required': False,
+                'issues_by_client': {},  # Track issues grouped by client
+                'task_id': task_id,
+                'time_started': timezone.now().isoformat(),
+                'time_completed': None,
+                'execution_time_seconds': 0
+            }
+
+            # Update progress to 0%
+            self._update_validation_progress(
+                task_id, 0, 'Starting validation process', start_time)
+
+            # Run specific validations for each data model
+            model_steps = [
+                ('parc_corporate', self._validate_parc_corporate, dot_filter),
+                ('creances_ngbss', self._validate_creances_ngbss, dot_filter),
+                ('ca_periodique', self._validate_ca_periodique, dot_filter),
+                ('ca_non_periodique', self._validate_ca_non_periodique, dot_filter),
+                ('journal_ventes', self._validate_journal_ventes, start_date, end_date),
+                ('etat_facture', self._validate_etat_facture, start_date, end_date)
+            ]
+
+            # Process each validation step
+            for i, (model_name, validation_func, *args) in enumerate(model_steps):
+                # Update progress for current step
+                progress_pct = int((i / len(model_steps)) * 100)
+                self._update_validation_progress(
+                    task_id, progress_pct, f"Validating {model_name}", start_time)
+
+                # Run validation
+                validation_report['validation_results'][model_name] = validation_func(
+                    *args)
+
+                # Small delay to allow the UI to update progress
+                time.sleep(0.1)
+
+            # Calculate summary statistics
+            total_issues = 0
+            records_with_issues = 0
+            records_checked = 0
+
+            for model_name, results in validation_report['validation_results'].items():
+                total_issues += len(results['issues'])
+                records_with_issues += results['records_with_issues']
+                records_checked += results['records_checked']
+
+                # Analyze issues by client
+                for issue in results['issues']:
+                    client = issue.get('client', 'Unknown')
+                    if client not in validation_report['issues_by_client']:
+                        validation_report['issues_by_client'][client] = []
+                    validation_report['issues_by_client'][client].append({
+                        'model': model_name,
+                        **issue
+                    })
+
+            validation_report['total_issues_found'] = total_issues
+            validation_report['tables_validated'] = len(
+                validation_report['validation_results'])
+            validation_report['records_checked'] = records_checked
+            validation_report['records_with_issues'] = records_with_issues
+
+            # Determine if cleaning is required based on threshold
+            if records_with_issues > 0:
+                validation_report['client_cleaning_required'] = True
+
+            # Update completion info
+            end_time = time.time()
+            execution_time = end_time - start_time
+            validation_report['time_completed'] = timezone.now().isoformat()
+            validation_report['execution_time_seconds'] = execution_time
+
+            # Mark as complete with 100% progress
+            self._update_validation_progress(
+                task_id, 100, 'Validation complete', start_time, is_complete=True)
+
+            # Store the final report in cache for retrieval
+            cache.set(f"validation_result_{task_id}",
+                      validation_report, timeout=3600)
+
+        except Exception as e:
+            logger.error(f"Error during validation process: {str(e)}")
+            logger.error(traceback.format_exc())
+
+            # Update progress to error state
+            cache.set(f"validation_progress_{task_id}", {
+                'status': 'error',
+                'error_message': str(e),
+                'time_elapsed': time.time() - start_time
+            }, timeout=3600)
+
+    def _update_validation_progress(self, task_id, progress_percentage, step_description, start_time, is_complete=False):
+        """Update the progress tracking information for the validation task"""
+        elapsed_time = time.time() - start_time
+
+        # Calculate estimated remaining time based on progress
+        if progress_percentage > 0 and not is_complete:
+            estimated_total_time = elapsed_time * (100 / progress_percentage)
+            remaining_time = estimated_total_time - elapsed_time
+            estimated_completion = (
+                timezone.now() + timezone.timedelta(seconds=remaining_time)).isoformat()
+        else:
+            remaining_time = None
+            estimated_completion = None
+
+        progress_data = {
+            'status': 'complete' if is_complete else 'in_progress',
+            'progress': progress_percentage,
+            'total_steps': 6,
+            'current_step': int((progress_percentage / 100) * 6),
+            'step_name': step_description,
+            'time_started': (timezone.now() - timezone.timedelta(seconds=elapsed_time)).isoformat(),
+            'time_elapsed': elapsed_time,
+            'time_remaining': remaining_time,
+            'estimated_completion': estimated_completion
+        }
+
+        # Save progress to cache
+        cache.set(f"validation_progress_{task_id}",
+                  progress_data, timeout=3600)
+
+    def post(self, request):
+        """
+        Trigger cleaning process on database based on validation results
+        """
+        try:
+            # Get validation parameters
+            validate_first = request.data.get('validate_first', True)
+            models_to_clean = request.data.get('models_to_clean', [])
+            dot_filter = request.data.get('dot', None)
+            start_date = request.data.get('start_date', None)
+            end_date = request.data.get('end_date', None)
+
+            # Create a unique task ID for tracking this cleaning operation
+            task_id = f"cleaning_{request.user.id}_{int(time.time())}"
+
+            # Initialize cleaning progress tracking
+            cache.set(f"cleaning_progress_{task_id}", {
+                'status': 'initializing',
+                'progress': 0,
+                'total_steps': len(models_to_clean) + (1 if validate_first else 0),
+                'current_step': 0,
+                'step_name': 'Preparing cleaning process',
+                'time_started': timezone.now().isoformat(),
+                'estimated_completion': None,
+                'time_elapsed': 0,
+                'time_remaining': None
+            }, timeout=3600)
+
+            # Start cleaning in a background thread to allow progress tracking
+            cleaning_thread = threading.Thread(
+                target=self._run_cleaning_process,
+                args=(request, validate_first, models_to_clean,
+                      dot_filter, start_date, end_date, task_id)
+            )
+            cleaning_thread.daemon = True
+            cleaning_thread.start()
+
+            return Response({
+                'status': 'started',
+                'message': 'Cleaning process started',
+                'task_id': task_id
+            })
+
+        except Exception as e:
+            logger.error(f"Error starting data cleaning: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response({
+                'status': 'error',
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _run_cleaning_process(self, request, validate_first, models_to_clean, dot_filter, start_date, end_date, task_id):
+        """Run the cleaning process in a background thread with progress tracking"""
+        try:
+            start_time = time.time()
+
+            # Validate first if required
+            validation_results = None
+            if validate_first:
+                # Update progress
+                self._update_cleaning_progress(
+                    task_id, 0, 'Running validation before cleaning', start_time)
+
+                # Create a validation task and wait for it to complete
+                validation_task_id = f"pre_cleaning_validation_{task_id}"
+                self._run_validation_process(
+                    request, dot_filter, start_date, end_date, validation_task_id)
+
+                # Wait for validation to complete (poll the cache)
+                while True:
+                    progress = cache.get(
+                        f"validation_progress_{validation_task_id}")
+                    if progress and (progress['status'] == 'complete' or progress['status'] == 'error'):
+                        break
+                    time.sleep(0.5)
+
+                # Get validation results
+                validation_results = cache.get(
+                    f"validation_result_{validation_task_id}")
+
+                # Check if cleaning is required
+                if validation_results and not validation_results.get('client_cleaning_required', False):
+                    # No cleaning needed
+                    cache.set(f"cleaning_progress_{task_id}", {
+                        'status': 'complete',
+                        'progress': 100,
+                        'step_name': 'Validation complete. No cleaning required.',
+                        'time_elapsed': time.time() - start_time,
+                        'time_remaining': 0,
+                        'result': {
+                            'status': 'success',
+                            'message': 'Validation complete. No cleaning required.',
+                            'validation_results': validation_results
+                        }
+                    }, timeout=3600)
+                    return
+
+            # Initialize cleaning results
+            cleaning_results = {
+                'status': 'success',
+                'cleaned_date': timezone.now(),
+                'performed_by': request.user.email,
+                'cleaning_results': {},
+                'total_records_cleaned': 0,
+                'models_cleaned': [],
+                'task_id': task_id,
+                'time_started': timezone.now().isoformat(),
+                'time_completed': None,
+                'execution_time_seconds': 0
+            }
+
+            # Track progress of each cleaning operation
+            data_processor = DataProcessor()
+
+            # Determine how many steps we have based on models
+            total_steps = len(models_to_clean)
+            current_step = 0
+
+            # Clean selected models
+            for model_name in models_to_clean:
+                current_step += 1
+                progress_pct = int((current_step / total_steps) * 100)
+
+                self._update_cleaning_progress(
+                    task_id, progress_pct, f"Cleaning {model_name}", start_time)
+
+                # Call the appropriate cleaning method based on model name
+                if model_name == 'parc_corporate':
+                    cleaning_results['cleaning_results'][model_name] = self._clean_parc_corporate(
+                        dot_filter, data_processor)
+                    cleaning_results['total_records_cleaned'] += cleaning_results['cleaning_results'][model_name]['records_cleaned']
+                    cleaning_results['models_cleaned'].append(model_name)
+
+                elif model_name == 'creances_ngbss':
+                    cleaning_results['cleaning_results'][model_name] = self._clean_creances_ngbss(
+                        dot_filter, data_processor)
+                    cleaning_results['total_records_cleaned'] += cleaning_results['cleaning_results'][model_name]['records_cleaned']
+                    cleaning_results['models_cleaned'].append(model_name)
+
+                elif model_name == 'ca_periodique':
+                    cleaning_results['cleaning_results'][model_name] = self._clean_ca_periodique(
+                        dot_filter, data_processor)
+                    cleaning_results['total_records_cleaned'] += cleaning_results['cleaning_results'][model_name]['records_cleaned']
+                    cleaning_results['models_cleaned'].append(model_name)
+
+                elif model_name == 'ca_non_periodique':
+                    cleaning_results['cleaning_results'][model_name] = self._clean_ca_non_periodique(
+                        dot_filter, data_processor)
+                    cleaning_results['total_records_cleaned'] += cleaning_results['cleaning_results'][model_name]['records_cleaned']
+                    cleaning_results['models_cleaned'].append(model_name)
+
+                elif model_name == 'journal_ventes':
+                    cleaning_results['cleaning_results'][model_name] = self._clean_journal_ventes(
+                        start_date, end_date, data_processor)
+                    cleaning_results['total_records_cleaned'] += cleaning_results['cleaning_results'][model_name]['records_cleaned']
+                    cleaning_results['models_cleaned'].append(model_name)
+
+                elif model_name == 'etat_facture':
+                    cleaning_results['cleaning_results'][model_name] = self._clean_etat_facture(
+                        start_date, end_date, data_processor)
+                    cleaning_results['total_records_cleaned'] += cleaning_results['cleaning_results'][model_name]['records_cleaned']
+                    cleaning_results['models_cleaned'].append(model_name)
+
+            # Update completion info
+            end_time = time.time()
+            execution_time = end_time - start_time
+            cleaning_results['time_completed'] = timezone.now().isoformat()
+            cleaning_results['execution_time_seconds'] = execution_time
+
+            # Mark as complete with 100% progress
+            self._update_cleaning_progress(
+                task_id, 100, 'Cleaning complete', start_time, is_complete=True)
+
+            # Store the final result in cache for retrieval
+            result = {
+                'status': 'success',
+                'message': f'Cleaning complete. {cleaning_results["total_records_cleaned"]} records cleaned.',
+                'cleaning_results': cleaning_results,
+                'validation_results': validation_results
+            }
+
+            cache.set(f"cleaning_result_{task_id}", result, timeout=3600)
+
+        except Exception as e:
+            logger.error(f"Error during cleaning process: {str(e)}")
+            logger.error(traceback.format_exc())
+
+            # Update progress to error state
+            cache.set(f"cleaning_progress_{task_id}", {
+                'status': 'error',
+                'error_message': str(e),
+                'time_elapsed': time.time() - start_time
+            }, timeout=3600)
+
+    def _update_cleaning_progress(self, task_id, progress_percentage, step_description, start_time, is_complete=False):
+        """Update the progress tracking information for the cleaning task"""
+        elapsed_time = time.time() - start_time
+
+        # Calculate estimated remaining time based on progress
+        if progress_percentage > 0 and not is_complete:
+            estimated_total_time = elapsed_time * (100 / progress_percentage)
+            remaining_time = estimated_total_time - elapsed_time
+            estimated_completion = (
+                timezone.now() + timezone.timedelta(seconds=remaining_time)).isoformat()
+        else:
+            remaining_time = None
+            estimated_completion = None
+
+        progress_data = {
+            'status': 'complete' if is_complete else 'in_progress',
+            'progress': progress_percentage,
+            'total_steps': 6,  # Same as validation for consistency
+            'current_step': int((progress_percentage / 100) * 6),
+            'step_name': step_description,
+            'time_started': (timezone.now() - timezone.timedelta(seconds=elapsed_time)).isoformat(),
+            'time_elapsed': elapsed_time,
+            'time_remaining': remaining_time,
+            'estimated_completion': estimated_completion
+        }
+
+        # Save progress to cache
+        cache.set(f"cleaning_progress_{task_id}", progress_data, timeout=3600)
+
+    # Existing validation and cleaning methods are still needed
+    # The code below keeps the existing methods unchanged
+
+    def _validate_parc_corporate(self, dot_filter=None):
+        """
+        Validates ParcCorporate data against client requirements:
+        - Should NOT contain categories 5 and 57 in CODE_CUSTOMER_L3
+        - Should NOT contain entries with Moohtarif or Solutions Hebergements in OFFER_NAME
+        - Should NOT contain entries with Predeactivated in SUBSCRIBER_STATUS
+        """
+        logger.info("Validating ParcCorporate data")
+
+        result = {
+            'model': 'ParcCorporate',
+            'records_checked': 0,
+            'records_with_issues': 0,
+            'issues': []
+        }
+
+        try:
+            # Base queryset
+            queryset = ParcCorporate.objects.all()
+
+            # Apply optional DOT filter if relevant
+            if dot_filter:
+                queryset = queryset.filter(
+                    Q(dot_code=dot_filter) | Q(dot__code=dot_filter))
+
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+
+            # Check for invalid customer_l3_code (should be filtered out)
+            invalid_customer_l3 = queryset.filter(
+                customer_l3_code__in=['5', '57'])
+            for record in invalid_customer_l3:
+                result['records_with_issues'] += 1
+                result['issues'].append({
+                    'id': record.id,
+                    'type': 'invalid_customer_l3_code',
+                    'description': f"Record has invalid customer_l3_code: {record.customer_l3_code} - should have been filtered out",
+                    'invoice_id': record.invoice.id,
+                    'client': record.customer_full_name
+                })
+
+            # Check for Moohtarif or Solutions Hebergements in offer_name
+            invalid_offer_name = queryset.filter(
+                Q(offer_name__icontains='Moohtarif') |
+                Q(offer_name__icontains='Solutions Hebergements')
+            )
+            for record in invalid_offer_name:
+                result['records_with_issues'] += 1
+                result['issues'].append({
+                    'id': record.id,
+                    'type': 'invalid_offer_name',
+                    'description': f"Record has invalid offer_name: {record.offer_name} - should have been filtered out",
+                    'invoice_id': record.invoice.id,
+                    'client': record.customer_full_name
+                })
+
+            # Check for Predeactivated subscriber status
+            invalid_status = queryset.filter(
+                subscriber_status='Predeactivated')
+            for record in invalid_status:
+                result['records_with_issues'] += 1
+                result['issues'].append({
+                    'id': record.id,
+                    'type': 'invalid_subscriber_status',
+                    'description': f"Record has Predeactivated subscriber_status - should have been filtered out",
+                    'invoice_id': record.invoice.id,
+                    'client': record.customer_full_name
+                })
+
+        except Exception as e:
+            logger.error(f"Error validating ParcCorporate data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _validate_creances_ngbss(self, dot_filter=None):
+        """
+        Validates CreancesNGBSS data against client requirements:
+        - Check that all records have product in VALID_PRODUCTS
+        - Check that all records have customer_lev1 in VALID_CUSTOMER_LEV1
+        - Check that no records have customer_lev2 in EXCLUDED_CUSTOMER_LEV2
+        - Check that all records have customer_lev3 in VALID_CUSTOMER_LEV3
+        """
+        logger.info("Validating CreancesNGBSS data")
+
+        result = {
+            'model': 'CreancesNGBSS',
+            'records_checked': 0,
+            'records_with_issues': 0,
+            'issues': []
+        }
+
+        try:
+            # Base queryset
+            queryset = CreancesNGBSS.objects.all()
+
+            # Apply optional DOT filter
+            if dot_filter:
+                queryset = queryset.filter(
+                    Q(dot_code=dot_filter) | Q(dot__code=dot_filter))
+
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+
+            # Check for invalid products
+            invalid_products = queryset.exclude(
+                product__in=CreancesNGBSS.VALID_PRODUCTS)
+            for record in invalid_products:
+                result['records_with_issues'] += 1
+                result['issues'].append({
+                    'id': record.id,
+                    'type': 'invalid_product',
+                    'description': f"Record has invalid product: {record.product} - should have been filtered out",
+                    'invoice_id': record.invoice.id,
+                    'client': record.actel
+                })
+
+            # Check for invalid customer_lev1
+            invalid_customer_lev1 = queryset.exclude(
+                customer_lev1__in=CreancesNGBSS.VALID_CUSTOMER_LEV1)
+            for record in invalid_customer_lev1:
+                result['records_with_issues'] += 1
+                result['issues'].append({
+                    'id': record.id,
+                    'type': 'invalid_customer_lev1',
+                    'description': f"Record has invalid customer_lev1: {record.customer_lev1} - should have been filtered out",
+                    'invoice_id': record.invoice.id,
+                    'client': record.actel
+                })
+
+            # Check for excluded customer_lev2
+            invalid_customer_lev2 = queryset.filter(
+                customer_lev2__in=CreancesNGBSS.EXCLUDED_CUSTOMER_LEV2)
+            for record in invalid_customer_lev2:
+                result['records_with_issues'] += 1
+                result['issues'].append({
+                    'id': record.id,
+                    'type': 'excluded_customer_lev2',
+                    'description': f"Record has excluded customer_lev2: {record.customer_lev2} - should have been filtered out",
+                    'invoice_id': record.invoice.id,
+                    'client': record.actel
+                })
+
+            # Check for invalid customer_lev3
+            invalid_customer_lev3 = queryset.exclude(
+                customer_lev3__in=CreancesNGBSS.VALID_CUSTOMER_LEV3)
+            for record in invalid_customer_lev3:
+                result['records_with_issues'] += 1
+                result['issues'].append({
+                    'id': record.id,
+                    'type': 'invalid_customer_lev3',
+                    'description': f"Record has invalid customer_lev3: {record.customer_lev3} - should have been filtered out",
+                    'invoice_id': record.invoice.id,
+                    'client': record.actel
+                })
+
+        except Exception as e:
+            logger.error(f"Error validating CreancesNGBSS data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _validate_ca_periodique(self, dot_filter=None):
+        """
+        Validates CAPeriodique data against client requirements:
+        - For DOT "Siège", all products should be retained
+        - For other DOTs, only 'Specialized Line' and 'LTE' should be retained
+        """
+        logger.info("Validating CAPeriodique data")
+
+        result = {
+            'model': 'CAPeriodique',
+            'records_checked': 0,
+            'records_with_issues': 0,
+            'issues': []
+        }
+
+        try:
+            # Base queryset
+            queryset = CAPeriodique.objects.all()
+
+            # Apply optional DOT filter
+            if dot_filter:
+                queryset = queryset.filter(
+                    Q(dot_code=dot_filter) | Q(dot__code=dot_filter))
+
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+
+            # Check records for non-Siège DOTs with invalid products
+            invalid_products = queryset.exclude(
+                Q(dot_code=CAPeriodique.VALID_DOT_SIEGE) |
+                Q(dot__name=CAPeriodique.VALID_DOT_SIEGE)
+            ).exclude(
+                product__in=CAPeriodique.VALID_PRODUCTS_NON_SIEGE
+            )
+
+            for record in invalid_products:
+                result['records_with_issues'] += 1
+                result['issues'].append({
+                    'id': record.id,
+                    'type': 'invalid_product_for_non_siege',
+                    'description': f"Non-Siège record (DOT: {record.dot or record.dot_code}) has invalid product: {record.product} - should have been filtered out",
+                    'invoice_id': record.invoice.id,
+                    'dot': str(record.dot or record.dot_code),
+                    'product': record.product
+                })
+
+        except Exception as e:
+            logger.error(f"Error validating CAPeriodique data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _validate_ca_non_periodique(self, dot_filter=None):
+        """
+        Validates CANonPeriodique data against client requirements:
+        - All records should have dot equal to "Siège"
+        """
+        logger.info("Validating CANonPeriodique data")
+
+        result = {
+            'model': 'CANonPeriodique',
+            'records_checked': 0,
+            'records_with_issues': 0,
+            'issues': []
+        }
+
+        try:
+            # Base queryset
+            queryset = CANonPeriodique.objects.all()
+
+            # Apply optional DOT filter
+            if dot_filter:
+                queryset = queryset.filter(
+                    Q(dot_code=dot_filter) | Q(dot__code=dot_filter))
+
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+
+            # Check for invalid DOT (should be only Siège)
+            invalid_dot = queryset.exclude(
+                Q(dot_code=CANonPeriodique.VALID_DOT) |
+                Q(dot__name=CANonPeriodique.VALID_DOT)
+            )
+
+            for record in invalid_dot:
+                result['records_with_issues'] += 1
+                result['issues'].append({
+                    'id': record.id,
+                    'type': 'invalid_dot',
+                    'description': f"Record has invalid DOT: {record.dot or record.dot_code} - should be {CANonPeriodique.VALID_DOT}",
+                    'invoice_id': record.invoice.id,
+                    'dot': str(record.dot or record.dot_code)
+                })
+
+        except Exception as e:
+            logger.error(f"Error validating CANonPeriodique data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _validate_journal_ventes(self, start_date=None, end_date=None):
+        """
+        Validates JournalVentes data against client requirements:
+        - Records from VALID_SIEGE_ORGS should be kept
+        - Validate filtering as per client requirements
+        """
+        logger.info("Validating JournalVentes data")
+
+        result = {
+            'model': 'JournalVentes',
+            'records_checked': 0,
+            'records_with_issues': 0,
+            'issues': []
+        }
+
+        try:
+            # Base queryset
+            queryset = JournalVentes.objects.all()
+
+            # Apply date filters if provided
+            if start_date:
+                queryset = queryset.filter(invoice_date__gte=start_date)
+            if end_date:
+                queryset = queryset.filter(invoice_date__lte=end_date)
+
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+
+            # Check for inconsistencies or errors in journal ventes
+            # For example, check for records with previous year in billing period that should be excluded
+            current_year = datetime.now().year
+            previous_year = str(current_year - 1)
+
+            records_with_previous_year = queryset.filter(
+                billing_period__icontains=previous_year
+            )
+
+            for record in records_with_previous_year:
+                result['records_with_issues'] += 1
+                result['issues'].append({
+                    'id': record.id,
+                    'type': 'previous_year_billing_period',
+                    'description': f"Record has previous year in billing period: {record.billing_period}",
+                    'invoice_id': record.invoice.id,
+                    'client': record.client
+                })
+
+            # Check for non-VALID_SIEGE_ORGS organizations
+            if hasattr(JournalVentes, 'VALID_SIEGE_ORGS'):
+                invalid_org = queryset.exclude(
+                    organization__in=JournalVentes.VALID_SIEGE_ORGS)
+
+                for record in invalid_org:
+                    result['records_with_issues'] += 1
+                    result['issues'].append({
+                        'id': record.id,
+                        'type': 'invalid_organization',
+                        'description': f"Record has invalid organization: {record.organization} - should be in {JournalVentes.VALID_SIEGE_ORGS}",
+                        'invoice_id': record.invoice.id,
+                        'client': record.client
+                    })
+
+        except Exception as e:
+            logger.error(f"Error validating JournalVentes data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _validate_etat_facture(self, start_date=None, end_date=None):
+        """
+        Validates EtatFacture data against client requirements
+        """
+        logger.info("Validating EtatFacture data")
+
+        result = {
+            'model': 'EtatFacture',
+            'records_checked': 0,
+            'records_with_issues': 0,
+            'issues': []
+        }
+
+        try:
+            # Base queryset
+            queryset = EtatFacture.objects.all()
+
+            # Apply date filters if provided
+            if start_date:
+                queryset = queryset.filter(invoice_date__gte=start_date)
+            if end_date:
+                queryset = queryset.filter(invoice_date__lte=end_date)
+
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+
+            # Check for records with zero collection amount but non-zero total amount
+            zero_collection = queryset.filter(
+                collection_amount=0,
+                total_amount__gt=0
+            )
+
+            for record in zero_collection:
+                result['records_with_issues'] += 1
+                result['issues'].append({
+                    'id': record.id,
+                    'type': 'zero_collection',
+                    'description': f"Record has zero collection amount but non-zero total amount",
+                    'invoice_id': record.invoice.id,
+                    'client': record.client,
+                    'total_amount': float(record.total_amount)
+                })
+
+            # Check for other specific validations based on client requirements
+            # ...
+
+        except Exception as e:
+            logger.error(f"Error validating EtatFacture data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    # Add our cleaning methods to DataValidationView
+    def _clean_parc_corporate(self, dot_filter=None, data_processor=None):
+        """
+        Cleans ParcCorporate data by removing records that don't match client requirements:
+        - Removes categories 5 and 57 in CODE_CUSTOMER_L3
+        - Removes entries with Moohtarif or Solutions Hebergements in OFFER_NAME
+        - Removes entries with Predeactivated in SUBSCRIBER_STATUS
+        """
+        logger.info("Cleaning ParcCorporate data")
+        result = {
+            'model': 'ParcCorporate',
+            'records_checked': 0,
+            'records_cleaned': 0,
+            'deleted_records': 0,
+            'issues': []
+        }
+        try:
+            # Base queryset
+            queryset = ParcCorporate.objects.all()
+            # Apply optional DOT filter if relevant
+            if dot_filter:
+                queryset = queryset.filter(
+                    Q(dot_code=dot_filter) | Q(dot__code=dot_filter))
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+            # Find records that don't match the client's requirements
+            records_to_delete = queryset.filter(
+                Q(customer_l3_code__in=['5', '57']) |
+                Q(offer_name__icontains='Moohtarif') |
+                Q(offer_name__icontains='Solutions Hebergements') |
+                Q(subscriber_status='Predeactivated')
+            )
+            # Count and log records to be deleted
+            deletion_count = records_to_delete.count()
+            result['deleted_records'] = deletion_count
+
+            # Delete the invalid records
+            records_to_delete.delete()
+
+            result['records_cleaned'] = result['records_checked'] - deletion_count
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from ParcCorporate")
+        except Exception as e:
+            logger.error(f"Error cleaning ParcCorporate data: {str(e)}")
+            result['error'] = str(e)
+        return result
+
+    def _clean_creances_ngbss(self, dot_filter=None, data_processor=None):
+        """
+        Cleans CreancesNGBSS data by applying the following rules:
+        - Keep only records with product = 'Specialized Line' or 'LTE'
+        - Keep only records with customer_lev1 = 'Corporate' or 'Corporate Group'
+        - Remove records with customer_lev2 = 'Client professionnelConventionné'
+        - Keep only records with customer_lev3 in ['Ligne d'exploitation AP', 'Ligne d'exploitation ATMobilis', 'Ligne d'exploitation ATS']
+        """
+        logger.info("Cleaning CreancesNGBSS data")
+        result = {
+            'model': 'CreancesNGBSS',
+            'records_checked': 0,
+            'records_cleaned': 0,
+            'deleted_records': 0,
+            'issues': []
+        }
+        try:
+            # Base queryset
+            queryset = CreancesNGBSS.objects.all()
+            # Apply optional DOT filter if relevant
+            if dot_filter:
+                queryset = queryset.filter(
+                    Q(dot_code=dot_filter) | Q(dot__code=dot_filter))
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+            # Find records that don't match the client's requirements
+            records_to_delete = queryset.filter(
+                # Product filter: Not in the valid products list
+                ~Q(product__in=['Specialized Line', 'LTE']) |
+                # Customer Lev1 filter: Not in the valid customer_lev1 list
+                ~Q(customer_lev1__in=['Corporate', 'Corporate Group']) |
+                # Customer Lev2 filter: In the excluded customer_lev2 list
+                Q(customer_lev2='Client professionnelConventionné') |
+                # Customer Lev3 filter: Not in the valid customer_lev3 list
+                ~Q(customer_lev3__in=[
+                    "Ligne d'exploitation AP",
+                    "Ligne d'exploitation ATMobilis",
+                    "Ligne d'exploitation ATS"
+                ])
+            )
+            # Count and log records to be deleted
+            deletion_count = records_to_delete.count()
+            result['deleted_records'] = deletion_count
+
+            # Delete the invalid records
+            records_to_delete.delete()
+
+            result['records_cleaned'] = result['records_checked'] - deletion_count
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from CreancesNGBSS")
+        except Exception as e:
+            logger.error(f"Error cleaning CreancesNGBSS data: {str(e)}")
+            result['error'] = str(e)
+        return result
+
+    def _clean_ca_periodique(self, dot_filter=None, data_processor=None):
+        """
+        Cleans CAPeriodique data according to client requirements:
+        - For DOT "Siège", keep all products
+        - For other DOTs, keep only 'Specialized Line' and 'LTE' products
+        - Identify and flag empty cells as anomalies
+        """
+        logger.info("Cleaning CAPeriodique data")
+        result = {
+            'model': 'CAPeriodique',
+            'records_checked': 0,
+            'records_cleaned': 0,
+            'deleted_records': 0,
+            'issues': []
+        }
+        try:
+            # Base queryset
+            queryset = CAPeriodique.objects.all()
+            # Apply optional DOT filter if relevant
+            if dot_filter:
+                queryset = queryset.filter(
+                    Q(dot_code=dot_filter) | Q(dot__code=dot_filter))
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+
+            # Find records that don't match the client's requirements
+            # For non-Siège DOTs, keep only Specialized Line and LTE
+            records_to_delete = queryset.filter(
+                # Not Siège DOT
+                ~Q(dot_code='Siège') & ~Q(dot__name='Siège') &
+                # And not one of the valid products for non-Siège
+                ~Q(product__in=['Specialized Line', 'LTE'])
+            )
+
+            # Count and log records to be deleted
+            deletion_count = records_to_delete.count()
+            result['deleted_records'] = deletion_count
+
+            # Delete the invalid records
+            records_to_delete.delete()
+
+            result['records_cleaned'] = result['records_checked'] - deletion_count
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from CAPeriodique")
+        except Exception as e:
+            logger.error(f"Error cleaning CAPeriodique data: {str(e)}")
+            result['error'] = str(e)
+        return result
+
+    def _clean_ca_non_periodique(self, dot_filter=None, data_processor=None):
+        """
+        Cleans CANonPeriodique data according to client requirements:
+        - Keep only records with DOT = "Siège"
+        - Identify and flag empty cells as anomalies
+        """
+        logger.info("Cleaning CANonPeriodique data")
+        result = {
+            'model': 'CANonPeriodique',
+            'records_checked': 0,
+            'records_cleaned': 0,
+            'deleted_records': 0,
+            'issues': []
+        }
+        try:
+            # Base queryset
+            queryset = CANonPeriodique.objects.all()
+            # Apply optional DOT filter if relevant
+            if dot_filter:
+                queryset = queryset.filter(
+                    Q(dot_code=dot_filter) | Q(dot__code=dot_filter))
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+
+            # Find records that don't match the client's requirements
+            # Keep only records with DOT = "Siège"
+            records_to_delete = queryset.filter(
+                ~Q(dot_code='Siège') & ~Q(dot__name='Siège')
+            )
+
+            # Count and log records to be deleted
+            deletion_count = records_to_delete.count()
+            result['deleted_records'] = deletion_count
+
+            # Delete the invalid records
+            records_to_delete.delete()
+
+            result['records_cleaned'] = result['records_checked'] - deletion_count
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from CANonPeriodique")
+        except Exception as e:
+            logger.error(f"Error cleaning CANonPeriodique data: {str(e)}")
+            result['error'] = str(e)
+        return result
+
+    def _clean_journal_ventes(self, start_date=None, end_date=None, data_processor=None):
+        """
+        Cleans JournalVentes data according to client requirements:
+        - AT Siège: Keep only DCC and DCGC organizations
+        - Remove formatting issues in org_name (DOT_, _, -)
+        - Remove records with billing_period containing previous year
+        - Filter by date range if provided
+        """
+        logger.info("Cleaning JournalVentes data")
+        result = {
+            'model': 'JournalVentes',
+            'records_checked': 0,
+            'records_cleaned': 0,
+            'deleted_records': 0,
+            'issues': []
+        }
+        try:
+            # Base queryset
+            queryset = JournalVentes.objects.all()
+
+            # Apply date filters if provided
+            if start_date:
+                queryset = queryset.filter(invoice_date__gte=start_date)
+            if end_date:
+                queryset = queryset.filter(invoice_date__lte=end_date)
+
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+
+            # Identify records for AT Siège that are not DCC or DCGC
+            siege_records_to_delete = queryset.filter(
+                # Is AT Siège
+                Q(organization__icontains='AT Siège') &
+                # Not DCC or DCGC
+                ~Q(organization__icontains='DCC') & ~Q(
+                    organization__icontains='DCGC')
+            )
+
+            # Identify records with billing period containing previous year
+            current_year = datetime.now().year
+            previous_year = str(current_year - 1)
+            records_with_previous_year = queryset.filter(
+                billing_period__icontains=previous_year
+            )
+
+            # Combine querysets for deletion
+            records_to_delete = siege_records_to_delete | records_with_previous_year
+
+            # Count and log records to be deleted
+            deletion_count = records_to_delete.count()
+            result['deleted_records'] = deletion_count
+
+            # Delete the invalid records
+            records_to_delete.delete()
+
+            # Clean organization names by removing DOT_, _, -
+            # This would require updating each record individually
+            if data_processor:
+                # Get remaining records
+                remaining_records = queryset.exclude(
+                    id__in=records_to_delete.values_list('id', flat=True))
+
+                # Fix organization names
+                for record in remaining_records:
+                    original_name = record.organization
+                    cleaned_name = original_name.replace(
+                        'DOT_', '').replace('_', '').replace('-', '')
+
+                    if original_name != cleaned_name:
+                        record.organization = cleaned_name
+                        record.save()
+                        logger.info(
+                            f"Updated organization name from '{original_name}' to '{cleaned_name}'")
+
+            result['records_cleaned'] = result['records_checked'] - deletion_count
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from JournalVentes")
+        except Exception as e:
+            logger.error(f"Error cleaning JournalVentes data: {str(e)}")
+            result['error'] = str(e)
+        return result
+
+    def _clean_etat_facture(self, start_date=None, end_date=None, data_processor=None):
+        """
+        Cleans EtatFacture data according to client requirements:
+        - AT Siège: Keep only DCC and DCGC organizations
+        - Remove formatting issues in org_name (DOT_, _, -)
+        - Format invoice_number as numeric
+        - Filter by date range if provided
+        """
+        logger.info("Cleaning EtatFacture data")
+        result = {
+            'model': 'EtatFacture',
+            'records_checked': 0,
+            'records_cleaned': 0,
+            'deleted_records': 0,
+            'issues': []
+        }
+        try:
+            # Base queryset
+            queryset = EtatFacture.objects.all()
+
+            # Apply date filters if provided
+            if start_date:
+                queryset = queryset.filter(invoice_date__gte=start_date)
+            if end_date:
+                queryset = queryset.filter(invoice_date__lte=end_date)
+
+            # Count total records to check
+            result['records_checked'] = queryset.count()
+
+            # Identify records for AT Siège that are not DCC or DCGC
+            siege_records_to_delete = queryset.filter(
+                # Is AT Siège
+                Q(organization__icontains='AT Siège') &
+                # Not DCC or DCGC
+                ~Q(organization__icontains='DCC') & ~Q(
+                    organization__icontains='DCGC')
+            )
+
+            # Count and log records to be deleted
+            deletion_count = siege_records_to_delete.count()
+            result['deleted_records'] = deletion_count
+
+            # Delete the invalid records
+            siege_records_to_delete.delete()
+
+            # Clean organization names and format invoice numbers
+            if data_processor:
+                # Get remaining records
+                remaining_records = queryset.exclude(
+                    id__in=siege_records_to_delete.values_list('id', flat=True))
+
+                # Fix organization names and format invoice numbers
+                for record in remaining_records:
+                    # Clean organization name
+                    original_name = record.organization
+                    cleaned_name = original_name.replace(
+                        'DOT_', '').replace('_', '').replace('-', '')
+
+                    changes_made = False
+                    if original_name != cleaned_name:
+                        record.organization = cleaned_name
+                        changes_made = True
+
+                    # Format invoice_number if needed
+                    # This assumes invoice_number is stored as a string and needs to be numeric
+                    if hasattr(record, 'invoice_number') and record.invoice_number:
+                        try:
+                            # Try to convert to numeric and back to string to standardize format
+                            numeric_invoice = str(
+                                int(float(record.invoice_number)))
+                            if record.invoice_number != numeric_invoice:
+                                record.invoice_number = numeric_invoice
+                                changes_made = True
+                        except (ValueError, TypeError):
+                            # If conversion fails, note it as an issue
+                            result['issues'].append({
+                                'id': record.id,
+                                'type': 'invalid_invoice_number',
+                                'description': f"Could not convert invoice_number '{record.invoice_number}' to numeric format"
+                            })
+
+                    # Save if changes were made
+                    if changes_made:
+                        record.save()
+
+            result['records_cleaned'] = result['records_checked'] - deletion_count
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from EtatFacture")
+        except Exception as e:
+            logger.error(f"Error cleaning EtatFacture data: {str(e)}")
+            result['error'] = str(e)
+        return result
+
+
+class ValidationProgressView(APIView):
+    """
+    API view for retrieving progress information for validation and cleaning operations.
+    Provides real-time updates on the progress of long-running validation and cleaning tasks.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Get progress information for a validation or cleaning task
+        """
+        task_id = request.query_params.get('task_id')
+        task_type = request.query_params.get(
+            'type', 'validation')  # validation or cleaning
+
+        if not task_id:
+            return Response({
+                'status': 'error',
+                'message': 'Missing task_id parameter'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get progress information from cache
+        progress_key = f"{task_type}_progress_{task_id}"
+        progress_data = cache.get(progress_key)
+
+        if not progress_data:
+            return Response({
+                'status': 'error',
+                'message': f'No {task_type} task found with ID {task_id}'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if the task is complete and we should return results
+        if progress_data.get('status') == 'complete':
+            result_key = f"{task_type}_result_{task_id}"
+            result_data = cache.get(result_key)
+
+            if result_data:
+                # Include result data with the response
+                progress_data['result'] = result_data
+
+        return Response(progress_data)

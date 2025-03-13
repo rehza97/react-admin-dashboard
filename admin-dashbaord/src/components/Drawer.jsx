@@ -31,6 +31,8 @@ import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import TableChartIcon from "@mui/icons-material/TableChart";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import BusinessIcon from "@mui/icons-material/Business";
+import StorageIcon from "@mui/icons-material/Storage";
+import VerifiedIcon from "@mui/icons-material/Verified";
 import { useAuth } from "../context/AuthContext";
 import { Box, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
@@ -257,6 +259,20 @@ export default function Drawer({ open, handleDrawerClose }) {
       text: t("common.anomalyScan"),
       icon: <BarChartOutlinedIcon />,
       path: "/anomaly-scan",
+    },
+    {
+      title: "Data Tools",
+      icon: <StorageIcon />,
+      items: [
+        {
+          title: "Data Management",
+          path: "/data-management",
+        },
+        {
+          title: "Data Validation",
+          path: "/data-validation",
+        },
+      ],
     },
     {
       text: t("common.pivot"),

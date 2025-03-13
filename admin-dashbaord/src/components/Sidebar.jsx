@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { ListItem, ListItemIcon, ListItemText } from "@mui/material";
 import BusinessIcon from "@mui/icons-material/Business";
 import { useLocation } from "react-router-dom";
+import BarChartIcon from "@mui/icons-material/BarChart";
+import VerifiedIcon from "@mui/icons-material/Verified";
 
 const Sidebar = () => {
   const location = useLocation();
@@ -37,6 +39,51 @@ const Sidebar = () => {
           />
         </ListItemIcon>
         <ListItemText primary="DOT Permissions" />
+      </ListItem>
+
+      {/* Add new menu items */}
+      <ListItem
+        button
+        component={Link}
+        to="/data-management"
+        sx={{
+          color:
+            location.pathname === "/data-management"
+              ? "primary.main"
+              : "text.primary",
+          pl: 4,
+        }}
+      >
+        <ListItemIcon>
+          <BarChartIcon
+            color={
+              location.pathname === "/data-management" ? "primary" : "inherit"
+            }
+          />
+        </ListItemIcon>
+        <ListItemText primary="Data Management" />
+      </ListItem>
+
+      <ListItem
+        button
+        component={Link}
+        to="/data-validation"
+        sx={{
+          color:
+            location.pathname === "/data-validation"
+              ? "primary.main"
+              : "text.primary",
+          pl: 4,
+        }}
+      >
+        <ListItemIcon>
+          <VerifiedIcon
+            color={
+              location.pathname === "/data-validation" ? "primary" : "inherit"
+            }
+          />
+        </ListItemIcon>
+        <ListItemText primary="Data Validation" />
       </ListItem>
     </div>
   );

@@ -696,6 +696,53 @@ const dataService = {
     }
   },
 
+  // Data validation and cleaning
+  validateData: async (params = {}) => {
+    try {
+      const queryParams = new URLSearchParams();
+
+      if (params.dot) queryParams.append("dot", params.dot);
+      if (params.startDate) queryParams.append("start_date", params.startDate);
+      if (params.endDate) queryParams.append("end_date", params.endDate);
+
+      const url = `/data/validation/?${queryParams.toString()}`;
+      const response = await api.get(url);
+      return response.data;
+    } catch (error) {
+      console.error("Error validating data:", error);
+      return {
+        error: true,
+        message: "Error validating data",
+        total_issues_found: 0,
+        tables_validated: 0,
+        validation_details: [],
+      };
+    }
+  },
+
+  cleanData: async (params = {}) => {
+    try {
+      const url = "/data/cleaning/";
+      const response = await api.post(url, {
+        validate_first: params.validateFirst !== false,
+        models_to_clean: params.modelsToClean || [],
+        dot: params.dot || null,
+        start_date: params.startDate || null,
+        end_date: params.endDate || null,
+      });
+      return response.data;
+    } catch (error) {
+      // Using simpler approach to avoid TypeScript errors with the error object
+      console.error("Error cleaning data:", error);
+      return {
+        error: true,
+        message: "Error cleaning data",
+        total_records_cleaned: 0,
+        models_cleaned: [],
+      };
+    }
+  },
+
   // Other data endpoints as needed
 };
 

@@ -39,6 +39,8 @@ import {
 } from "./pages/kpi";
 import PropTypes from "prop-types";
 import CircularProgress from "@mui/material/CircularProgress";
+import DataManagementPage from "./pages/DataManagementPage";
+import DataValidationPage from "./pages/DataValidationPage";
 
 // Define drawer width for consistency
 const drawerWidth = 40;
@@ -428,6 +430,22 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <UnfinishedInvoicePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/data-management"
+                element={
+                  <ProtectedRoute>
+                    <DataManagementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/data-validation"
+                element={
+                  <ProtectedRoute>
+                    <DataValidationPage />
                   </ProtectedRoute>
                 }
               />
