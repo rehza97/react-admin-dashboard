@@ -38,6 +38,7 @@ import { Box, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 import { styled as muiStyled } from "@mui/material/styles";
+import CleaningServicesIcon from "@mui/icons-material/CleaningServices";
 
 const drawerWidth = 260;
 
@@ -283,6 +284,12 @@ export default function Drawer({ open, handleDrawerClose }) {
       text: t("common.faq"),
       icon: <HelpOutlineOutlinedIcon />,
       path: "/faq",
+    },
+    {
+      title: "Data Cleanup",
+      icon: <CleaningServicesIcon />,
+      path: "/data-cleanup",
+      allowedRoles: ["admin"],
     },
   ];
 

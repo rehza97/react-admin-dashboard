@@ -41,6 +41,7 @@ import PropTypes from "prop-types";
 import CircularProgress from "@mui/material/CircularProgress";
 import DataManagementPage from "./pages/DataManagementPage";
 import DataValidationPage from "./pages/DataValidationPage";
+import DataCleanupTool from "./components/DataCleanupTool";
 
 // Define drawer width for consistency
 const drawerWidth = 40;
@@ -446,6 +447,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <DataValidationPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/data-cleanup"
+                element={
+                  <ProtectedRoute>
+                    <DataCleanupTool />
                   </ProtectedRoute>
                 }
               />

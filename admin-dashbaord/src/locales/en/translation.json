@@ -518,5 +518,10 @@
     "english": "English",
     "french": "French",
     "changeLanguage": "Change Language"
+  },
+  "notifications": {
+    "noNotifications": "No notifications",
+    "markAllAsRead": "Mark all as read",
+    "viewAll": "View all"
   }
 }

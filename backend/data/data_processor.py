@@ -1777,7 +1777,7 @@ class DataProcessor:
                     }
                 })
 
-            # Check for customer_lev2 value "Client professionnelConventionnÃ©" (should be excluded)
+            # Check for customer_lev2 value "Client professionnelConventionné" (should be excluded)
             if 'customer_lev2' in record and record['customer_lev2'] and 'professionnelConvention' in record['customer_lev2']:
                 anomalies.append({
                     'type': 'invalid_data',
@@ -2143,7 +2143,7 @@ class DataProcessor:
         Apply specific filters to CreancesNGBSS data as per client requirements:
         - Keep only Specialized Line and LTE products
         - Keep only Corporate and Corporate Group in CUST_LEV1
-        - Remove Client professionnelConventionnÃ© from CUST_LEV2
+        - Remove Client professionnelConventionné from CUST_LEV2
         - Keep only specific values in CUST_LEV3
 
         Args:
@@ -2154,7 +2154,7 @@ class DataProcessor:
         """
         allowed_products = ['Specialized Line', 'LTE']
         allowed_cust_lev1 = ['Corporate', 'Corporate Group']
-        excluded_cust_lev2 = ['Client professionnelConventionnÃ©']
+        excluded_cust_lev2 = ['Client professionnelConventionné']
         allowed_cust_lev3 = [
             'Ligne d\'exploitation AP',
             'Ligne d\'exploitation ATMobilis',
@@ -3029,7 +3029,7 @@ class DataProcessor:
         if 'CUSTOMER_LEV2' in filtered_data.columns:
             filtered_data = filtered_data[
                 ~filtered_data['CUSTOMER_LEV2'].str.contains(
-                    'Client professionnelConventionnÃ©', na=False)
+                    'Client professionnelConventionné', na=False)
             ]
 
         # Filter by customer level 3 if the column exists

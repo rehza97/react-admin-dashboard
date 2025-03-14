@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 from . import kpi_views
@@ -9,6 +9,9 @@ from rest_framework.permissions import IsAuthenticated
 import traceback
 import logging
 from . import export_views
+from .views import (
+    DOTSView,
+)
 
 from decimal import Decimal
 logger = logging.getLogger(__name__)
@@ -181,6 +184,13 @@ urlpatterns = [
          export_views.CorporateParkExportView.as_view(), name='export_corporate_park'),
     path('reports/export/receivables/',
          export_views.ReceivablesExportView.as_view(), name='export_receivables'),
+
+    # New cleanup routes
+    path('data-cleanup/', views.DataCleanupView.as_view(), name='data-cleanup'),
+    path('cleanup-progress/<str:task_id>/', views.CleanupProgressView.as_view(),
+         name='cleanup-progress'),
+
+    path('dots/', DOTSView.as_view(), name='dots-list'),
 ]
 
 urlpatterns += router.urls

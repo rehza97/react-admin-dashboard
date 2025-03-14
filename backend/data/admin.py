@@ -53,7 +53,7 @@ class FacturationManuelleAdmin(admin.ModelAdmin):
 class JournalVentesAdmin(admin.ModelAdmin):
     list_display = ('invoice', 'organization', 'invoice_number',
                     'invoice_type', 'invoice_date', 'client', 'revenue_amount')
-    list_filter = ('invoice__status', 'invoice_date', 'organization')
+    list_filter = ('invoice__status', 'invoice_date', 'organization', 'billing_period')
     search_fields = ('invoice__invoice_number',
                      'organization', 'client', 'invoice_number')
     ordering = ('invoice__upload_date',)

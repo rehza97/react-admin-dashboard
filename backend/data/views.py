@@ -70,6 +70,13 @@ from django.db import transaction
 import time
 import threading
 from django.core.cache import cache
+import uuid
+from datetime import datetime
+from .cleanup_methods import (
+    clean_parc_corporate, clean_creances_ngbss, clean_ca_non_periodique,
+    clean_ca_periodique, clean_ca_cnt, clean_ca_dnt, clean_ca_rfd,
+    clean_journal_ventes, clean_etat_facture
+)
 
 
 logger = logging.getLogger(__name__)
@@ -6036,7 +6043,7 @@ class DataValidationView(APIView):
             deletion_count = records_to_delete.count()
             result['deleted_records'] = deletion_count
 
-            # Delete the invalid records
+            # Delete records
             records_to_delete.delete()
 
             result['records_cleaned'] = result['records_checked'] - deletion_count
@@ -6267,3 +6274,825 @@ class ValidationProgressView(APIView):
                 progress_data['result'] = result_data
 
         return Response(progress_data)
+
+
+class DataCleanupView(APIView):
+    """
+    API view for cleaning the database according to client requirements.
+    This view applies specific filtering rules to each data type and removes
+    or updates records that don't match the criteria.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _analyze_parc_corporate(self):
+        """Analyze ParcCorporate data to identify records needing cleaning"""
+        try:
+            queryset = ParcCorporate.objects.all()
+            records_to_clean = {
+                'total': queryset.count(),
+                'customer_l3_code': queryset.filter(customer_l3_code__in=['5', '57']).count(),
+                'offer_name': queryset.filter(
+                    Q(offer_name__icontains='Moohtarif') |
+                    Q(offer_name__icontains='Solutions Hebergements')
+                ).count(),
+                'subscriber_status': queryset.filter(subscriber_status='Predeactivated').count()
+            }
+            return {'records_to_clean': records_to_clean}
+        except Exception as e:
+            logger.error(f"Error analyzing ParcCorporate data: {str(e)}")
+            return {'records_to_clean': {'error': str(e)}}
+
+    def _analyze_creances_ngbss(self):
+        """Analyze CreancesNGBSS data to identify records needing cleaning"""
+        try:
+            queryset = CreancesNGBSS.objects.all()
+            records_to_clean = {
+                'total': queryset.count(),
+                'product': queryset.filter(~Q(product__in=['Specialized Line', 'LTE'])).count(),
+                'customer_lev1': queryset.filter(~Q(customer_lev1__in=['Corporate', 'Corporate Group'])).count(),
+                'customer_lev2': queryset.filter(customer_lev2='Client professionnelConventionné').count(),
+                'customer_lev3': queryset.filter(~Q(customer_lev3__in=[
+                    "Ligne d'exploitation AP",
+                    "Ligne d'exploitation ATMobilis",
+                    "Ligne d'exploitation ATS"
+                ])).count()
+            }
+            return {'records_to_clean': records_to_clean}
+        except Exception as e:
+            logger.error(f"Error analyzing CreancesNGBSS data: {str(e)}")
+            return {'records_to_clean': {'error': str(e)}}
+
+    def _analyze_ca_periodique(self):
+        """Analyze CAPeriodique data to identify records needing cleaning"""
+        try:
+            queryset = CAPeriodique.objects.all()
+            records_to_clean = {
+                'total': queryset.count(),
+                'product': queryset.filter(
+                    ~Q(dot_code='Siège') & ~Q(dot__name='Siège') &
+                    ~Q(product__in=['Specialized Line', 'LTE'])
+                ).count()
+            }
+            return {'records_to_clean': records_to_clean}
+        except Exception as e:
+            logger.error(f"Error analyzing CAPeriodique data: {str(e)}")
+            return {'records_to_clean': {'error': str(e)}}
+
+    def _analyze_ca_non_periodique(self):
+        """Analyze CANonPeriodique data to identify records needing cleaning"""
+        try:
+            queryset = CANonPeriodique.objects.all()
+            records_to_clean = {
+                'total': queryset.count(),
+                'dot': queryset.filter(~Q(dot_code='Siège') & ~Q(dot__name='Siège')).count()
+            }
+            return {'records_to_clean': records_to_clean}
+        except Exception as e:
+            logger.error(f"Error analyzing CANonPeriodique data: {str(e)}")
+            return {'records_to_clean': {'error': str(e)}}
+
+    def _analyze_ca_cnt(self):
+        """Analyze CACNT data to identify records needing cleaning"""
+        try:
+            queryset = CACNT.objects.all()
+            records_to_clean = {
+                'total': queryset.count(),
+                'department': queryset.filter(~Q(department='Direction Commerciale Corporate')).count()
+            }
+            return {'records_to_clean': records_to_clean}
+        except Exception as e:
+            logger.error(f"Error analyzing CACNT data: {str(e)}")
+            return {'records_to_clean': {'error': str(e)}}
+
+    def _analyze_ca_dnt(self):
+        """Analyze CADNT data to identify records needing cleaning"""
+        try:
+            queryset = CADNT.objects.all()
+            records_to_clean = {
+                'total': queryset.count(),
+                'department': queryset.filter(~Q(department='Direction Commerciale Corporate')).count()
+            }
+            return {'records_to_clean': records_to_clean}
+        except Exception as e:
+            logger.error(f"Error analyzing CADNT data: {str(e)}")
+            return {'records_to_clean': {'error': str(e)}}
+
+    def _analyze_ca_rfd(self):
+        """Analyze CARFD data to identify records needing cleaning"""
+        try:
+            queryset = CARFD.objects.all()
+            records_to_clean = {
+                'total': queryset.count(),
+                'department': queryset.filter(~Q(department='Direction Commerciale Corporate')).count()
+            }
+            return {'records_to_clean': records_to_clean}
+        except Exception as e:
+            logger.error(f"Error analyzing CARFD data: {str(e)}")
+            return {'records_to_clean': {'error': str(e)}}
+
+    def _analyze_journal_ventes(self):
+        """Analyze JournalVentes data to identify records needing cleaning"""
+        try:
+            queryset = JournalVentes.objects.all()
+            current_year = datetime.now().year
+            previous_year = str(current_year - 1)
+
+            records_to_clean = {
+                'total': queryset.count(),
+                'organization': queryset.filter(
+                    Q(organization__icontains='AT Siège') &
+                    ~Q(organization__icontains='DCC') &
+                    ~Q(organization__icontains='DCGC')
+                ).count(),
+                'billing_period': queryset.filter(billing_period__icontains=previous_year).count(),
+                'formatting': queryset.filter(
+                    Q(organization__icontains='DOT_') |
+                    Q(organization__icontains='_') |
+                    Q(organization__icontains='-')
+                ).count()
+            }
+            return {'records_to_clean': records_to_clean}
+        except Exception as e:
+            logger.error(f"Error analyzing JournalVentes data: {str(e)}")
+            return {'records_to_clean': {'error': str(e)}}
+
+    def _analyze_etat_facture(self):
+        """Analyze EtatFacture data to identify records needing cleaning"""
+        try:
+            queryset = EtatFacture.objects.all()
+            records_to_clean = {
+                'total': queryset.count(),
+                'organization': queryset.filter(
+                    Q(organization__icontains='AT Siège') &
+                    ~Q(organization__icontains='DCC') &
+                    ~Q(organization__icontains='DCGC')
+                ).count(),
+                'formatting': queryset.filter(
+                    Q(organization__icontains='DOT_') |
+                    Q(organization__icontains='_') |
+                    Q(organization__icontains='-')
+                ).count()
+            }
+            return {'records_to_clean': records_to_clean}
+        except Exception as e:
+            logger.error(f"Error analyzing EtatFacture data: {str(e)}")
+            return {'records_to_clean': {'error': str(e)}}
+
+    def get(self, request):
+        """
+        Analyze the current state of data and identify records that need to be cleaned
+        based on the specified rules.
+        """
+        data_type = request.query_params.get('data_type', 'all')
+        response_data = {
+            'status': 'success',
+            'records_to_clean': {},
+            'cleaning_rules': {}
+        }
+
+        if data_type == 'all' or data_type == 'parc_corporate':
+            parc_data = self._analyze_parc_corporate()
+            response_data['records_to_clean']['parc_corporate'] = parc_data['records_to_clean']
+            response_data['cleaning_rules']['parc_corporate'] = {
+                'CUSTOMER_L3_CODE': 'Remove codes 5 and 57',
+                'OFFER_NAME': 'Remove Moohtarif and Solutions Hebergements',
+                'SUBSCRIBER_STATUS': 'Remove Predeactivated status'
+            }
+
+        if data_type == 'all' or data_type == 'creances_ngbss':
+            creances_data = self._analyze_creances_ngbss()
+            response_data['records_to_clean']['creances_ngbss'] = creances_data['records_to_clean']
+            response_data['cleaning_rules']['creances_ngbss'] = {
+                'PRODUCT': 'Keep only Specialized Line and LTE',
+                'CUST_LEV1': 'Keep only Corporate and Corporate Group',
+                'CUST_LEV2': 'Remove Client professionnelConventionné',
+                'CUST_LEV3': 'Keep only Ligne d\'exploitation AP, Ligne d\'exploitation ATMobilis, and Ligne d\'exploitation ATS',
+                'EMPTY_FIELDS': 'Identify empty fields as anomalies'
+            }
+
+        if data_type == 'all' or data_type == 'ca_non_periodique':
+            ca_non_periodique_data = self._analyze_ca_non_periodique()
+            response_data['records_to_clean']['ca_non_periodique'] = ca_non_periodique_data['records_to_clean']
+            response_data['cleaning_rules']['ca_non_periodique'] = {
+                'EMPTY_FIELDS': 'Identify empty fields as anomalies'
+            }
+
+        if data_type == 'all' or data_type == 'ca_periodique':
+            ca_periodique_data = self._analyze_ca_periodique()
+            response_data['records_to_clean']['ca_periodique'] = ca_periodique_data['records_to_clean']
+            response_data['cleaning_rules']['ca_periodique'] = {
+                'PRODUCT': 'Keep only Specialized Line and LTE',
+                'EMPTY_FIELDS': 'Identify empty fields as anomalies'
+            }
+
+        if data_type == 'all' or data_type == 'ca_cnt':
+            ca_cnt_data = self._analyze_ca_cnt()
+            response_data['records_to_clean']['ca_cnt'] = ca_cnt_data['records_to_clean']
+            response_data['cleaning_rules']['ca_cnt'] = {
+                'DEPARTMENT': 'Keep only Direction Commerciale Corporate',
+                'EMPTY_FIELDS': 'Identify empty fields as anomalies'
+            }
+
+        if data_type == 'all' or data_type == 'ca_dnt':
+            ca_dnt_data = self._analyze_ca_dnt()
+            response_data['records_to_clean']['ca_dnt'] = ca_dnt_data['records_to_clean']
+            response_data['cleaning_rules']['ca_dnt'] = {
+                'DEPARTMENT': 'Keep only Direction Commerciale Corporate',
+                'EMPTY_FIELDS': 'Identify empty fields as anomalies'
+            }
+
+        if data_type == 'all' or data_type == 'ca_rfd':
+            ca_rfd_data = self._analyze_ca_rfd()
+            response_data['records_to_clean']['ca_rfd'] = ca_rfd_data['records_to_clean']
+            response_data['cleaning_rules']['ca_rfd'] = {
+                'DEPARTMENT': 'Keep only Direction Commerciale Corporate',
+                'EMPTY_FIELDS': 'Identify empty fields as anomalies'
+            }
+
+        if data_type == 'all' or data_type == 'journal_ventes':
+            journal_ventes_data = self._analyze_journal_ventes()
+            response_data['records_to_clean']['journal_ventes'] = journal_ventes_data['records_to_clean']
+            response_data['cleaning_rules']['journal_ventes'] = {
+                'ORG_NAME': 'Clean up org_name field',
+                'PRODUCT_CODE': 'Keep only specific product codes',
+                'EMPTY_FIELDS': 'Identify empty fields as anomalies'
+            }
+
+        if data_type == 'all' or data_type == 'etat_facture':
+            etat_facture_data = self._analyze_etat_facture()
+            response_data['records_to_clean']['etat_facture'] = etat_facture_data['records_to_clean']
+            response_data['cleaning_rules']['etat_facture'] = {
+                'ORG_NAME': 'Clean up org_name field',
+                'PRODUCT_CODE': 'Keep only specific product codes',
+                'EMPTY_FIELDS': 'Identify empty fields as anomalies'
+            }
+
+        return Response(response_data)
+
+    def post(self, request):
+        """
+        Start the data cleanup process for the specified data type.
+        """
+        data_type = request.data.get('data_type')
+        if not data_type:
+            return Response({
+                'status': 'error',
+                'message': 'data_type is required'
+            }, status=400)
+
+        # Generate a unique task ID
+        task_id = f'cleanup_{uuid.uuid4().hex}'
+
+        # Start the cleanup process in a background thread
+        thread = threading.Thread(
+            target=self._run_cleanup_process,
+            args=(request, data_type, task_id)
+        )
+        thread.daemon = True
+        thread.start()
+
+        return Response({
+            'status': 'success',
+            'message': 'Cleanup process started',
+            'task_id': task_id
+        })
+
+    def _run_cleanup_process(self, request, data_type, task_id):
+        """
+        Run the cleanup process for the specified data type.
+        """
+        try:
+            # Initialize progress in cache
+            start_time = time.time()
+            cache.set(f'cleanup_progress_{task_id}', {
+                'status': 'running',
+                'progress': 0,
+                'step': 'Starting cleanup process...',
+                'start_time': start_time,
+                'elapsed_time': 0
+            }, timeout=3600)  # 1 hour timeout
+
+            results = {}
+
+            # Update progress for each data type
+            if data_type == 'all' or data_type == 'parc_corporate':
+                self._update_cleanup_progress(
+                    task_id, 10, 'Cleaning Parc Corporate NGBSS...', start_time)
+                results['parc_corporate'] = clean_parc_corporate()
+
+            if data_type == 'all' or data_type == 'creances_ngbss':
+                self._update_cleanup_progress(
+                    task_id, 20, 'Cleaning Créances NGBSS...', start_time)
+                results['creances_ngbss'] = clean_creances_ngbss()
+
+            if data_type == 'all' or data_type == 'ca_non_periodique':
+                self._update_cleanup_progress(
+                    task_id, 30, 'Cleaning CA Non Périodique...', start_time)
+                results['ca_non_periodique'] = clean_ca_non_periodique()
+
+            if data_type == 'all' or data_type == 'ca_periodique':
+                self._update_cleanup_progress(
+                    task_id, 40, 'Cleaning CA Périodique...', start_time)
+                results['ca_periodique'] = clean_ca_periodique()
+
+            if data_type == 'all' or data_type == 'ca_cnt':
+                self._update_cleanup_progress(
+                    task_id, 50, 'Cleaning CA CNT...', start_time)
+                results['ca_cnt'] = clean_ca_cnt()
+
+            if data_type == 'all' or data_type == 'ca_dnt':
+                self._update_cleanup_progress(
+                    task_id, 60, 'Cleaning CA DNT...', start_time)
+                results['ca_dnt'] = clean_ca_dnt()
+
+            if data_type == 'all' or data_type == 'ca_rfd':
+                self._update_cleanup_progress(
+                    task_id, 70, 'Cleaning CA RFD...', start_time)
+                results['ca_rfd'] = clean_ca_rfd()
+
+            if data_type == 'all' or data_type == 'journal_ventes':
+                self._update_cleanup_progress(
+                    task_id, 80, 'Cleaning Journal des Ventes...', start_time)
+                results['journal_ventes'] = clean_journal_ventes()
+
+            if data_type == 'all' or data_type == 'etat_facture':
+                self._update_cleanup_progress(
+                    task_id, 90, 'Cleaning État de Facture...', start_time)
+                results['etat_facture'] = clean_etat_facture()
+
+            # Store the results in cache
+            cache.set(f'cleanup_result_{task_id}', results, timeout=3600)
+
+            # Update final progress
+            self._update_cleanup_progress(
+                task_id, 100, 'Cleanup completed successfully', start_time, is_complete=True)
+
+        except Exception as e:
+            # Store error in cache
+            cache.set(f'cleanup_result_{task_id}', {
+                'status': 'error',
+                'message': str(e)
+            }, timeout=3600)
+
+            # Update progress with error
+            self._update_cleanup_progress(
+                task_id, 0, f'Error: {str(e)}', start_time, is_complete=True)
+            logger.error(f"Error in cleanup process: {str(e)}")
+
+    def _clean_parc_corporate(self):
+        """
+        Cleans ParcCorporate data by removing records that don't match client requirements:
+        - Removes categories 5 and 57 in customer_l3_code
+        - Removes entries with Moohtarif or Solutions Hebergements in offer_name
+        - Removes entries with Predeactivated in subscriber_status
+        """
+        logger.info("Cleaning ParcCorporate data")
+        result = {
+            'total_before': ParcCorporate.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            # Find records that don't match the client's requirements
+            records_to_delete = ParcCorporate.objects.filter(
+                Q(customer_l3_code__in=['5', '57']) |
+                Q(offer_name__icontains='Moohtarif') |
+                Q(offer_name__icontains='Solutions Hebergements') |
+                Q(subscriber_status='Predeactivated')
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = ParcCorporate.objects.count()
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from ParcCorporate")
+        except Exception as e:
+            logger.error(f"Error cleaning ParcCorporate data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _clean_creances_ngbss(self):
+        """
+        Cleans CreancesNGBSS data according to client requirements:
+        - Keep only records with product in ['Specialized Line', 'LTE']
+        - Keep only records with customer_lev1 in ['Corporate', 'Corporate Group']
+        - Remove records with customer_lev2 = 'Client professionnelConventionné'
+        - Keep only records with customer_lev3 in specific exploitation lines
+        """
+        logger.info("Cleaning CreancesNGBSS data")
+        result = {
+            'total_before': CreancesNGBSS.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            # Find records that don't match the client's requirements
+            records_to_delete = CreancesNGBSS.objects.filter(
+                Q(~Q(product__in=['Specialized Line', 'LTE'])) |
+                Q(~Q(customer_lev1__in=['Corporate', 'Corporate Group'])) |
+                Q(customer_lev2='Client professionnelConventionné') |
+                Q(~Q(customer_lev3__in=[
+                    "Ligne d'exploitation AP",
+                    "Ligne d'exploitation ATMobilis",
+                    "Ligne d'exploitation ATS"
+                ]))
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = CreancesNGBSS.objects.count()
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from CreancesNGBSS")
+        except Exception as e:
+            logger.error(f"Error cleaning CreancesNGBSS data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _clean_ca_non_periodique(self):
+        """
+        Cleans CANonPeriodique data according to client requirements:
+        - Keep only records with DOT = "Siège"
+        """
+        logger.info("Cleaning CANonPeriodique data")
+        result = {
+            'total_before': CANonPeriodique.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            # Find records that don't match the client's requirements
+            records_to_delete = CANonPeriodique.objects.filter(
+                ~Q(dot_code='Siège') & ~Q(dot__name='Siège')
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = CANonPeriodique.objects.count()
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from CANonPeriodique")
+        except Exception as e:
+            logger.error(f"Error cleaning CANonPeriodique data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _clean_ca_periodique(self):
+        """
+        Cleans CAPeriodique data according to client requirements:
+        - For non-Siège DOTs, keep only records with product in ['Specialized Line', 'LTE']
+        """
+        logger.info("Cleaning CAPeriodique data")
+        result = {
+            'total_before': CAPeriodique.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            # Find records that don't match the client's requirements
+            # For non-Siège DOTs, keep only records with product in ['Specialized Line', 'LTE']
+            records_to_delete = CAPeriodique.objects.filter(
+                ~Q(dot_code='Siège') & ~Q(dot__name='Siège') &
+                ~Q(product__in=['Specialized Line', 'LTE'])
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = CAPeriodique.objects.count()
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from CAPeriodique")
+        except Exception as e:
+            logger.error(f"Error cleaning CAPeriodique data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _clean_ca_cnt(self):
+        """
+        Cleans CACNT data according to client requirements:
+        - Keep only records with department = 'Direction Commerciale Corporate'
+        """
+        logger.info("Cleaning CACNT data")
+        result = {
+            'total_before': CACNT.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            # Find records that don't match the client's requirements
+            records_to_delete = CACNT.objects.filter(
+                ~Q(department='Direction Commerciale Corporate')
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = CACNT.objects.count()
+
+            logger.info(f"Cleaned {deletion_count} invalid records from CACNT")
+        except Exception as e:
+            logger.error(f"Error cleaning CACNT data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _clean_ca_dnt(self):
+        """
+        Cleans CADNT data according to client requirements:
+        - Keep only records with department = 'Direction Commerciale Corporate'
+        """
+        logger.info("Cleaning CADNT data")
+        result = {
+            'total_before': CADNT.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            # Find records that don't match the client's requirements
+            records_to_delete = CADNT.objects.filter(
+                ~Q(department='Direction Commerciale Corporate')
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = CADNT.objects.count()
+
+            logger.info(f"Cleaned {deletion_count} invalid records from CADNT")
+        except Exception as e:
+            logger.error(f"Error cleaning CADNT data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _clean_ca_rfd(self):
+        """
+        Cleans CARFD data according to client requirements:
+        - Keep only records with department = 'Direction Commerciale Corporate'
+        """
+        logger.info("Cleaning CARFD data")
+        result = {
+            'total_before': CARFD.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            # Find records that don't match the client's requirements
+            records_to_delete = CARFD.objects.filter(
+                ~Q(department='Direction Commerciale Corporate')
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = CARFD.objects.count()
+
+            logger.info(f"Cleaned {deletion_count} invalid records from CARFD")
+        except Exception as e:
+            logger.error(f"Error cleaning CARFD data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _clean_journal_ventes(self):
+        """
+        Cleans JournalVentes data according to client requirements:
+        - Clean records with specific organization criteria
+        - Remove records from previous years
+        - Fix formatting issues in organization names
+        """
+        logger.info("Cleaning JournalVentes data")
+        result = {
+            'total_before': JournalVentes.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            current_year = datetime.now().year
+            previous_year = str(current_year - 1)
+
+            # Find records that don't match the client's requirements
+            records_to_delete = JournalVentes.objects.filter(
+                Q(
+                    Q(organization__icontains='AT Siège') &
+                    ~Q(organization__icontains='DCC') &
+                    ~Q(organization__icontains='DCGC')
+                ) |
+                Q(billing_period__icontains=previous_year)
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            # Fix formatting issues
+            records_to_fix = JournalVentes.objects.filter(
+                Q(organization__icontains='DOT_') |
+                Q(organization__icontains='_') |
+                Q(organization__icontains='-')
+            )
+
+            for record in records_to_fix:
+                org_name = record.organization
+                # Clean up formatting
+                if 'DOT_' in org_name:
+                    org_name = org_name.replace('DOT_', 'DOT ')
+                org_name = org_name.replace('_', ' ').replace('-', ' ')
+                record.organization = org_name
+                record.save()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = JournalVentes.objects.count()
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from JournalVentes")
+        except Exception as e:
+            logger.error(f"Error cleaning JournalVentes data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _clean_etat_facture(self):
+        """
+        Cleans EtatFacture data according to client requirements:
+        - Clean records with specific organization criteria
+        - Fix formatting issues in organization names
+        """
+        logger.info("Cleaning EtatFacture data")
+        result = {
+            'total_before': EtatFacture.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            # Find records that don't match the client's requirements
+            records_to_delete = EtatFacture.objects.filter(
+                Q(organization__icontains='AT Siège') &
+                ~Q(organization__icontains='DCC') &
+                ~Q(organization__icontains='DCGC')
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            # Fix formatting issues
+            records_to_fix = EtatFacture.objects.filter(
+                Q(organization__icontains='DOT_') |
+                Q(organization__icontains='_') |
+                Q(organization__icontains='-')
+            )
+
+            for record in records_to_fix:
+                org_name = record.organization
+                # Clean up formatting
+                if 'DOT_' in org_name:
+                    org_name = org_name.replace('DOT_', 'DOT ')
+                org_name = org_name.replace('_', ' ').replace('-', ' ')
+                record.organization = org_name
+                record.save()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = EtatFacture.objects.count()
+
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from EtatFacture")
+        except Exception as e:
+            logger.error(f"Error cleaning EtatFacture data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _update_cleanup_progress(self, task_id, progress_percentage, step_description, start_time, is_complete=False):
+        """
+        Update the progress of the cleanup process in the cache
+        """
+        progress_key = f"cleanup_progress_{task_id}"
+
+        progress_data = {
+            'status': 'complete' if is_complete else 'in_progress',
+            'progress': progress_percentage,
+            'step': step_description,
+            'start_time': start_time,
+            'elapsed_time': time.time() - start_time
+        }
+
+        cache.set(progress_key, progress_data,
+                  timeout=86400)  # 24-hour timeout
+
+
+class CleanupProgressView(APIView):
+    """
+    API view for retrieving progress information for cleanup operations.
+    Provides real-time updates on the progress of data cleanup tasks.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, task_id):
+        task_type = 'cleanup'
+
+        if not task_id:
+            return Response({
+                'status': 'error',
+                'message': 'task_id parameter is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get progress information from cache
+        progress_key = f"{task_type}_progress_{task_id}"
+        progress_data = cache.get(progress_key)
+
+        if not progress_data:
+            return Response({
+                'status': 'error',
+                'message': f'No {task_type} task found with ID {task_id}'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if the task is complete and we should return results
+        if progress_data.get('status') == 'complete':
+            result_key = f"{task_type}_result_{task_id}"
+            result_data = cache.get(result_key)
+
+            if result_data:
+                # Include result data with the response
+                progress_data['result'] = result_data
+
+        return Response(progress_data)
+
+
+class DOTSView(APIView):
+    """
+    API view for retrieving the list of available DOTs (Direction Opérationnelle Territoriale)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Get a list of all available DOTs across all models
+        """
+        try:
+            # Get unique DOTs from various models
+            parc_dots = ParcCorporate.objects.values_list(
+                'dot', flat=True).distinct()
+            creances_dots = CreancesNGBSS.objects.values_list(
+                'dot', flat=True).distinct()
+            ca_non_periodique_dots = CANonPeriodique.objects.values_list(
+                'dot', flat=True).distinct()
+
+            # Combine all DOTs and remove duplicates
+            all_dots = list(
+                set(list(parc_dots) + list(creances_dots) + list(ca_non_periodique_dots)))
+
+            # Remove None values
+            all_dots = [dot for dot in all_dots if dot]
+
+            return Response({
+                'status': 'success',
+                'dots': all_dots
+            })
+        except Exception as e:
+            logger.error(f"Error retrieving DOTs: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=500)
