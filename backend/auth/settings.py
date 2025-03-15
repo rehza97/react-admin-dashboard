@@ -74,7 +74,7 @@ if not DEBUG:
         "http://localhost:5173",  # Your React dev server
         "http://localhost:5174",  # Alternative React dev server port
         "https://react-admin-dashboard-nz1d.onrender.com",
-         # ADD YOUR ACTUAL FRONTEND URL HERE
+        "https://frontend-rxah.onrender.com"  # Add your frontend URL
     ]
 else:
     CORS_ALLOW_ALL_ORIGINS = True
