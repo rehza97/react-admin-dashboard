@@ -29,7 +29,7 @@ SECRET_KEY = os.environ.get(
     'SECRET_KEY', 'django-insecure-%$b=#t*=eh4bx)ta+%09z56vx0a2p5d3+=12^l_=#6vn50doc(')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+DEBUG = False
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(
     ',') if os.getenv('ALLOWED_HOSTS') else []
@@ -69,13 +69,13 @@ MIDDLEWARE = [
 ]
 
 # Set CORS settings based on environment
-CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug mode
+CORS_ALLOW_ALL_ORIGINS = True
 if not DEBUG:
     CORS_ALLOWED_ORIGINS = [
         "http://localhost:5173",  # Your React dev server
         "http://localhost:5174",  # Alternative React dev server port
         "https://react-admin-dashboard-nz1d.onrender.com",
-        
+
         # Add your production domain when deploying
     ]
 else:
