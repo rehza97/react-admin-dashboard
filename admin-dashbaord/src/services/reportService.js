@@ -354,6 +354,7 @@ const reportService = {
   // Export report data
   exportReport: async (reportType, format, params = {}) => {
     try {
+      // Use the correct endpoint format that matches the backend
       const response = await api.get(`/data/reports/export/${reportType}/`, {
         params: { ...params, format },
         responseType: "blob",

@@ -4262,48 +4262,32 @@ class ComprehensiveReportExportView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, report_type=None):
         try:
             # Get query parameters
             year = request.query_params.get('year', datetime.now().year)
             month = request.query_params.get('month', None)
             dot = request.query_params.get('dot', None)
-            report_type = request.query_params.get(
-                'type', 'revenue_collection')
             export_format = request.query_params.get('format', 'excel')
 
-            # Initialize data processor
-            data_processor = DataProcessor()
+            # If report_type is not provided in the URL path, get it from query parameters
+            if report_type is None:
+                report_type = request.query_params.get(
+                    'type', 'revenue_collection')
 
-            # Generate report data based on type
+            # Import the export views here to avoid circular imports
+            from .export_views import RevenueCollectionExportView, CorporateParkExportView, ReceivablesExportView
+
+            # For specific report types, delegate to the specialized export views
             if report_type == 'revenue_collection':
-                report_data = self._generate_revenue_collection_report(
-                    data_processor, year, month, dot)
-                filename_prefix = 'revenue_collection'
+                return RevenueCollectionExportView().get(request)
             elif report_type == 'corporate_park':
-                report_data = self._generate_corporate_park_report(
-                    data_processor, year, month, dot)
-                filename_prefix = 'corporate_park'
+                return CorporateParkExportView().get(request)
             elif report_type == 'receivables':
-                report_data = self._generate_receivables_report(
-                    data_processor, year, month, dot)
-                filename_prefix = 'receivables'
+                return ReceivablesExportView().get(request)
             else:
                 return Response(
                     {'error': f'Invalid report type: {report_type}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Export data in the requested format
-            if export_format == 'excel':
-                return self._export_excel(report_data, filename_prefix)
-            elif export_format == 'csv':
-                return self._export_csv(report_data, filename_prefix)
-            elif export_format == 'pdf':
-                return self._export_pdf(report_data, filename_prefix)
-            else:
-                return Response(
-                    {'error': f'Invalid export format: {export_format}'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -4313,284 +4297,6 @@ class ComprehensiveReportExportView(APIView):
             return Response({
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    def _export_excel(self, data, filename_prefix):
-        # Create an in-memory output file
-        output = io.BytesIO()
-
-        # Create workbook and add a worksheet
-        workbook = xlsxwriter.Workbook(output)
-        worksheet = workbook.add_worksheet('Report')
-
-        # Add headers
-        bold = workbook.add_format({'bold': True})
-        row = 0
-        col = 0
-
-        # Add KPIs section
-        worksheet.write(row, col, 'KPIs', bold)
-        row += 1
-
-        for key, value in data['kpis'].items():
-            worksheet.write(row, col, key)
-            worksheet.write(row, col + 1, value)
-            row += 1
-
-        row += 1
-
-        # Add breakdowns section if available
-        if 'breakdowns' in data and data['breakdowns']:
-            worksheet.write(row, col, 'Breakdowns', bold)
-            row += 1
-
-            for category, breakdown_data in data['breakdowns'].items():
-                worksheet.write(row, col, category, bold)
-                row += 1
-
-                if isinstance(breakdown_data, list):
-                    # Handle list of dictionaries
-                    if breakdown_data and isinstance(breakdown_data[0], dict):
-                        # Write headers
-                        headers = breakdown_data[0].keys()
-                        for i, header in enumerate(headers):
-                            worksheet.write(row, col + i, header, bold)
-                        row += 1
-
-                        # Write data
-                        for item in breakdown_data:
-                            for i, value in enumerate(item.values()):
-                                worksheet.write(row, col + i, value)
-                            row += 1
-                    else:
-                        # Handle simple list
-                        for item in breakdown_data:
-                            worksheet.write(row, col, item)
-                            row += 1
-                elif isinstance(breakdown_data, dict):
-                    # Handle dictionary
-                    for key, value in breakdown_data.items():
-                        worksheet.write(row, col, key)
-                        worksheet.write(row, col + 1, value)
-                        row += 1
-
-                row += 1
-
-        # Add anomalies section if available
-        if 'anomalies' in data and data['anomalies']:
-            worksheet.write(row, col, 'Anomalies', bold)
-            row += 1
-
-            # Write headers
-            headers = data['anomalies'][0].keys()
-            for i, header in enumerate(headers):
-                worksheet.write(row, col + i, header, bold)
-            row += 1
-
-            # Write data
-            for anomaly in data['anomalies']:
-                for i, value in enumerate(anomaly.values()):
-                    worksheet.write(row, col + i, value)
-                row += 1
-
-        # Close the workbook
-        workbook.close()
-
-        # Seek to the beginning of the stream
-        output.seek(0)
-
-        # Create the HttpResponse with appropriate headers
-        filename = f"{filename_prefix}_report_{datetime.now().strftime('%Y%m%d')}.xlsx"
-        response = HttpResponse(
-            output.read(),
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-
-        return response
-
-    def _export_csv(self, data, filename_prefix):
-        # Create an in-memory output file
-        output = io.StringIO()
-        writer = csv.writer(output)
-
-        # Write KPIs section
-        writer.writerow(['KPIs'])
-        for key, value in data['kpis'].items():
-            writer.writerow([key, value])
-
-        writer.writerow([])
-
-        # Write breakdowns section if available
-        if 'breakdowns' in data and data['breakdowns']:
-            writer.writerow(['Breakdowns'])
-
-            for category, breakdown_data in data['breakdowns'].items():
-                writer.writerow([category])
-
-                if isinstance(breakdown_data, list):
-                    # Handle list of dictionaries
-                    if breakdown_data and isinstance(breakdown_data[0], dict):
-                        # Write headers
-                        writer.writerow(breakdown_data[0].keys())
-
-                        # Write data
-                        for item in breakdown_data:
-                            writer.writerow(item.values())
-                    else:
-                        # Handle simple list
-                        for item in breakdown_data:
-                            writer.writerow([item])
-                elif isinstance(breakdown_data, dict):
-                    # Handle dictionary
-                    for key, value in breakdown_data.items():
-                        writer.writerow([key, value])
-
-                writer.writerow([])
-
-        # Write anomalies section if available
-        if 'anomalies' in data and data['anomalies']:
-            writer.writerow(['Anomalies'])
-
-            # Write headers
-            if data['anomalies']:
-                writer.writerow(data['anomalies'][0].keys())
-
-                # Write data
-                for anomaly in data['anomalies']:
-                    writer.writerow(anomaly.values())
-
-        # Create the HttpResponse with appropriate headers
-        filename = f"{filename_prefix}_report_{datetime.now().strftime('%Y%m%d')}.csv"
-        response = HttpResponse(output.getvalue(), content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-
-        return response
-
-    def _export_pdf(self, data, filename_prefix):
-        # Create an in-memory output file
-        output = io.BytesIO()
-
-        # Create the PDF object
-        p = canvas.Canvas(output, pagesize=letter)
-        width, height = letter
-
-        # Set up initial position
-        y = height - 50
-        margin = 50
-        line_height = 20
-
-        # Add title
-        p.setFont("Helvetica-Bold", 16)
-        p.drawString(
-            margin, y, f"Comprehensive Report: {filename_prefix.replace('_', ' ').title()}")
-        y -= line_height * 2
-
-        # Add KPIs section
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(margin, y, "KPIs")
-        y -= line_height
-
-        p.setFont("Helvetica", 12)
-        for key, value in data['kpis'].items():
-            # Format the value based on its type
-            if isinstance(value, (int, float)):
-                if key.endswith('rate'):
-                    formatted_value = f"{value * 100:.2f}%"
-                else:
-                    formatted_value = f"{value:,.2f}"
-            else:
-                formatted_value = str(value)
-
-            p.drawString(
-                margin, y, f"{key.replace('_', ' ').title()}: {formatted_value}")
-            y -= line_height
-
-            # Check if we need a new page
-            if y < margin:
-                p.showPage()
-                y = height - margin
-
-        y -= line_height
-
-        # Add breakdowns section if available
-        if 'breakdowns' in data and data['breakdowns']:
-            p.setFont("Helvetica-Bold", 14)
-            p.drawString(margin, y, "Breakdowns")
-            y -= line_height
-
-            for category, breakdown_data in data['breakdowns'].items():
-                p.setFont("Helvetica-Bold", 12)
-                p.drawString(margin, y, category.replace('_', ' ').title())
-                y -= line_height
-
-                p.setFont("Helvetica", 10)
-
-                # Simple representation for PDF - just key-value pairs
-                if isinstance(breakdown_data, dict):
-                    for key, value in breakdown_data.items():
-                        p.drawString(margin + 10, y, f"{key}: {value}")
-                        y -= line_height
-
-                        # Check if we need a new page
-                        if y < margin:
-                            p.showPage()
-                            y = height - margin
-                elif isinstance(breakdown_data, list):
-                    # Just indicate number of items for lists
-                    p.drawString(margin + 10, y,
-                                 f"{len(breakdown_data)} items")
-                    y -= line_height
-
-                y -= line_height
-
-                # Check if we need a new page
-                if y < margin:
-                    p.showPage()
-                    y = height - margin
-
-        # Add anomalies section if available
-        if 'anomalies' in data and data['anomalies']:
-            p.setFont("Helvetica-Bold", 14)
-            p.drawString(margin, y, "Anomalies")
-            y -= line_height
-
-            p.setFont("Helvetica", 10)
-            for anomaly in data['anomalies']:
-                p.drawString(margin + 10, y,
-                             anomaly.get('description', 'Unknown anomaly'))
-                y -= line_height
-
-                # Check if we need a new page
-                if y < margin:
-                    p.showPage()
-                    y = height - margin
-
-        # Save the PDF
-        p.showPage()
-        p.save()
-
-        # Get the value from the BytesIO buffer
-        pdf_value = output.getvalue()
-        output.close()
-
-        # Create the HttpResponse with PDF headers
-        filename = f"{filename_prefix}_report_{datetime.now().strftime('%Y%m%d')}.pdf"
-        response = HttpResponse(pdf_value, content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-
-        return response
-
-    def _generate_revenue_collection_report(self, data_processor, year, month=None, dot=None):
-        # Reuse the method from ComprehensiveReportView
-        return ComprehensiveReportView()._generate_revenue_collection_report(data_processor, year, month, dot)
-
-    def _generate_corporate_park_report(self, data_processor, year, month=None, dot=None):
-        # Reuse the method from ComprehensiveReportView
-        return ComprehensiveReportView()._generate_corporate_park_report(data_processor, year, month, dot)
-
-    def _generate_receivables_report(self, data_processor, year, month=None, dot=None):
-        # Reuse the method from ComprehensiveReportView
-        return ComprehensiveReportView()._generate_receivables_report(data_processor, year, month, dot)
 
 
 class DashboardOverviewView(APIView):
@@ -7071,24 +6777,22 @@ class DOTSView(APIView):
         Get a list of all available DOTs across all models
         """
         try:
-            # Get unique DOTs from various models
-            parc_dots = ParcCorporate.objects.values_list(
-                'dot', flat=True).distinct()
-            creances_dots = CreancesNGBSS.objects.values_list(
-                'dot', flat=True).distinct()
-            ca_non_periodique_dots = CANonPeriodique.objects.values_list(
-                'dot', flat=True).distinct()
+            # Fetch all active DOTs from the DOT model
+            dots = DOT.objects.filter(is_active=True)
 
-            # Combine all DOTs and remove duplicates
-            all_dots = list(
-                set(list(parc_dots) + list(creances_dots) + list(ca_non_periodique_dots)))
-
-            # Remove None values
-            all_dots = [dot for dot in all_dots if dot]
+            # Convert to serializable format
+            dot_list = [
+                {
+                    'id': dot.id,
+                    'code': dot.code,
+                    'name': dot.name
+                }
+                for dot in dots
+            ]
 
             return Response({
                 'status': 'success',
-                'dots': all_dots
+                'dots': dot_list
             })
         except Exception as e:
             logger.error(f"Error retrieving DOTs: {str(e)}")

@@ -27,6 +27,10 @@ import {
   PieChart,
   Pie,
   Cell,
+  LineChart,
+  Line,
+  ReferenceLine,
+  Label,
 } from "recharts";
 import { useTheme } from "@mui/material/styles";
 import kpiService from "../../services/kpiService";
@@ -160,6 +164,13 @@ const RevenueKPI = () => {
     return `${value.toFixed(2)}%`;
   };
 
+  // Get color based on achievement rate
+  const getAchievementColor = (rate) => {
+    if (rate >= 100) return theme.palette.success.main;
+    if (rate >= 80) return theme.palette.warning.main;
+    return theme.palette.error.main;
+  };
+
   // Custom colors for charts
   const COLORS = [
     theme.palette.primary.main,
@@ -184,6 +195,8 @@ const RevenueKPI = () => {
           scrollButtons="auto"
         >
           <Tab label="Overview" />
+          <Tab label="Revenue Breakdown" />
+          <Tab label="Achievement Rate" />
           <Tab label="Monthly Trends" />
           <Tab label="DOT Analysis" />
         </Tabs>
@@ -391,7 +404,728 @@ const RevenueKPI = () => {
             </Box>
           </TabPanel>
 
+          {/* Revenue Breakdown Waterfall Chart */}
           <TabPanel value={tabValue} index={1}>
+            <Box sx={{ p: 2 }}>
+              <Typography variant="h6" gutterBottom>
+                Revenue Breakdown
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Breakdown of total revenue into regular revenue, previous
+                exercise revenue, and advance billing
+              </Typography>
+
+              {revenueData && revenueData.current_year ? (
+                <Box sx={{ height: 500, width: "100%" }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={[
+                        {
+                          name: "Total Revenue",
+                          value: revenueData.current_year.total_revenue || 0,
+                          isTotal: true,
+                        },
+                        {
+                          name: "Regular Revenue",
+                          value: revenueData.current_year.regular_revenue || 0,
+                          fill: theme.palette.primary.main,
+                        },
+                        {
+                          name: "Previous Exercise",
+                          value:
+                            revenueData.current_year
+                              .previous_exercise_revenue || 0,
+                          fill: theme.palette.warning.main,
+                        },
+                        {
+                          name: "Advance Billing",
+                          value:
+                            revenueData.current_year.advance_billing_revenue ||
+                            0,
+                          fill: theme.palette.info.main,
+                        },
+                      ]}
+                      margin={{ top: 20, right: 30, left: 30, bottom: 70 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fontSize: 12 }}
+                        angle={-45}
+                        textAnchor="end"
+                        height={70}
+                      />
+                      <YAxis
+                        tickFormatter={(value) =>
+                          new Intl.NumberFormat("fr-DZ", {
+                            notation: "compact",
+                            compactDisplay: "short",
+                          }).format(value)
+                        }
+                      />
+                      <Tooltip
+                        formatter={(value) => [formatCurrency(value), "Amount"]}
+                        labelFormatter={(label) => `${label}`}
+                      />
+                      <Legend />
+                      <Bar
+                        dataKey="value"
+                        fill={(entry) =>
+                          entry.fill || theme.palette.success.main
+                        }
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={100}
+                      >
+                        {[
+                          {
+                            name: "Total Revenue",
+                            value: revenueData.current_year.total_revenue || 0,
+                            isTotal: true,
+                          },
+                          {
+                            name: "Regular Revenue",
+                            value:
+                              revenueData.current_year.regular_revenue || 0,
+                            fill: theme.palette.primary.main,
+                          },
+                          {
+                            name: "Previous Exercise",
+                            value:
+                              revenueData.current_year
+                                .previous_exercise_revenue || 0,
+                            fill: theme.palette.warning.main,
+                          },
+                          {
+                            name: "Advance Billing",
+                            value:
+                              revenueData.current_year
+                                .advance_billing_revenue || 0,
+                            fill: theme.palette.info.main,
+                          },
+                        ].map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={
+                              entry.fill ||
+                              (entry.isTotal
+                                ? theme.palette.success.main
+                                : theme.palette.primary.main)
+                            }
+                          />
+                        ))}
+                      </Bar>
+                      <ReferenceLine y={0} stroke="#000" strokeWidth={1} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
+              ) : (
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    height: 300,
+                  }}
+                >
+                  <Typography variant="body1" color="text.secondary">
+                    No revenue breakdown data available for the selected filters
+                  </Typography>
+                </Box>
+              )}
+
+              {/* Revenue Components Explanation */}
+              <Grid container spacing={3} sx={{ mt: 2 }}>
+                <Grid item xs={12} md={4}>
+                  <Paper
+                    elevation={1}
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.background.paper,
+                      borderLeft: `4px solid ${theme.palette.primary.main}`,
+                    }}
+                  >
+                    <Typography variant="h6" gutterBottom>
+                      Regular Revenue
+                    </Typography>
+                    <Typography variant="h5" color="primary">
+                      {formatCurrency(
+                        revenueData?.current_year?.regular_revenue || 0
+                      )}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mt: 1 }}
+                    >
+                      Revenue from current exercise, excluding previous exercise
+                      and advance billing
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <Paper
+                    elevation={1}
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.background.paper,
+                      borderLeft: `4px solid ${theme.palette.warning.main}`,
+                    }}
+                  >
+                    <Typography variant="h6" gutterBottom>
+                      Previous Exercise
+                    </Typography>
+                    <Typography variant="h5" color="warning.main">
+                      {formatCurrency(
+                        revenueData?.current_year?.previous_exercise_revenue ||
+                          0
+                      )}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mt: 1 }}
+                    >
+                      Revenue from previous exercise (account codes ending with
+                      'A' or gl_date from previous years)
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <Paper
+                    elevation={1}
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      backgroundColor: theme.palette.background.paper,
+                      borderLeft: `4px solid ${theme.palette.info.main}`,
+                    }}
+                  >
+                    <Typography variant="h6" gutterBottom>
+                      Advance Billing
+                    </Typography>
+                    <Typography variant="h5" color="info.main">
+                      {formatCurrency(
+                        revenueData?.current_year?.advance_billing_revenue || 0
+                      )}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mt: 1 }}
+                    >
+                      Revenue from advance billing (invoice date not in current
+                      exercise)
+                    </Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+            </Box>
+          </TabPanel>
+
+          {/* Achievement Rate Visualization */}
+          <TabPanel value={tabValue} index={2}>
+            <Box sx={{ p: 2 }}>
+              <Typography variant="h6" gutterBottom>
+                Achievement Rate Against Objectives
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Visualization of revenue achievement rate against objectives and
+                comparison with previous year
+              </Typography>
+
+              {revenueData &&
+              revenueData.objectives &&
+              revenueData.performance_rates ? (
+                <Grid container spacing={4}>
+                  {/* Gauge Chart for Achievement Rate */}
+                  <Grid item xs={12} md={6}>
+                    <Paper
+                      elevation={1}
+                      sx={{
+                        p: 3,
+                        borderRadius: 2,
+                        backgroundColor: theme.palette.background.paper,
+                        height: "100%",
+                      }}
+                    >
+                      <Typography variant="h6" align="center" gutterBottom>
+                        Current Achievement Rate
+                      </Typography>
+
+                      <Box
+                        sx={{
+                          position: "relative",
+                          height: 300,
+                          width: "100%",
+                        }}
+                      >
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={[
+                                {
+                                  name: "Achieved",
+                                  value:
+                                    revenueData.performance_rates
+                                      .achievement_rate || 0,
+                                  fill: getAchievementColor(
+                                    revenueData.performance_rates
+                                      .achievement_rate
+                                  ),
+                                },
+                                {
+                                  name: "Remaining",
+                                  value: Math.max(
+                                    0,
+                                    100 -
+                                      (revenueData.performance_rates
+                                        .achievement_rate || 0)
+                                  ),
+                                  fill: theme.palette.grey[300],
+                                },
+                              ]}
+                              cx="50%"
+                              cy="50%"
+                              startAngle={180}
+                              endAngle={0}
+                              innerRadius={80}
+                              outerRadius={120}
+                              paddingAngle={0}
+                              dataKey="value"
+                            >
+                              {[
+                                {
+                                  name: "Achieved",
+                                  value:
+                                    revenueData.performance_rates
+                                      .achievement_rate || 0,
+                                  fill: getAchievementColor(
+                                    revenueData.performance_rates
+                                      .achievement_rate
+                                  ),
+                                },
+                                {
+                                  name: "Remaining",
+                                  value: Math.max(
+                                    0,
+                                    100 -
+                                      (revenueData.performance_rates
+                                        .achievement_rate || 0)
+                                  ),
+                                  fill: theme.palette.grey[300],
+                                },
+                              ].map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.fill} />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              formatter={(value) => [
+                                `${value.toFixed(2)}%`,
+                                "Achievement",
+                              ]}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+
+                        {/* Center Text */}
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            top: "50%",
+                            left: "50%",
+                            transform: "translate(-50%, -50%)",
+                            textAlign: "center",
+                          }}
+                        >
+                          <Typography
+                            variant="h4"
+                            color={getAchievementColor(
+                              revenueData.performance_rates.achievement_rate
+                            )}
+                          >
+                            {formatPercentage(
+                              revenueData.performance_rates.achievement_rate ||
+                                0
+                            )}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Achievement Rate
+                          </Typography>
+                        </Box>
+                      </Box>
+
+                      {/* Achievement Details */}
+                      <Box sx={{ mt: 2 }}>
+                        <Grid container spacing={2}>
+                          <Grid item xs={6}>
+                            <Typography variant="body2" color="text.secondary">
+                              Current Revenue:
+                            </Typography>
+                            <Typography variant="body1" fontWeight="bold">
+                              {formatCurrency(
+                                revenueData.current_year?.total_revenue || 0
+                              )}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Typography variant="body2" color="text.secondary">
+                              Objective:
+                            </Typography>
+                            <Typography variant="body1" fontWeight="bold">
+                              {formatCurrency(
+                                revenueData.objectives?.total || 0
+                              )}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={12}>
+                            <Typography variant="body2" color="text.secondary">
+                              Gap to Objective:
+                            </Typography>
+                            <Typography
+                              variant="body1"
+                              fontWeight="bold"
+                              color={
+                                revenueData.performance_rates.achievement_gap >=
+                                0
+                                  ? "success.main"
+                                  : "error.main"
+                              }
+                            >
+                              {formatCurrency(
+                                revenueData.performance_rates.achievement_gap ||
+                                  0
+                              )}
+                              {revenueData.performance_rates.achievement_gap >=
+                              0
+                                ? " (Exceeded)"
+                                : ""}
+                            </Typography>
+                          </Grid>
+                        </Grid>
+                      </Box>
+                    </Paper>
+                  </Grid>
+
+                  {/* Comparison with Previous Year */}
+                  <Grid item xs={12} md={6}>
+                    <Paper
+                      elevation={1}
+                      sx={{
+                        p: 3,
+                        borderRadius: 2,
+                        backgroundColor: theme.palette.background.paper,
+                        height: "100%",
+                      }}
+                    >
+                      <Typography variant="h6" align="center" gutterBottom>
+                        Year-over-Year Comparison
+                      </Typography>
+
+                      <Box sx={{ height: 300, width: "100%" }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={[
+                              {
+                                name: "Current Year",
+                                achievement:
+                                  revenueData.performance_rates
+                                    .achievement_rate || 0,
+                                revenue:
+                                  revenueData.current_year?.total_revenue || 0,
+                              },
+                              {
+                                name: "Previous Year",
+                                achievement:
+                                  revenueData.previous_year_achievement_rate ||
+                                  0,
+                                revenue: revenueData.previous_year_revenue || 0,
+                              },
+                            ]}
+                            margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="name" />
+                            <YAxis
+                              yAxisId="left"
+                              orientation="left"
+                              label={{
+                                value: "Achievement %",
+                                angle: -90,
+                                position: "insideLeft",
+                              }}
+                            />
+                            <YAxis
+                              yAxisId="right"
+                              orientation="right"
+                              tickFormatter={(value) => formatCurrency(value)}
+                            />
+                            <Tooltip
+                              formatter={(value, name) => {
+                                if (name === "achievement")
+                                  return [
+                                    `${value.toFixed(2)}%`,
+                                    "Achievement Rate",
+                                  ];
+                                return [formatCurrency(value), "Revenue"];
+                              }}
+                            />
+                            <Legend />
+                            <Bar
+                              yAxisId="left"
+                              dataKey="achievement"
+                              name="Achievement Rate %"
+                              fill={theme.palette.primary.main}
+                            />
+                            <Bar
+                              yAxisId="right"
+                              dataKey="revenue"
+                              name="Revenue"
+                              fill={theme.palette.secondary.main}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </Box>
+
+                      {/* Evolution Details */}
+                      <Box sx={{ mt: 2 }}>
+                        <Grid container spacing={2}>
+                          <Grid item xs={12}>
+                            <Typography variant="body2" color="text.secondary">
+                              Revenue Evolution:
+                            </Typography>
+                            <Typography
+                              variant="body1"
+                              fontWeight="bold"
+                              color={
+                                revenueData.performance_rates.evolution_rate >=
+                                0
+                                  ? "success.main"
+                                  : "error.main"
+                              }
+                            >
+                              {revenueData.performance_rates.evolution_rate >= 0
+                                ? "+"
+                                : ""}
+                              {formatPercentage(
+                                revenueData.performance_rates.evolution_rate ||
+                                  0
+                              )}{" "}
+                              (
+                              {formatCurrency(
+                                revenueData.performance_rates
+                                  .evolution_amount || 0
+                              )}
+                              )
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={12}>
+                            <Typography variant="body2" color="text.secondary">
+                              Achievement Rate Evolution:
+                            </Typography>
+                            <Typography
+                              variant="body1"
+                              fontWeight="bold"
+                              color={
+                                revenueData.performance_rates.achievement_rate -
+                                  (revenueData.previous_year_achievement_rate ||
+                                    0) >=
+                                0
+                                  ? "success.main"
+                                  : "error.main"
+                              }
+                            >
+                              {revenueData.performance_rates.achievement_rate -
+                                (revenueData.previous_year_achievement_rate ||
+                                  0) >=
+                              0
+                                ? "+"
+                                : ""}
+                              {(
+                                (revenueData.performance_rates
+                                  .achievement_rate || 0) -
+                                (revenueData.previous_year_achievement_rate ||
+                                  0)
+                              ).toFixed(2)}
+                              %
+                            </Typography>
+                          </Grid>
+                        </Grid>
+                      </Box>
+                    </Paper>
+                  </Grid>
+
+                  {/* Achievement by DOT */}
+                  <Grid item xs={12}>
+                    <Paper
+                      elevation={1}
+                      sx={{
+                        p: 3,
+                        borderRadius: 2,
+                        backgroundColor: theme.palette.background.paper,
+                      }}
+                    >
+                      <Typography variant="h6" gutterBottom>
+                        Achievement Rate by DOT
+                      </Typography>
+
+                      {revenueData.objectives?.by_organization &&
+                      revenueData.objectives.by_organization.length > 0 ? (
+                        <Box sx={{ height: 400, width: "100%" }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={revenueData.objectives.by_organization.map(
+                                (org) => {
+                                  const dotRevenue =
+                                    revenueData.revenue_by_dot?.find(
+                                      (d) => d.organization === org.dot
+                                    )?.total || 0;
+                                  const achievementRate =
+                                    org.total > 0
+                                      ? (dotRevenue / org.total) * 100
+                                      : 0;
+
+                                  return {
+                                    name: org.dot,
+                                    objective: org.total,
+                                    revenue: dotRevenue,
+                                    achievement: achievementRate,
+                                    color: getAchievementColor(achievementRate),
+                                  };
+                                }
+                              )}
+                              margin={{
+                                top: 20,
+                                right: 30,
+                                left: 20,
+                                bottom: 70,
+                              }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis
+                                dataKey="name"
+                                tick={{ fontSize: 12 }}
+                                angle={-45}
+                                textAnchor="end"
+                                height={70}
+                              />
+                              <YAxis
+                                yAxisId="left"
+                                tickFormatter={(value) => `${value}%`}
+                                domain={[0, 120]}
+                              />
+                              <YAxis
+                                yAxisId="right"
+                                orientation="right"
+                                tickFormatter={(value) => formatCurrency(value)}
+                              />
+                              <Tooltip
+                                formatter={(value, name) => {
+                                  if (name === "achievement")
+                                    return [
+                                      `${value.toFixed(2)}%`,
+                                      "Achievement Rate",
+                                    ];
+                                  return [
+                                    formatCurrency(value),
+                                    name === "objective"
+                                      ? "Objective"
+                                      : "Revenue",
+                                  ];
+                                }}
+                              />
+                              <Legend />
+                              <Bar
+                                yAxisId="right"
+                                dataKey="objective"
+                                name="Objective"
+                                fill={theme.palette.grey[500]}
+                              />
+                              <Bar
+                                yAxisId="right"
+                                dataKey="revenue"
+                                name="Revenue"
+                                fill={theme.palette.primary.main}
+                              />
+                              <Bar
+                                yAxisId="left"
+                                dataKey="achievement"
+                                name="Achievement Rate"
+                                fill={theme.palette.success.main}
+                              >
+                                {revenueData.objectives.by_organization.map(
+                                  (entry, index) => {
+                                    const dotRevenue =
+                                      revenueData.revenue_by_dot?.find(
+                                        (d) => d.organization === entry.dot
+                                      )?.total || 0;
+                                    const achievementRate =
+                                      entry.total > 0
+                                        ? (dotRevenue / entry.total) * 100
+                                        : 0;
+
+                                    return (
+                                      <Cell
+                                        key={`cell-${index}`}
+                                        fill={getAchievementColor(
+                                          achievementRate
+                                        )}
+                                      />
+                                    );
+                                  }
+                                )}
+                              </Bar>
+                              <ReferenceLine
+                                yAxisId="left"
+                                y={100}
+                                stroke={theme.palette.success.main}
+                                strokeDasharray="3 3"
+                              >
+                                <Label
+                                  value="100% Target"
+                                  position="insideBottomRight"
+                                />
+                              </ReferenceLine>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </Box>
+                      ) : (
+                        <Box
+                          sx={{
+                            display: "flex",
+                            justifyContent: "center",
+                            alignItems: "center",
+                            height: 200,
+                          }}
+                        >
+                          <Typography variant="body1" color="text.secondary">
+                            No DOT achievement data available for the selected
+                            filters
+                          </Typography>
+                        </Box>
+                      )}
+                    </Paper>
+                  </Grid>
+                </Grid>
+              ) : (
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    height: 300,
+                  }}
+                >
+                  <Typography variant="body1" color="text.secondary">
+                    No achievement data available for the selected filters
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </TabPanel>
+
+          <TabPanel value={tabValue} index={3}>
             <Box sx={{ p: 2, height: 400 }}>
               <Typography variant="h6" gutterBottom>
                 Monthly Revenue Trends
@@ -446,7 +1180,7 @@ const RevenueKPI = () => {
             </Box>
           </TabPanel>
 
-          <TabPanel value={tabValue} index={2}>
+          <TabPanel value={tabValue} index={4}>
             <Box sx={{ p: 2, height: 400 }}>
               <Typography variant="h6" gutterBottom>
                 Revenue by DOT

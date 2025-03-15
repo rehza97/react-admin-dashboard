@@ -1357,12 +1357,19 @@ class DataProcessor:
             merged_df['collection_rate'] = 0.0
 
             # Ensure revenue_amount and collection_amount are numeric
-            if 'revenue_amount_journal' in merged_df.columns and 'collection_amount_etat' in merged_df.columns:
+            if 'revenue_amount_journal' in merged_df.columns:
                 # Convert to numeric, coercing errors to NaN
                 merged_df['revenue_amount_journal'] = pd.to_numeric(
                     merged_df['revenue_amount_journal'], errors='coerce')
-                merged_df['collection_amount_etat'] = pd.to_numeric(
-                    merged_df['collection_amount_etat'], errors='coerce')
+
+                # Check if collection_amount_etat exists, if not create it with zeros
+                if 'collection_amount_etat' not in merged_df.columns:
+                    logger.warning(
+                        "collection_amount_etat column not found, creating with zeros")
+                    merged_df['collection_amount_etat'] = 0.0
+                else:
+                    merged_df['collection_amount_etat'] = pd.to_numeric(
+                        merged_df['collection_amount_etat'], errors='coerce')
 
                 # Calculate collection rate where revenue amount is not zero
                 mask = (merged_df['revenue_amount_journal'] >
@@ -1379,8 +1386,13 @@ class DataProcessor:
                     if org and not pd.isna(org):
                         # Calculate total revenue and collection for the organization
                         total_revenue = group['revenue_amount_journal'].sum()
-                        total_collection = group['collection_amount_etat'].sum(
-                        )
+
+                        # Ensure collection_amount_etat exists
+                        if 'collection_amount_etat' in group.columns:
+                            total_collection = group['collection_amount_etat'].sum(
+                            )
+                        else:
+                            total_collection = 0.0
 
                         # Calculate organization collection rate
                         org_collection_rate = total_collection / \
@@ -3157,11 +3169,13 @@ class DataProcessor:
                 # Sort by collection (descending)
                 top_collection = org_metrics.sort_values(
                     'collection_amount_etat', ascending=False).head(5)
+                # Calculate sum once and check if it's zero to avoid division by zero
+                collection_sum = org_metrics['collection_amount_etat'].sum()
                 dashboard_data['rankings']['top_collection'] = [
                     {
                         'organization': row['organization_journal'],
                         'collection': float(row['collection_amount_etat']),
-                        'percentage': float(row['collection_amount_etat'] / org_metrics['collection_amount_etat'].sum() * 100)
+                        'percentage': float(row['collection_amount_etat'] / collection_sum * 100) if collection_sum > 0 else 0.0
                     }
                     for _, row in top_collection.iterrows()
                 ]
@@ -3173,7 +3187,7 @@ class DataProcessor:
                     {
                         'organization': row['organization_journal'],
                         'collection': float(row['collection_amount_etat']),
-                        'percentage': float(row['collection_amount_etat'] / org_metrics['collection_amount_etat'].sum() * 100)
+                        'percentage': float(row['collection_amount_etat'] / collection_sum * 100) if collection_sum > 0 else 0.0
                     }
                     for _, row in bottom_collection.iterrows()
                 ]

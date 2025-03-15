@@ -8,6 +8,7 @@ export const getCurrentMonth = () => new Date().getMonth() + 1;
 const kpiService = {
   // Dashboard summary
   getDashboardSummary: async (filters = {}) => {
+    const controller = new AbortController();
     try {
       // Build query parameters
       const queryParams = new URLSearchParams();
@@ -29,14 +30,19 @@ const kpiService = {
       );
 
       const response = await api.get(
-        `/data/kpi/dashboard-summary/?${queryParams.toString()}`
+        `/data/kpi/dashboard-summary/?${queryParams.toString()}`,
+        { signal: controller.signal }
       );
 
       console.log("Dashboard summary response:", response.data);
       return response.data;
     } catch (error) {
+      // Don't throw error if request was cancelled
+      if (error.name === "AbortError") {
+        console.log("Request cancelled");
+        return null;
+      }
       console.error("Error fetching dashboard summary:", error);
-      // For dashboard summary, we'll throw the error to be handled by the component
       throw error;
     }
   },
@@ -232,15 +238,66 @@ const kpiService = {
       if (filters.month && filters.month !== "") {
         queryParams.append("month", filters.month);
       }
+
+      // Only add dot parameter if it has a value
       if (filters.dot && filters.dot !== "") {
         queryParams.append("dot", filters.dot);
       }
 
-      const response = await api.get(
-        `/data/kpi/ngbss-collection/?${queryParams.toString()}`
+      // Add additional parameters if provided
+      if (filters.compare_with_previous) {
+        queryParams.append(
+          "compare_with_previous",
+          filters.compare_with_previous
+        );
+      }
+      if (filters.compare_with_objectives) {
+        queryParams.append(
+          "compare_with_objectives",
+          filters.compare_with_objectives
+        );
+      }
+      if (filters.include_aging_data) {
+        queryParams.append("include_aging_data", filters.include_aging_data);
+      }
+      if (filters.include_payment_behavior) {
+        queryParams.append(
+          "include_payment_behavior",
+          filters.include_payment_behavior
+        );
+      }
+      if (filters.include_collection_rate_details) {
+        queryParams.append(
+          "include_collection_rate_details",
+          filters.include_collection_rate_details
+        );
+      }
+      if (filters.include_monthly_comparison) {
+        queryParams.append(
+          "include_monthly_comparison",
+          filters.include_monthly_comparison
+        );
+      }
+
+      // Access the signal for cancellation if provided
+      const options = {};
+      if (filters.signal) {
+        options.signal = filters.signal;
+      }
+
+      console.log(
+        `Fetching NGBSS collection data with URL: /data/kpi/ngbss-collection/?${queryParams.toString()}`
       );
-      return response.data;
+
+      const response = await api.get(
+        `/data/kpi/ngbss-collection/?${queryParams.toString()}`,
+        options
+      );
+
+      console.log("NGBSS collection API response:", response);
+      return response;
     } catch (error) {
+      console.error("Error in getNGBSSCollectionKPIs:", error);
       return handleApiError(error, "ngbss collection");
     }
   },

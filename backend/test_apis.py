@@ -194,23 +194,23 @@ def test_all_apis():
     # path('validation/clean/', views.DataValidationView.as_view()),
     api_tests = [
         # Data validation endpoints
-        ("/data/validation/", "GET"),
-        ("/data/validation/", "POST", {
-            "validate_first": True,
-            "models_to_clean": ["journal_ventes", "etat_facture"],
-            "dot": None,
-            "start_date": None,
-            "end_date": None
-        }),
+        # ("/data/validation/", "GET"),
+        # ("/data/validation/", "POST", {
+        #     "validate_first": True,
+        #     "models_to_clean": ["journal_ventes", "etat_facture"],
+        #     "dot": None,
+        #     "start_date": None,
+        #     "end_date": None
+        # }),
 
-        # Data cleaning endpoint - separate from validation
-        ("/data/cleaning/", "POST", {
-            "validate_first": True,
-            "models_to_clean": ["journal_ventes", "etat_facture"],
-            "dot": None,
-            "start_date": None,
-            "end_date": None
-        }),
+        # # Data cleaning endpoint - separate from validation
+        # ("/data/cleaning/", "POST", {
+        #     "validate_first": True,
+        #     "models_to_clean": ["journal_ventes", "etat_facture"],
+        #     "dot": None,
+        #     "start_date": None,
+        #     "end_date": None
+        # }),
 
         # Validation progress tracking endpoint
         ("/data/validation-progress/", "GET", None,
@@ -219,36 +219,57 @@ def test_all_apis():
          {"task_id": "test_task_id", "type": "cleaning"}),
 
         # Dashboard & Summary APIs
-        # ("/data/kpi/dashboard-summary/", "GET", None,
-        #  {"year": YEAR, "month": MONTH, "dot": DOT}),
-        # ("/data/dashboard/overview/", "GET"),
-        # ("/data/dashboard/enhanced/", "GET"),
+        ("/data/kpi/dashboard-summary/", "GET", None,
+         {"year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/dashboard/overview/", "GET", None,
+         {"year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/dashboard/enhanced/", "GET", None,
+         {"year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/dashboard/overview/", "OPTIONS"),
+        ("/data/dashboard/enhanced/", "OPTIONS"),
 
-        # # KPI Endpoints
-        # ("/data/kpi/revenue/", "GET", None,
-        #  {"year": YEAR, "month": MONTH, "dot": DOT}),
-        # ("/data/kpi/collection/", "GET", None,
-        #  {"year": YEAR, "month": MONTH, "dot": DOT}),
-        # ("/data/kpi/receivables/", "GET", None,
-        #  {"year": YEAR, "month": MONTH, "dot": DOT}),
-        # ("/data/kpi/corporate-park/", "GET", None,
-        #  {"year": YEAR, "month": MONTH, "dot": DOT}),
-        # ("/data/kpi/ngbss-collection/", "GET", None,
-        #  {"year": YEAR, "month": MONTH, "dot": DOT}),
-        # ("/data/kpi/unfinished-invoice/", "GET", None,
-        #  {"year": YEAR, "month": MONTH, "dot": DOT}),
-        # ("/data/kpi/performance-ranking/", "GET", None,
-        #  {"year": YEAR, "month": MONTH, "limit": 5}),
+        # KPI Endpoints
+        ("/data/kpi/revenue/", "GET", None,
+         {"year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/kpi/collection/", "GET", None,
+         {"year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/kpi/receivables/", "GET", None,
+         {"year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/kpi/corporate-park/", "GET", None,
+         {"year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/kpi/ngbss-collection/", "GET", None,
+         {"year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/kpi/unfinished-invoice/", "GET", None,
+         {"year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/kpi/performance-ranking/", "GET", None,
+         {"year": YEAR, "month": MONTH, "metric": "revenue", "limit": 5}),
+        ("/data/kpi/performance-ranking/", "GET", None,
+         {"year": YEAR, "month": MONTH, "metric": "collection", "limit": 5}),
+        ("/data/kpi/performance-ranking/", "GET", None,
+         {"year": YEAR, "month": MONTH, "metric": "receivables", "limit": 5}),
+        ("/data/kpi/performance-ranking/", "GET", None,
+         {"year": YEAR, "month": MONTH, "metric": "corporate_park", "limit": 5}),
 
-        # # OPTIONS for KPI endpoints
-        # ("/data/kpi/dashboard-summary/", "OPTIONS"),
-        # ("/data/kpi/revenue/", "OPTIONS"),
-        # ("/data/kpi/collection/", "OPTIONS"),
-        # ("/data/kpi/receivables/", "OPTIONS"),
-        # ("/data/kpi/corporate-park/", "OPTIONS"),
-        # ("/data/kpi/ngbss-collection/", "OPTIONS"),
-        # ("/data/kpi/unfinished-invoice/", "OPTIONS"),
-        # ("/data/kpi/performance-ranking/", "OPTIONS"),
+        # OPTIONS for KPI endpoints
+        ("/data/kpi/dashboard-summary/", "OPTIONS"),
+        ("/data/kpi/revenue/", "OPTIONS"),
+        ("/data/kpi/collection/", "OPTIONS"),
+        ("/data/kpi/receivables/", "OPTIONS"),
+        ("/data/kpi/corporate-park/", "OPTIONS"),
+        ("/data/kpi/ngbss-collection/", "OPTIONS"),
+        ("/data/kpi/unfinished-invoice/", "OPTIONS"),
+        ("/data/kpi/performance-ranking/", "OPTIONS"),
+
+        # Report Exports
+        ("/data/reports/export/revenue_collection/", "GET", None,
+         {"format": "excel", "year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/reports/export/corporate_park/", "GET", None,
+         {"format": "excel", "year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/reports/export/receivables/", "GET", None,
+         {"format": "excel", "year": YEAR, "month": MONTH, "dot": DOT}),
+        ("/data/reports/export/revenue_collection/", "OPTIONS"),
+        ("/data/reports/export/corporate_park/", "OPTIONS"),
+        ("/data/reports/export/receivables/", "OPTIONS"),
 
         # # Reports
         # ("/data/reports/", "GET", None,
@@ -258,17 +279,6 @@ def test_all_apis():
         # ("/data/reports/", "GET", None,
         #  {"type": "receivables", "year": YEAR, "month": MONTH, "dot": DOT}),
         # ("/data/reports/", "OPTIONS"),
-
-        # # Report Exports
-        # ("/data/reports/export/revenue_collection/", "GET", None,
-        #  {"format": "excel", "year": YEAR, "month": MONTH, "dot": DOT}),
-        # ("/data/reports/export/corporate_park/", "GET", None,
-        #  {"format": "excel", "year": YEAR, "month": MONTH, "dot": DOT}),
-        # ("/data/reports/export/receivables/", "GET", None,
-        #  {"format": "excel", "year": YEAR, "month": MONTH, "dot": DOT}),
-        # ("/data/reports/export/revenue_collection/", "OPTIONS"),
-        # ("/data/reports/export/corporate_park/", "OPTIONS"),
-        # ("/data/reports/export/receivables/", "OPTIONS"),
 
         # # Utility APIs
         # ("/data/health-check/", "GET"),

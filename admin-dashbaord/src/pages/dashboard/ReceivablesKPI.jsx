@@ -65,25 +65,42 @@ const ReceivablesKPI = () => {
 
   // Fetch receivables data
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-        const params = {};
-        if (yearFilter) params.year = yearFilter;
+        // Set default year to current year if not specified
+        const params = {
+          year: yearFilter || new Date().getFullYear(),
+        };
+
         if (dotFilter) params.dot = dotFilter;
 
         const data = await kpiService.getReceivablesKPIs(params);
+
+        if (!data) {
+          throw new Error("No data received from the server");
+        }
+
         setReceivablesData(data);
       } catch (err) {
-        console.error("Error fetching receivables data:", err);
-        setError("Failed to load receivables data. Please try again later.");
+        if (err.name !== "AbortError") {
+          console.error("Error fetching receivables data:", err);
+          setError("Failed to load receivables data. Please try again later.");
+        }
       } finally {
+        if (controller.signal.aborted) return;
         setLoading(false);
       }
     };
 
     fetchData();
+
+    return () => {
+      controller.abort();
+    };
   }, [yearFilter, dotFilter]);
 
   // Handle tab change

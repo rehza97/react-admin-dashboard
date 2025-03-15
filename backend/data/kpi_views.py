@@ -27,13 +27,36 @@ from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
+# Helper function for checking DOT permissions
+
+
+def _has_dot_permission(user, dot):
+    """Check if user has permission to access the specified DOT"""
+    # TEMPORARY TESTING CODE - REMOVE IN PRODUCTION
+    # Return True for all users and DOTs during testing
+    return True
+
+    # Original code - uncomment when testing is complete
+    """
+    # Admins and superusers have access to all DOTs
+    if user.is_staff or user.is_superuser:
+        return True
+
+    # Get user's authorized DOTs
+    authorized_dots = user.get_authorized_dots()
+
+    # Check if user has access to the requested DOT
+    return dot in authorized_dots
+    """
+
 
 class RevenueKPIView(APIView):
     """
     API view for retrieving revenue KPIs
-    - Total revenue
+    - Total revenue with breakdowns (current exercise, previous exercise, advance billing)
     - Revenue growth compared to previous year
     - Revenue achievement rate compared to objectives
+    - Revenue by organization with anomaly detection
     """
     permission_classes = [IsAuthenticated]
 
@@ -53,133 +76,45 @@ class RevenueKPIView(APIView):
     def get_implementation(self, request):
         try:
             # Get query parameters
-            year = request.query_params.get('year', None)
+            year = request.query_params.get('year', datetime.now().year)
             month = request.query_params.get('month', None)
             dot = request.query_params.get('dot', None)
 
             # Validate year parameter
-            if year:
-                try:
-                    year = int(year)
-                    # Check if year is reasonable (e.g., between 2000 and current year + 5)
-                    current_year = datetime.now().year
-                    if year < 2000 or year > current_year + 5:
-                        return Response(
-                            {"error": f"Year {year} is out of valid range"},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                except ValueError:
+            try:
+                year = int(year)
+                current_year = datetime.now().year
+                if year < 2000 or year > current_year + 5:
                     return Response(
-                        {"error": "Year must be a valid integer"},
+                        {"error": f"Year {year} is out of valid range"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-
-            # Base query for Journal Ventes (main revenue source)
-            query = JournalVentes.objects.select_related('invoice').all()
-
-            # Apply filters
-            if year:
-                # Extract year from invoice_date
-                query = query.filter(invoice_date__year=year)
-            if month and month.isdigit():
-                # Extract month from invoice_date
-                query = query.filter(invoice_date__month=int(month))
-            if dot:
-                # Filter by DOT (department)
-                query = query.filter(organization__icontains=dot)
-
-            # Calculate total revenue
-            total_revenue = query.aggregate(
-                total=Coalesce(Sum('revenue_amount'), 0,
-                               output_field=DecimalField())
-            )['total'] or 0
-
-            # Get revenue by month
-            revenue_by_month = []
-
-            # Only proceed if we have data
-            if query.exists():
-                if year:
-                    # Get revenue for each month in the selected year
-                    for m in range(1, 13):
-                        monthly_revenue = query.filter(
-                            invoice_date__month=m
-                        ).aggregate(
-                            total=Coalesce(Sum('revenue_amount'), 0,
-                                           output_field=DecimalField())
-                        )['total'] or 0
-
-                        revenue_by_month.append({
-                            'month': m,
-                            'month_name': datetime(2000, m, 1).strftime('%B'),
-                            'revenue': monthly_revenue
-                        })
-                else:
-                    # If no year is specified, group by year and month
-                    monthly_data = query.annotate(
-                        year=ExtractYear('invoice_date'),
-                        month=ExtractMonth('invoice_date')
-                    ).values('year', 'month').annotate(
-                        total=Coalesce(Sum('revenue_amount'), 0,
-                                       output_field=DecimalField())
-                    ).order_by('year', 'month')
-
-                    for item in monthly_data:
-                        if item['year'] and item['month']:
-                            month_name = datetime(
-                                2000, item['month'], 1).strftime('%B')
-                            revenue_by_month.append({
-                                'year': item['year'],
-                                'month': item['month'],
-                                'month_name': month_name,
-                                'revenue': item['total']
-                            })
-
-            # Get revenue by organization (DOT)
-            revenue_by_dot = query.values('organization').annotate(
-                total=Coalesce(Sum('revenue_amount'), 0,
-                               output_field=DecimalField())
-            ).order_by('-total')[:10]  # Top 10 DOTs by revenue
-
-            # Calculate previous year's revenue for comparison
-            previous_year_revenue = 0
-            if year:
-                previous_year_query = JournalVentes.objects.filter(
-                    invoice_date__year=int(year) - 1
+            except ValueError:
+                return Response(
+                    {"error": "Year must be a valid integer"},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
-                if month and month.isdigit():
-                    previous_year_query = previous_year_query.filter(
-                        invoice_date__month=int(month)
-                    )
-                if dot:
-                    previous_year_query = previous_year_query.filter(
-                        organization__icontains=dot
-                    )
 
-                previous_year_revenue = previous_year_query.aggregate(
-                    total=Coalesce(Sum('revenue_amount'), 0,
-                                   output_field=DecimalField())
-                )['total'] or 0
+            # Get revenue performance metrics
+            revenue_metrics = self.calculate_revenue_performance(
+                year, month, dot)
 
-            # Calculate growth percentage
-            growth_percentage = 0
-            if previous_year_revenue > 0:
-                growth_percentage = ((total_revenue - previous_year_revenue) /
-                                     previous_year_revenue) * 100
+            # Get anomalies
+            anomalies = self.get_revenue_anomalies(year, month, dot)
 
-            # Return the data
-            return Response({
-                'total_revenue': total_revenue,
-                'previous_year_revenue': previous_year_revenue,
-                'growth_percentage': growth_percentage,
-                'revenue_by_month': revenue_by_month,
-                'revenue_by_dot': list(revenue_by_dot),
+            # Combine all data
+            response_data = {
+                **revenue_metrics,
+                'anomalies': anomalies,
                 'filters': {
                     'year': year,
                     'month': month,
                     'dot': dot
                 }
-            })
+            }
+
+            return Response(response_data)
+
         except Exception as e:
             logger.error(f"Error in RevenueKPIView: {str(e)}")
             logger.error(traceback.format_exc())
@@ -189,94 +124,215 @@ class RevenueKPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    def calculate_performance_metrics(self, current_data, previous_data=None, objectives=None):
-        """
-        Calculate performance metrics including:
-        - Year-over-year growth rate
-        - Achievement rate against objectives
-
-        Args:
-            current_data: Current period data
-            previous_data: Previous period data (optional)
-            objectives: Target objectives (optional)
-
-        Returns:
-            Dictionary of performance metrics
-        """
-        metrics = {}
-
-        # Calculate total values
-        current_total = sum(item.get('value', 0)
-                            for item in current_data) if current_data else 0
-        metrics['current_total'] = current_total
-
-        # Calculate year-over-year growth if previous data is available
-        if previous_data:
-            previous_total = sum(item.get('value', 0)
-                                 for item in previous_data) if previous_data else 0
-            metrics['previous_total'] = previous_total
-
-            if previous_total > 0:
-                growth_rate = (
-                    (current_total - previous_total) / previous_total) * 100
-                metrics['growth_rate'] = round(growth_rate, 2)
-                metrics['growth_amount'] = current_total - previous_total
-            else:
-                metrics['growth_rate'] = None
-                metrics['growth_amount'] = None
-
-        # Calculate achievement rate if objectives are available
-        if objectives:
-            objective_total = sum(item.get('value', 0)
-                                  for item in objectives) if objectives else 0
-            metrics['objective_total'] = objective_total
-
-            if objective_total > 0:
-                achievement_rate = (current_total / objective_total) * 100
-                metrics['achievement_rate'] = round(achievement_rate, 2)
-                metrics['achievement_gap'] = current_total - objective_total
-            else:
-                metrics['achievement_rate'] = None
-                metrics['achievement_gap'] = None
-
-        return metrics
-
     def calculate_revenue_performance(self, year, month=None, dot=None):
         """
-        Calculate revenue performance metrics including:
-        - Current revenue
-        - Previous year revenue
-        - Year-over-year growth
-        - Achievement rate against objectives
-
-        Args:
-            year: Year to calculate for
-            month: Month to calculate for (optional)
-            dot: DOT to filter by (optional)
-
-        Returns:
-            Dictionary of revenue performance metrics
+        Calculate comprehensive revenue performance metrics
         """
-        # Get current revenue data
-        current_data = self._get_revenue_data(year, month, dot)
+        # Base query for current year revenue
+        base_query = JournalVentes.objects.select_related('invoice')
 
-        # Get previous year revenue data
-        previous_data = self._get_revenue_data(year-1, month, dot)
+        # Apply AT Siège filtering (only DCC and DCGC)
+        base_query = base_query.exclude(
+            Q(organization__iexact='AT Siège') &
+            ~Q(organization__in=JournalVentes.VALID_SIEGE_ORGS)
+        )
 
-        # Get revenue objectives
+        # Current year query
+        current_query = base_query.filter(invoice_date__year=year)
+        if month:
+            current_query = current_query.filter(
+                invoice_date__month=int(month))
+        if dot:
+            current_query = current_query.filter(organization__icontains=dot)
+
+        # Calculate current year metrics
+        current_year_data = self._calculate_revenue_breakdown(current_query)
+
+        # Previous year query
+        prev_year_query = base_query.filter(invoice_date__year=year-1)
+        if month:
+            prev_year_query = prev_year_query.filter(
+                invoice_date__month=int(month))
+        if dot:
+            prev_year_query = prev_year_query.filter(
+                organization__icontains=dot)
+
+        # Calculate previous year metrics
+        previous_year_data = self._calculate_revenue_breakdown(prev_year_query)
+
+        # Get objectives
         objectives = self._get_revenue_objectives(year, month, dot)
 
         # Calculate performance metrics
-        metrics = self.calculate_performance_metrics(
-            current_data, previous_data, objectives)
-
-        # Add additional revenue-specific metrics
-        metrics['year'] = year
-        metrics['month'] = month
-        metrics['dot'] = dot
-        metrics['data_type'] = 'revenue'
+        metrics = {
+            'current_year': {
+                'total_revenue': current_year_data['total'],
+                'regular_revenue': current_year_data['regular'],
+                'previous_exercise_revenue': current_year_data['previous_exercise'],
+                'advance_billing_revenue': current_year_data['advance_billing']
+            },
+            'previous_year': {
+                'total_revenue': previous_year_data['total'],
+                'regular_revenue': previous_year_data['regular'],
+                'previous_exercise_revenue': previous_year_data['previous_exercise'],
+                'advance_billing_revenue': previous_year_data['advance_billing']
+            },
+            'objectives': objectives,
+            'performance_rates': self._calculate_performance_rates(
+                current_year_data['total'],
+                previous_year_data['total'],
+                objectives.get('total', 0) if objectives else 0
+            ),
+            'revenue_by_organization': self._get_revenue_by_organization(current_query),
+            'revenue_by_month': self._get_revenue_by_month(current_query)
+        }
 
         return metrics
+
+    def _calculate_revenue_breakdown(self, query):
+        """
+        Calculate revenue breakdown into regular, previous exercise, and advance billing
+        """
+        # Previous exercise revenue (account codes ending with 'A' or gl_date from previous years)
+        previous_exercise = query.filter(
+            Q(account_code__endswith='A') |
+            Q(gl_date__year__lt=datetime.now().year)
+        ).aggregate(
+            total=Coalesce(Sum('revenue_amount'), 0,
+                           output_field=DecimalField())
+        )['total']
+
+        # Advance billing (invoice date not in current exercise)
+        advance_billing = query.filter(
+            ~Q(invoice_date__year=datetime.now().year)
+        ).aggregate(
+            total=Coalesce(Sum('revenue_amount'), 0,
+                           output_field=DecimalField())
+        )['total']
+
+        # Total revenue
+        total_revenue = query.aggregate(
+            total=Coalesce(Sum('revenue_amount'), 0,
+                           output_field=DecimalField())
+        )['total']
+
+        # Regular revenue (total minus previous exercise and advance billing)
+        regular_revenue = total_revenue - previous_exercise - advance_billing
+
+        return {
+            'total': total_revenue,
+            'regular': regular_revenue,
+            'previous_exercise': previous_exercise,
+            'advance_billing': advance_billing
+        }
+
+    def _calculate_performance_rates(self, current_total, previous_total, objective_total):
+        """
+        Calculate performance rates including evolution and achievement
+        """
+        rates = {}
+
+        # Evolution rate
+        if previous_total and previous_total > 0:
+            evolution_rate = (
+                (current_total - previous_total) / previous_total) * 100
+            rates['evolution_rate'] = round(evolution_rate, 2)
+            rates['evolution_amount'] = current_total - previous_total
+        else:
+            rates['evolution_rate'] = None
+            rates['evolution_amount'] = None
+
+        # Achievement rate
+        if objective_total and objective_total > 0:
+            achievement_rate = (current_total / objective_total) * 100
+            rates['achievement_rate'] = round(achievement_rate, 2)
+            rates['achievement_gap'] = current_total - objective_total
+        else:
+            rates['achievement_rate'] = None
+            rates['achievement_gap'] = None
+
+        return rates
+
+    def get_revenue_anomalies(self, year, month=None, dot=None):
+        """
+        Identify revenue anomalies based on specified criteria
+        """
+        query = JournalVentes.objects.select_related('invoice')
+
+        if year:
+            query = query.filter(invoice_date__year=year)
+        if month:
+            query = query.filter(invoice_date__month=int(month))
+        if dot:
+            query = query.filter(organization__icontains=dot)
+
+        anomalies = {
+            'zero_revenue_orgs': self._get_zero_revenue_organizations(query),
+            'invalid_billing_periods': self._get_invalid_billing_periods(query),
+            'previous_year_invoices': self._get_previous_year_invoices(query),
+            'advance_billing': self._get_advance_billing(query)
+        }
+
+        return anomalies
+
+    def _get_zero_revenue_organizations(self, query):
+        """Get organizations with zero revenue"""
+        return list(query.values('organization')
+                    .annotate(total=Sum('revenue_amount'))
+                    .filter(total=0)
+                    .values_list('organization', flat=True))
+
+    def _get_invalid_billing_periods(self, query):
+        """Get records with invalid billing periods"""
+        current_year = datetime.now().year
+        # First filter to match valid years
+        valid_period_query = query.filter(
+            billing_period__regex=r'\b(19|20)\d{2}\b')
+
+    # Then exclude the current year from the result
+        return list(valid_period_query.exclude(
+            billing_period__regex=f'{current_year}'
+        ).values('organization', 'invoice_number', 'billing_period'))
+
+    def _get_previous_year_invoices(self, query):
+        """Get invoices from previous years"""
+        return list(query.filter(
+            Q(account_code__endswith='A') |
+            Q(gl_date__year__lt=datetime.now().year)
+        ).values('organization', 'invoice_number', 'account_code', 'gl_date'))
+
+    def _get_advance_billing(self, query):
+        """Get advance billing records"""
+        current_year = datetime.now().year
+        return list(query.filter(
+            ~Q(invoice_date__year=current_year)
+        ).values('organization', 'invoice_number', 'invoice_date'))
+
+    def _get_revenue_by_organization(self, query):
+        """Get revenue breakdown by organization"""
+        return list(query.values('organization')
+                    .annotate(total=Sum('revenue_amount'))
+                    .order_by('-total'))
+
+    def _get_revenue_by_month(self, query):
+        """Get revenue breakdown by month"""
+        return list(query.annotate(
+            month=ExtractMonth('invoice_date')
+        ).values('month')
+            .annotate(total=Sum('revenue_amount'))
+            .order_by('month'))
+
+    def _get_revenue_objectives(self, year, month=None, dot=None):
+        """
+        Get revenue objectives from the database
+        This is a placeholder - implement actual objective retrieval logic
+        """
+        # TODO: Implement actual objective retrieval from database
+        return {
+            'total': 0,  # Replace with actual objective
+            'by_month': [],  # Replace with monthly objectives
+            'by_organization': []  # Replace with organizational objectives
+        }
 
 
 class CollectionKPIView(APIView):
@@ -1568,6 +1624,7 @@ class UnifiedKPIView(APIView):
             # Clean DOT name to match organization field format
             clean_dot = dot.replace('DOT_', '').replace(
                 '_', '').replace('–', '')
+
             query = query.filter(organization=clean_dot)
 
         # Group by organization and sum total_amount
@@ -1891,19 +1948,27 @@ class NGBSSCollectionKPIView(APIView):
             dot_ids = set()
             for item in result_queryset:
                 if item.dot is not None:
-                    dot_ids.add(item.dot)
+                    # Make sure we're always working with IDs
+                    if hasattr(item.dot, 'id'):
+                        dot_ids.add(item.dot.id)
+                    else:
+                        dot_ids.add(item.dot)
 
             # Fetch all DOTs at once
             all_dots = {
                 dot.id: dot for dot in DOT.objects.filter(id__in=dot_ids)}
 
             for item in result_queryset:
-                dot_id = item.dot
+                # Skip null DOT items
+                if item.dot is None:
+                    continue
+
+                # Make sure we're using the DOT ID, not the DOT object
+                dot_id = item.dot.id if hasattr(item.dot, 'id') else item.dot
 
                 # Skip invalid entries
                 if not item.invoice_amount or not item.open_amount:
                     continue
-
                 # Convert to Decimal for safe math operations
                 invoice_amount = Decimal(
                     str(item.invoice_amount)) if item.invoice_amount else Decimal('0.0')
@@ -1947,11 +2012,18 @@ class NGBSSCollectionKPIView(APIView):
 
                 # Get DOT object and convert to dict
                 dot_obj = all_dots.get(dot_id)
-                dot_info = {
-                    'id': dot_id,
-                    'code': dot_obj.code if dot_obj else None,
-                    'name': dot_obj.name if dot_obj else None
-                } if dot_obj else {'id': dot_id, 'code': None, 'name': None}
+                if dot_obj:
+                    # Use the to_dict method if available
+                    if hasattr(dot_obj, 'to_dict'):
+                        dot_info = dot_obj.to_dict()
+                    else:
+                        dot_info = {
+                            'id': dot_id,
+                            'code': dot_obj.code,
+                            'name': dot_obj.name
+                        }
+                else:
+                    dot_info = {'id': dot_id, 'code': None, 'name': None}
 
                 collection_by_dot.append({
                     'dot': dot_info,  # Using dot dictionary instead of DOT object

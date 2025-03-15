@@ -65,26 +65,46 @@ const CorporateParkKPI = () => {
 
   // Fetch corporate park data
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-        const params = {};
+        const params = {
+          year: new Date().getFullYear(),
+          month: new Date().getMonth() + 1,
+        };
+
         if (stateFilter) params.state = stateFilter;
         if (telecomTypeFilter) params.telecom_type = telecomTypeFilter;
         if (offerNameFilter) params.offer_name = offerNameFilter;
 
         const data = await kpiService.getCorporateParkKPIs(params);
+
+        if (!data) {
+          throw new Error("No data received from the server");
+        }
+
         setParkData(data);
       } catch (err) {
-        console.error("Error fetching corporate park data:", err);
-        setError("Failed to load corporate park data. Please try again later.");
+        if (err.name !== "AbortError") {
+          console.error("Error fetching corporate park data:", err);
+          setError(
+            "Failed to load corporate park data. Please try again later."
+          );
+        }
       } finally {
+        if (controller.signal.aborted) return;
         setLoading(false);
       }
     };
 
     fetchData();
+
+    return () => {
+      controller.abort();
+    };
   }, [stateFilter, telecomTypeFilter, offerNameFilter]);
 
   // Handle tab change

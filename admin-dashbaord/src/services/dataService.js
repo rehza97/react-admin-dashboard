@@ -147,8 +147,15 @@ const dataService = {
   getDOTs: async () => {
     try {
       const response = await api.get("/data/dots/");
-      return response.data.dots || [];
+      console.log("DOTs API response:", response.data);
+
+      // Handle the response format provided by the backend
+      if (response.data && response.data.dots) {
+        return response.data.dots;
+      }
+      return [];
     } catch (error) {
+      console.error("Error fetching DOTs:", error);
       return handleApiError(error, "fetching DOTs");
     }
   },

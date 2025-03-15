@@ -26,6 +26,15 @@ class DOT(models.Model):
     def __str__(self):
         return f"{self.name} ({self.code})"
 
+    # Add a method to convert DOT to a dictionary for serialization
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'code': self.code,
+            'name': self.name,
+            'is_active': self.is_active
+        }
+
 
 class Invoice(models.Model):
     PROCESSING_STATUS = [

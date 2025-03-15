@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import {
   Box,
@@ -14,6 +14,12 @@ import {
   Tabs,
   Tab,
   Divider,
+  TableContainer,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
 } from "@mui/material";
 import {
   BarChart,
@@ -32,6 +38,7 @@ import {
 } from "recharts";
 import { useTheme } from "@mui/material/styles";
 import kpiService from "../../services/kpiService";
+import dataService from "../../services/dataService";
 
 // Custom tab panel component
 function TabPanel(props) {
@@ -62,10 +69,14 @@ const NGBSSCollectionKPI = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [collectionData, setCollectionData] = useState(null);
+  const [dots, setDots] = useState([]);
+  const [loadingDots, setLoadingDots] = useState(true);
+  const [noData, setNoData] = useState(false);
 
   // Current year as default
   const currentYear = new Date().getFullYear();
-  const [yearFilter, setYearFilter] = useState(currentYear.toString());
+  // Default to 2024 since that's where we have data
+  const [yearFilter, setYearFilter] = useState("2024");
   const [monthFilter, setMonthFilter] = useState("");
   const [dotFilter, setDotFilter] = useState("");
 
@@ -90,17 +101,28 @@ const NGBSSCollectionKPI = () => {
     { value: "12", label: "December" },
   ];
 
-  // DOT options (simplified for now)
-  const dotOptions = [
-    { value: "Alger", label: "Alger" },
-    { value: "Oran", label: "Oran" },
-    { value: "Constantine", label: "Constantine" },
-    { value: "Annaba", label: "Annaba" },
-    { value: "Blida", label: "Blida" },
-    { value: "Setif", label: "Setif" },
-    { value: "Tlemcen", label: "Tlemcen" },
-    { value: "Batna", label: "Batna" },
-  ];
+  // Fetch DOTs from API
+  useEffect(() => {
+    const fetchDOTs = async () => {
+      setLoadingDots(true);
+      try {
+        const dotsData = await dataService.getDOTs();
+        if (dotsData && Array.isArray(dotsData)) {
+          setDots(dotsData);
+        } else {
+          console.warn("Invalid DOTs data:", dotsData);
+          setDots([]);
+        }
+      } catch (err) {
+        console.error("Error fetching DOTs:", err);
+        setDots([]);
+      } finally {
+        setLoadingDots(false);
+      }
+    };
+
+    fetchDOTs();
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -109,6 +131,7 @@ const NGBSSCollectionKPI = () => {
   const fetchData = async () => {
     setLoading(true);
     setError(null);
+    setNoData(false);
     try {
       // Build query parameters
       const params = {
@@ -120,7 +143,34 @@ const NGBSSCollectionKPI = () => {
       };
 
       const response = await kpiService.getNGBSSCollectionKPIs(params);
-      setCollectionData(response);
+
+      // Handle the response properly - it should include data property from axios
+      if (response && response.data) {
+        console.log("NGBSS Collection data:", response.data);
+
+        // Check if we have any meaningful data
+        const hasData =
+          response.data.total_invoiced > 0 ||
+          response.data.total_collected > 0 ||
+          (response.data.collection_by_dot &&
+            response.data.collection_by_dot.length > 0);
+
+        if (!hasData) {
+          console.warn(
+            `No collection data found for year: ${yearFilter}, month: ${
+              monthFilter || "All"
+            }, dot: ${dotFilter || "All"}`
+          );
+          setNoData(true);
+        } else {
+          setNoData(false);
+        }
+
+        setCollectionData(response.data);
+      } else {
+        console.warn("Invalid response from NGBSS Collection API:", response);
+        setError("Received empty or invalid response from the server.");
+      }
     } catch (err) {
       console.error("Error fetching NGBSS collection data:", err);
       setError("Failed to load NGBSS collection data. Please try again later.");
@@ -177,6 +227,19 @@ const NGBSSCollectionKPI = () => {
     "#ff8042",
   ];
 
+  // Helper function to check if there's meaningful data to display
+  const hasMeaningfulData = (data) => {
+    if (!data) return false;
+
+    // Check if there are any non-zero values or collection_by_dot items
+    return (
+      data.total_invoiced > 0 ||
+      data.total_collected > 0 ||
+      data.total_open > 0 ||
+      (data.collection_by_dot && data.collection_by_dot.length > 0)
+    );
+  };
+
   if (loading) {
     return (
       <Box
@@ -199,6 +262,10 @@ const NGBSSCollectionKPI = () => {
       </Alert>
     );
   }
+
+  console.log("Rendering with collectionData:", collectionData);
+  console.log("Collection data is valid?", !!collectionData);
+  console.log("Has meaningful data?", hasMeaningfulData(collectionData));
 
   return (
     <Box>
@@ -258,19 +325,19 @@ const NGBSSCollectionKPI = () => {
             </Select>
           </FormControl>
 
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel id="dot-select-label">DOT</InputLabel>
+          <FormControl sx={{ minWidth: 120 }}>
+            <InputLabel id="dot-filter-label">DOT</InputLabel>
             <Select
-              labelId="dot-select-label"
-              id="dot-select"
+              labelId="dot-filter-label"
               value={dotFilter}
-              label="DOT"
               onChange={handleDotChange}
+              label="DOT"
+              disabled={loadingDots}
             >
               <MenuItem value="">All DOTs</MenuItem>
-              {dotOptions.map((dot) => (
-                <MenuItem key={dot.value} value={dot.value}>
-                  {dot.label}
+              {dots.map((dot) => (
+                <MenuItem key={dot.id} value={dot.id}>
+                  {dot.name} ({dot.code})
                 </MenuItem>
               ))}
             </Select>
@@ -278,7 +345,14 @@ const NGBSSCollectionKPI = () => {
         </Box>
       </Box>
 
-      {collectionData && (
+      {noData && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          No collection data available for the selected filters. Try changing
+          the year, month, or DOT.
+        </Alert>
+      )}
+
+      {collectionData && hasMeaningfulData(collectionData) && (
         <>
           {/* Summary Cards */}
           <Grid container spacing={3} sx={{ mb: 4 }}>
@@ -297,7 +371,11 @@ const NGBSSCollectionKPI = () => {
                   Current Year Collections
                 </Typography>
                 <Typography variant="h4">
-                  {formatCurrency(collectionData.total_current_year)}
+                  {formatCurrency(
+                    collectionData.total_current_year ||
+                      collectionData.total_collected ||
+                      0
+                  )}
                 </Typography>
                 {collectionData.achievement_percentage !== undefined && (
                   <Typography variant="body2" sx={{ mt: 1 }}>
@@ -323,7 +401,7 @@ const NGBSSCollectionKPI = () => {
                   Previous Year Collections
                 </Typography>
                 <Typography variant="h4">
-                  {formatCurrency(collectionData.total_previous_year)}
+                  {formatCurrency(collectionData.total_previous_year || 0)}
                 </Typography>
                 {collectionData.change_percentage !== undefined && (
                   <Typography
@@ -359,7 +437,7 @@ const NGBSSCollectionKPI = () => {
                   Collection Objective
                 </Typography>
                 <Typography variant="h4">
-                  {formatCurrency(collectionData.total_objective)}
+                  {formatCurrency(collectionData.total_objective || 0)}
                 </Typography>
                 {collectionData.achievement_percentage !== undefined && (
                   <Typography
@@ -396,7 +474,8 @@ const NGBSSCollectionKPI = () => {
                   Collection Rate
                 </Typography>
                 <Typography variant="h4">
-                  {collectionData.collection_rate
+                  {collectionData.collection_rate !== undefined &&
+                  collectionData.collection_rate !== null
                     ? formatPercentage(collectionData.collection_rate)
                     : "N/A"}
                 </Typography>
@@ -778,6 +857,132 @@ const NGBSSCollectionKPI = () => {
               </TabPanel>
             )}
           </Paper>
+
+          {/* Only show tabs if there is dot data to display */}
+          {collectionData.collection_by_dot &&
+          collectionData.collection_by_dot.length > 0 ? (
+            <Box>
+              <Tabs
+                value={tabValue}
+                onChange={handleTabChange}
+                sx={{ mb: 3 }}
+                variant="scrollable"
+                scrollButtons="auto"
+              >
+                <Tab label="Table View" />
+                <Tab label="Chart View" />
+              </Tabs>
+
+              {/* Tab Panel content */}
+              {tabValue === 0 && (
+                <TableContainer component={Paper}>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>DOT</TableCell>
+                        <TableCell align="right">Invoiced</TableCell>
+                        <TableCell align="right">Collected</TableCell>
+                        <TableCell align="right">Open Balance</TableCell>
+                        <TableCell align="right">Collection Rate</TableCell>
+                        <TableCell align="right">Previous Year</TableCell>
+                        <TableCell align="right">Change</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {collectionData.collection_by_dot &&
+                        collectionData.collection_by_dot.map((dot) => (
+                          <TableRow key={dot.dot_id || dot.dot_name}>
+                            <TableCell>{dot.dot_name}</TableCell>
+                            <TableCell align="right">
+                              {formatCurrency(dot.invoiced)}
+                            </TableCell>
+                            <TableCell align="right">
+                              {formatCurrency(dot.collected)}
+                            </TableCell>
+                            <TableCell align="right">
+                              {formatCurrency(dot.open_balance)}
+                            </TableCell>
+                            <TableCell align="right">
+                              {dot.collection_rate !== undefined
+                                ? formatPercentage(dot.collection_rate)
+                                : "N/A"}
+                            </TableCell>
+                            <TableCell align="right">
+                              {dot.previous_year !== undefined
+                                ? formatCurrency(dot.previous_year)
+                                : "N/A"}
+                            </TableCell>
+                            <TableCell
+                              align="right"
+                              sx={{
+                                color:
+                                  dot.change_percentage > 0
+                                    ? "success.main"
+                                    : dot.change_percentage < 0
+                                    ? "error.main"
+                                    : "inherit",
+                              }}
+                            >
+                              {dot.change_percentage !== undefined
+                                ? (dot.change_percentage > 0 ? "+" : "") +
+                                  formatPercentage(dot.change_percentage)
+                                : "N/A"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+
+              {tabValue === 1 && (
+                <Box>
+                  <ResponsiveContainer width="100%" height={400}>
+                    <BarChart
+                      data={collectionData.collection_by_dot}
+                      margin={{
+                        top: 20,
+                        right: 30,
+                        left: 20,
+                        bottom: 60,
+                      }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="dot_name"
+                        angle={-45}
+                        textAnchor="end"
+                        height={70}
+                      />
+                      <YAxis />
+                      <Tooltip formatter={(value) => formatCurrency(value)} />
+                      <Legend />
+                      <Bar
+                        dataKey="invoiced"
+                        name="Invoiced"
+                        fill={COLORS[0]}
+                      />
+                      <Bar
+                        dataKey="collected"
+                        name="Collected"
+                        fill={COLORS[1]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
+              )}
+            </Box>
+          ) : (
+            <Paper sx={{ p: 3, mt: 3, textAlign: "center" }}>
+              <Typography variant="body1" color="text.secondary">
+                No detailed DOT collection data available for the selected
+                filters.
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                However, summary data is available and displayed above.
+              </Typography>
+            </Paper>
+          )}
         </>
       )}
     </Box>

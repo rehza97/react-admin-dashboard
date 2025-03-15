@@ -112,12 +112,17 @@ const RevenueKPI = () => {
     setLoading(true);
     setError(null);
     try {
-      // Fetch revenue KPIs
+      // Fetch revenue KPIs with proper error handling
       const revenueResponse = await kpiService.getRevenueKPIs({
         year: yearFilter,
         month: monthFilter,
         dot: dotFilter,
       });
+
+      if (!revenueResponse) {
+        throw new Error("No data received from the server");
+      }
+
       setRevenueData(revenueResponse);
       setLoading(false);
     } catch (err) {

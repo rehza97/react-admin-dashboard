@@ -137,8 +137,16 @@ urlpatterns = [
     # Comprehensive reports
     path('reports/', views.ComprehensiveReportView.as_view(),
          name='comprehensive-reports'),
+    path('reports/export/revenue_collection/',
+         export_views.RevenueCollectionExportView.as_view(), name='export_revenue_collection'),
+    path('reports/export/corporate_park/',
+         export_views.CorporateParkExportView.as_view(), name='export_corporate_park'),
+    path('reports/export/receivables/',
+         export_views.ReceivablesExportView.as_view(), name='export_receivables'),
+    path('reports/export/<str:report_type>/',
+         views.ComprehensiveReportExportView.as_view(), name='export_report'),
     path('reports/export/', views.ComprehensiveReportExportView.as_view(),
-         name='comprehensive-reports-export'),
+         name='export_report_generic'),
 
     # Dashboard overview
     path('dashboard/overview/', views.DashboardOverviewView.as_view(),
@@ -147,12 +155,6 @@ urlpatterns = [
     # Enhanced dashboard with advanced analytics
     path('dashboard/enhanced/', views.DashboardEnhancedView.as_view(),
          name='dashboard-enhanced'),
-
-    # Comprehensive report endpoints
-    path('reports/', views.ComprehensiveReportView.as_view(),
-         name='comprehensive-reports'),
-    path('reports/export/<str:report_type>/',
-         views.ComprehensiveReportExportView.as_view(), name='report-export'),
 
     # File upload and processing - Using DebugUploadView instead of non-existent FileUploadView
     path('upload/', views.DebugUploadView.as_view(), name='file-upload'),
@@ -177,13 +179,6 @@ urlpatterns = [
 
     path('kpi/performance-ranking/', kpi_views.PerformanceRankingView.as_view(),
          name='kpi-performance-ranking'),
-
-    path('reports/export/revenue_collection/',
-         export_views.RevenueCollectionExportView.as_view(), name='export_revenue_collection'),
-    path('reports/export/corporate_park/',
-         export_views.CorporateParkExportView.as_view(), name='export_corporate_park'),
-    path('reports/export/receivables/',
-         export_views.ReceivablesExportView.as_view(), name='export_receivables'),
 
     # New cleanup routes
     path('data-cleanup/', views.DataCleanupView.as_view(), name='data-cleanup'),

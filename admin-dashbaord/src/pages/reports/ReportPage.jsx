@@ -254,9 +254,9 @@ const ReportPage = () => {
       // Determine report type based on active tab
       let reportType;
       if (tabValue === 0) {
-        reportType = "revenue-collection";
+        reportType = "revenue_collection";
       } else if (tabValue === 1) {
-        reportType = "corporate-park";
+        reportType = "corporate_park";
       } else if (tabValue === 2) {
         reportType = "receivables";
       }
@@ -266,9 +266,10 @@ const ReportPage = () => {
         year,
         ...(month ? { month } : {}),
         ...(selectedDot ? { dot: selectedDot } : {}),
+        format,
       };
 
-      // Call the export function
+      // Call the export function with the correct report type
       await reportService.exportReport(reportType, format, params);
 
       setSnackbar({
@@ -280,7 +281,8 @@ const ReportPage = () => {
       console.error("Export error:", err);
       setSnackbar({
         open: true,
-        message: t("reports.exportError"),
+        message:
+          t("reports.exportError") + ": " + (err.message || "Unknown error"),
         severity: "error",
       });
     } finally {
