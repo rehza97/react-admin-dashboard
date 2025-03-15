@@ -74,6 +74,8 @@ if not DEBUG:
     CORS_ALLOWED_ORIGINS = [
         "http://localhost:5173",  # Your React dev server
         "http://localhost:5174",  # Alternative React dev server port
+        "https://react-admin-dashboard-nz1d.onrender.com",
+        
         # Add your production domain when deploying
     ]
 else:
