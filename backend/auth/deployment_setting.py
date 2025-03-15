@@ -29,7 +29,7 @@ MIDDLEWARE = [
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug mode
 if not DEBUG:
     CORS_ALLOWED_ORIGINS = [
-        "https://frontend-rxah.onrender.com"
+        "https://frontend-rxah.onrender.com",
         "https://react-admin-dashboard-nz1d.onrender.com",
         # Add your production domain when deploying
     ]
