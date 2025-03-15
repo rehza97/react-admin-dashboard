@@ -11,6 +11,7 @@ import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'auth.settings')
+settings_module = 'auth.deployment_setting' if 'RENDER_EXTERNAL_HOSTNAME' in os.environ else 'auth.settings'
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', settings_module)
 
 application = get_asgi_application()
