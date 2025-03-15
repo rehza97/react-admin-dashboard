@@ -24,6 +24,7 @@ MIDDLEWARE = [
     'users.middleware.RoleBasedAccessMiddleware',
 ]
 
+
 # Set CORS settings based on environment
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug mode
 if not DEBUG:

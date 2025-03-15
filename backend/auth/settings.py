@@ -69,17 +69,14 @@ MIDDLEWARE = [
 ]
 
 # Set CORS settings based on environment
-CORS_ALLOW_ALL_ORIGINS = True
 if not DEBUG:
     CORS_ALLOWED_ORIGINS = [
         "http://localhost:5173",  # Your React dev server
         "http://localhost:5174",  # Alternative React dev server port
         "https://react-admin-dashboard-nz1d.onrender.com",
-
-        # Add your production domain when deploying
+         # ADD YOUR ACTUAL FRONTEND URL HERE
     ]
 else:
-    # In debug mode, we'll log CORS requests for debugging
     CORS_ALLOW_ALL_ORIGINS = True
     print("DEBUG mode: CORS_ALLOW_ALL_ORIGINS is enabled")
 
