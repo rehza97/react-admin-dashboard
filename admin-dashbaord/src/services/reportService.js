@@ -1,4 +1,5 @@
 import api from "./api";
+import mockData from "./mockData";
 
 // Check if we're in development mode
 const isDevelopment = () => {
@@ -12,10 +13,10 @@ const isDevelopment = () => {
  * Generic error handler for API requests
  * @param {Error} error - The error object
  * @param {string} serviceName - The name of the service for logging
- * @param {Object} mockData - Mock data to return in development mode
+ * @param {Object} mockDataResponse - Mock data to return in development mode
  * @returns {Object} - Mock data or throws the error
  */
-const handleApiError = (error, serviceName, mockData) => {
+const handleApiError = (error, serviceName, mockDataResponse) => {
   console.error(`Error in ${serviceName}:`, error);
 
   // Check if we have a specific error message from the backend
@@ -106,19 +107,12 @@ const handleApiError = (error, serviceName, mockData) => {
 
   if (isDevelopment() && (isServerError || isNetworkError)) {
     console.warn(`Using mock ${serviceName} data due to server unavailability`);
-    return mockData;
+    return mockDataResponse;
   }
 
   // In all other cases, throw the error with a descriptive message
   throw new Error(errorMessage);
 };
-
-// Mock data for development and testing
-const mockRevenueCollectionReport = {};
-
-const mockCorporateParkReport = {};
-
-const mockReceivablesReport = {};
 
 /**
  * Service for fetching comprehensive reports from the backend
@@ -151,7 +145,24 @@ const reportService = {
       return response.data;
     } catch (error) {
       console.error("Error fetching comprehensive report:", error);
-      throw error;
+
+      // Determine which mock data to use based on report type
+      let mockDataToUse;
+      switch (params.type) {
+        case "revenue_collection":
+          mockDataToUse = mockData.revenueCollectionReport;
+          break;
+        case "corporate_park":
+          mockDataToUse = mockData.corporateParkReport;
+          break;
+        case "receivables":
+          mockDataToUse = mockData.receivablesReport;
+          break;
+        default:
+          mockDataToUse = {};
+      }
+
+      return handleApiError(error, "comprehensive report", mockDataToUse);
     }
   },
 
@@ -204,22 +215,21 @@ const reportService = {
         );
       }
 
-      // Return mock data for testing/development
-      const mockData = {
-        year: params.year,
-        month: params.month,
-        dot: params.dot,
-        total_revenue: 0,
-        total_collection: 0,
-        revenue_by_dot: {},
-        collection_by_dot: {},
-        revenue_by_invoice_type: {},
-        collection_by_invoice_type: {},
-        anomalies: [],
-      };
+      // Use mock data for development/testing when API is unavailable
+      const mockReportData = mockData.revenueCollectionReport;
+
+      // Add the requested parameters to the mock data
+      if (params) {
+        mockReportData.year = params.year || new Date().getFullYear();
+        mockReportData.month = params.month;
+        mockReportData.dot = params.dot;
+      }
 
       // Transform mock data
-      return reportService.transformReportData(mockData, "revenue_collection");
+      return reportService.transformReportData(
+        mockReportData,
+        "revenue_collection"
+      );
     }
   },
 
@@ -269,20 +279,21 @@ const reportService = {
         );
       }
 
-      // Return mock data for testing/development
-      const mockData = {
-        year: params.year,
-        month: params.month,
-        dot: params.dot,
-        total_vehicles: 0,
-        vehicles_by_dot: {},
-        vehicles_by_state: {},
-        vehicles_by_type: {},
-        anomalies: [],
-      };
+      // Use mock data for development/testing when API is unavailable
+      const mockReportData = mockData.corporateParkReport;
+
+      // Add the requested parameters to the mock data
+      if (params) {
+        mockReportData.year = params.year || new Date().getFullYear();
+        mockReportData.month = params.month;
+        mockReportData.dot = params.dot;
+      }
 
       // Transform mock data
-      return reportService.transformReportData(mockData, "corporate_park");
+      return reportService.transformReportData(
+        mockReportData,
+        "corporate_park"
+      );
     }
   },
 
@@ -330,24 +341,18 @@ const reportService = {
         );
       }
 
-      // Return mock data for testing/development
-      const mockData = {
-        year: params.year,
-        month: params.month,
-        dot: params.dot,
-        total_receivables: 0,
-        receivables_by_dot: {},
-        receivables_by_age: {
-          "0-30": 0,
-          "31-60": 0,
-          "61-90": 0,
-          "91+": 0,
-        },
-        anomalies: [],
-      };
+      // Use mock data for development/testing when API is unavailable
+      const mockReportData = mockData.receivablesReport;
+
+      // Add the requested parameters to the mock data
+      if (params) {
+        mockReportData.year = params.year || new Date().getFullYear();
+        mockReportData.month = params.month;
+        mockReportData.dot = params.dot;
+      }
 
       // Transform mock data
-      return reportService.transformReportData(mockData, "receivables");
+      return reportService.transformReportData(mockReportData, "receivables");
     }
   },
 
@@ -384,6 +389,19 @@ const reportService = {
       return { success: true, message: `Report exported as ${filename}` };
     } catch (error) {
       console.error(`Error exporting ${reportType} report:`, error);
+
+      // For export, we don't provide mock data since it's a download - just throw an error
+      if (isDevelopment()) {
+        console.warn(
+          "Export functionality requires a working backend API and cannot be mocked."
+        );
+        return {
+          success: false,
+          message:
+            "Export failed. This feature requires a working backend API and cannot be mocked in development mode.",
+        };
+      }
+
       throw new Error(
         `Failed to export ${reportType} report: ${error.message}`
       );

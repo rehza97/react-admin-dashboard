@@ -20,7 +20,6 @@ import { userService } from "../../services/api";
 // Update roles to match backend expectations
 const ROLES = {
   ADMIN: "admin",
-  ANALYST: "analyst",
   VIEWER: "viewer",
 };
 
@@ -242,7 +241,6 @@ const AddUser = () => {
                   label="Role"
                 >
                   <MenuItem value={ROLES.VIEWER}>Viewer</MenuItem>
-                  <MenuItem value={ROLES.ANALYST}>Analyst</MenuItem>
                   <MenuItem value={ROLES.ADMIN}>Administrator</MenuItem>
                 </Select>
               </FormControl>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -36,7 +36,6 @@ import {
   Chip,
   Divider,
   Grid,
-  Tooltip,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -49,40 +48,80 @@ import {
 } from "@mui/icons-material";
 import PageLayout from "../../components/PageLayout";
 
-// Local storage keys
+// Constants
 const EVENTS_STORAGE_KEY = "calendar_events";
 const WEEKENDS_VISIBLE_KEY = "calendar_weekends_visible";
 const CALENDAR_VIEW_KEY = "calendar_current_view";
 
-// Alert severity types
-const SEVERITY = {
-  SUCCESS: "success",
-  ERROR: "error",
-  INFO: "info",
-  WARNING: "warning",
+// Helper functions for local storage
+const saveToLocalStorage = (key, data) => {
+  try {
+    // Ensure we're saving valid JSON data
+    const dataToSave = Array.isArray(data) ? data : [data];
+    localStorage.setItem(key, JSON.stringify(dataToSave));
+    return true;
+  } catch (error) {
+    console.error(`Error saving to localStorage (${key}):`, error);
+    return false;
+  }
+};
+
+const loadFromLocalStorage = (key, defaultValue) => {
+  try {
+    const saved = localStorage.getItem(key);
+    if (!saved) return defaultValue;
+
+    const parsed = JSON.parse(saved);
+
+    // Validate the structure of loaded events
+    if (key === EVENTS_STORAGE_KEY) {
+      if (!Array.isArray(parsed)) return defaultValue;
+
+      // Ensure each event has required properties and restore extendedProps properly
+      return parsed.filter(
+        (event) =>
+          event &&
+          typeof event === "object" &&
+          event.id &&
+          event.title &&
+          event.start &&
+          // Make sure extendedProps is present or create it
+          (event.extendedProps ||
+            (event.extendedProps = {
+              category: "general",
+              description: "",
+              location: "",
+            }))
+      );
+    }
+
+    return parsed;
+  } catch (error) {
+    console.error(`Error loading from localStorage (${key}):`, error);
+    return defaultValue;
+  }
 };
 
 export default function Calendar() {
   const { t } = useTranslation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const isTablet = useMediaQuery(theme.breakpoints.down("md"));
 
-  // State management
-  const [weekendsVisible, setWeekendsVisible] = useState(() => {
-    const saved = localStorage.getItem(WEEKENDS_VISIBLE_KEY);
-    return saved ? JSON.parse(saved) : true;
-  });
+  // State management with enhanced local storage handling
+  const [weekendsVisible, setWeekendsVisible] = useState(() =>
+    loadFromLocalStorage(WEEKENDS_VISIBLE_KEY, true)
+  );
 
-  const [currentView, setCurrentView] = useState(() => {
-    const saved = localStorage.getItem(CALENDAR_VIEW_KEY);
-    return saved || (isMobile ? "listWeek" : "dayGridMonth");
-  });
+  const [currentView, setCurrentView] = useState(() =>
+    loadFromLocalStorage(
+      CALENDAR_VIEW_KEY,
+      isMobile ? "listWeek" : "dayGridMonth"
+    )
+  );
 
-  const [currentEvents, setCurrentEvents] = useState(() => {
-    const saved = localStorage.getItem(EVENTS_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [currentEvents, setCurrentEvents] = useState(() =>
+    loadFromLocalStorage(EVENTS_STORAGE_KEY, [])
+  );
 
   const [openDialog, setOpenDialog] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
@@ -105,7 +144,7 @@ export default function Calendar() {
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
-    severity: SEVERITY.SUCCESS,
+    severity: "success",
   });
 
   // Event categories
@@ -136,6 +175,35 @@ export default function Calendar() {
     [t]
   );
 
+  // Update snackbar helper function
+  const showSnackbar = (message, severity) => {
+    let validSeverity = "info";
+    if (
+      severity === "success" ||
+      severity === "error" ||
+      severity === "warning"
+    ) {
+      validSeverity = severity;
+    }
+
+    setSnackbar({
+      open: true,
+      message,
+      severity: validSeverity,
+    });
+  };
+
+  // Get color for category - MOVED BEFORE IT'S USED
+  const getCategoryColor = useCallback(
+    (categoryValue) => {
+      const category = eventCategories.find(
+        (cat) => cat.value === categoryValue
+      );
+      return category ? category.color : "#3788d8";
+    },
+    [eventCategories]
+  );
+
   // Track events
   const handleEvents = useCallback(
     (events) => {
@@ -145,8 +213,14 @@ export default function Calendar() {
         start: event.startStr,
         end: event.endStr,
         allDay: event.allDay,
-        backgroundColor: event.backgroundColor,
-        extendedProps: event.extendedProps,
+        backgroundColor:
+          event.backgroundColor ||
+          getCategoryColor(event.extendedProps?.category || "general"),
+        extendedProps: {
+          location: event.extendedProps?.location || "",
+          description: event.extendedProps?.description || "",
+          category: event.extendedProps?.category || "general",
+        },
       }));
 
       // Only update if events have actually changed
@@ -154,22 +228,87 @@ export default function Calendar() {
         setCurrentEvents(formattedEvents);
       }
     },
-    [currentEvents]
+    [currentEvents, getCategoryColor]
   );
 
-  // Save events to local storage whenever they change
+  // Enhanced save effect with immediate verification
   useEffect(() => {
-    localStorage.setItem(EVENTS_STORAGE_KEY, JSON.stringify(currentEvents));
-  }, [currentEvents]);
+    if (currentEvents.length > 0) {
+      const saved = saveToLocalStorage(EVENTS_STORAGE_KEY, currentEvents);
+      if (!saved) {
+        console.error("Failed to save events to localStorage");
+        showSnackbar(
+          t("calendar.errorSaving") || "Failed to save events",
+          "error"
+        );
+      }
+    }
+  }, [currentEvents, t]);
 
-  // Save weekends visibility to local storage
+  // Verify local storage on mount
   useEffect(() => {
-    localStorage.setItem(WEEKENDS_VISIBLE_KEY, JSON.stringify(weekendsVisible));
+    const testKey = "calendar_test";
+    try {
+      localStorage.setItem(testKey, "test");
+      localStorage.removeItem(testKey);
+    } catch (error) {
+      console.error("localStorage is not available:", error);
+      showSnackbar(
+        t("calendar.storageNotAvailable") || "Storage not available",
+        "error"
+      );
+    }
+  }, [t]);
+
+  // Load events on mount and periodically verify storage
+  useEffect(() => {
+    const loadEvents = () => {
+      try {
+        const savedEvents = loadFromLocalStorage(EVENTS_STORAGE_KEY, []);
+
+        // Ensure all events have proper structure
+        const validatedEvents = savedEvents.map((event) => ({
+          ...event,
+          extendedProps: event.extendedProps || {
+            category: "general",
+            description: "",
+            location: "",
+          },
+          backgroundColor:
+            event.backgroundColor ||
+            getCategoryColor(event.extendedProps?.category || "general"),
+        }));
+
+        if (
+          validatedEvents.length > 0 &&
+          JSON.stringify(validatedEvents) !== JSON.stringify(currentEvents)
+        ) {
+          setCurrentEvents(validatedEvents);
+        }
+      } catch (err) {
+        console.error("Error loading events:", err);
+        showSnackbar(
+          t("calendar.errorLoading") || "Error loading events",
+          "error"
+        );
+      }
+    };
+
+    // Load initial events
+    loadEvents();
+
+    // Set up periodic verification (every 30 seconds)
+    const interval = setInterval(loadEvents, 30000);
+
+    return () => clearInterval(interval);
+  }, [getCategoryColor, currentEvents, t]);
+
+  useEffect(() => {
+    saveToLocalStorage(WEEKENDS_VISIBLE_KEY, weekendsVisible);
   }, [weekendsVisible]);
 
-  // Save current view to local storage
   useEffect(() => {
-    localStorage.setItem(CALENDAR_VIEW_KEY, currentView);
+    saveToLocalStorage(CALENDAR_VIEW_KEY, currentView);
   }, [currentView]);
 
   // Auto-close sidebar on mobile
@@ -228,30 +367,22 @@ export default function Calendar() {
   }, [weekendsVisible]);
 
   // Handle date selection
-  const handleDateSelect = useCallback((selectInfo) => {
-    setDialogMode("add");
-    setEventForm({
-      title: "",
-      start: selectInfo.startStr,
-      end: selectInfo.endStr,
-      allDay: selectInfo.allDay,
-      location: "",
-      description: "",
-      color: getCategoryColor("general"),
-      category: "general",
-    });
-    setOpenDialog(true);
-  }, []);
-
-  // Get color for category
-  const getCategoryColor = useCallback(
-    (categoryValue) => {
-      const category = eventCategories.find(
-        (cat) => cat.value === categoryValue
-      );
-      return category ? category.color : "#3788d8";
+  const handleDateSelect = useCallback(
+    (selectInfo) => {
+      setDialogMode("add");
+      setEventForm({
+        title: "",
+        start: selectInfo.startStr,
+        end: selectInfo.endStr,
+        allDay: selectInfo.allDay,
+        location: "",
+        description: "",
+        color: getCategoryColor("general"),
+        category: "general",
+      });
+      setOpenDialog(true);
     },
-    [eventCategories]
+    [getCategoryColor]
   );
 
   // Handle event click
@@ -316,11 +447,7 @@ export default function Calendar() {
   // Save event
   const handleSaveEvent = useCallback(() => {
     if (!eventForm.title.trim()) {
-      setSnackbar({
-        open: true,
-        message: t("calendar.titleRequired"),
-        severity: SEVERITY.ERROR,
-      });
+      showSnackbar(t("calendar.titleRequired") || "Title is required", "error");
       return;
     }
 
@@ -340,20 +467,12 @@ export default function Calendar() {
 
     if (dialogMode === "add") {
       setCurrentEvents((prev) => [...prev, eventData]);
-      setSnackbar({
-        open: true,
-        message: t("calendar.eventAdded"),
-        severity: SEVERITY.SUCCESS,
-      });
+      showSnackbar(t("calendar.eventAdded") || "Event added", "success");
     } else {
       setCurrentEvents((prev) =>
         prev.map((event) => (event.id === eventData.id ? eventData : event))
       );
-      setSnackbar({
-        open: true,
-        message: t("calendar.eventUpdated"),
-        severity: SEVERITY.SUCCESS,
-      });
+      showSnackbar(t("calendar.eventUpdated") || "Event updated", "success");
     }
 
     handleCloseDialog();
@@ -361,15 +480,17 @@ export default function Calendar() {
 
   // Delete event
   const handleDeleteEvent = useCallback(() => {
-    if (selectedEvent && window.confirm(t("calendar.deleteConfirmation"))) {
+    if (
+      selectedEvent &&
+      window.confirm(
+        t("calendar.deleteConfirmation") ||
+          "Are you sure you want to delete this event?"
+      )
+    ) {
       setCurrentEvents((prev) =>
         prev.filter((event) => event.id !== selectedEvent.id)
       );
-      setSnackbar({
-        open: true,
-        message: t("calendar.eventDeleted"),
-        severity: SEVERITY.INFO,
-      });
+      showSnackbar(t("calendar.eventDeleted") || "Event deleted", "info");
       handleCloseDialog();
     }
   }, [selectedEvent, t, handleCloseDialog]);
@@ -776,7 +897,8 @@ export default function Calendar() {
                 meridiem: "short",
               }}
               stickyHeaderDates={true}
-              firstDay={1} // Week starts on Monday
+              firstDay={5} // Week starts on Friday (5 = Friday, 0 = Sunday)
+              weekText={t("calendar.week")}
               navLinks={true} // Allow clicking on day/week names to navigate views
               nowIndicator={true} // Show an indicator for the current time
             />
@@ -788,9 +910,21 @@ export default function Calendar() {
       <Dialog
         open={openDialog}
         onClose={handleCloseDialog}
-        maxWidth="sm"
+        maxWidth="md"
         fullWidth
-        fullScreen={isMobile}
+        PaperProps={{
+          sx: {
+            minHeight: "70vh",
+            maxHeight: "90vh",
+            width: "80%",
+            margin: "auto",
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            overflowY: "auto",
+          },
+        }}
       >
         <DialogTitle
           sx={{
@@ -798,6 +932,10 @@ export default function Calendar() {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            borderBottom: 1,
+            borderColor: "divider",
+            backgroundColor: (theme) => theme.palette.primary.main,
+            color: "white",
           }}
         >
           <Box>
@@ -805,14 +943,12 @@ export default function Calendar() {
               ? t("calendar.addEvent")
               : t("calendar.editEvent")}
           </Box>
-          {isMobile && (
-            <IconButton onClick={handleCloseDialog}>
-              <CloseIcon />
-            </IconButton>
-          )}
+          <IconButton onClick={handleCloseDialog} sx={{ color: "white" }}>
+            <CloseIcon />
+          </IconButton>
         </DialogTitle>
 
-        <DialogContent dividers>
+        <DialogContent dividers sx={{ p: 3 }}>
           <Box
             sx={{
               display: "flex",

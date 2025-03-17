@@ -80,7 +80,8 @@
     "caDNT": "CA DNT",
     "caRFD": "CA RFD",
     "caCNT": "CA CNT",
-    "dataSource": "Source de Données"
+    "dataSource": "Source de Données",
+    "rowsPerPage": "Lignes par page"
   },
   "dashboard": {
     "overview": "Aperçu",
@@ -90,7 +91,12 @@
     "totalRevenue": "Revenu total",
     "recentUploads": "Téléchargements récents",
     "anomalies": "Anomalies",
-    "statistics": "Statistiques"
+    "statistics": "Statistiques",
+    "revenueAnalysis": "Analyse des revenus",
+    "collectionsAnalysis": "Analyse des encours",
+    "receivablesAnalysis": "Analyse des créances",
+    "corporatePark": "Parc Corporate",
+    "unfinishedInvoices": "Factures non terminées"
   },
   "users": {
     "manageUsers": "Gérer les utilisateurs",
@@ -107,8 +113,7 @@
     "active": "Actif",
     "inactive": "Inactif",
     "admin": "Administrateur",
-    "user": "Utilisateur",
-    "analyst": "Analyste",
+    "viewer": "Spectateur",
     "firstName": "Prénom",
     "lastName": "Nom de famille",
     "phone": "Téléphone",
@@ -138,8 +143,7 @@
     "exportUsers": "Exporter les utilisateurs",
     "importUsers": "Importer des utilisateurs",
     "totalUsersCount": "Total des utilisateurs: {{count}}",
-    "showInactive": "Afficher les utilisateurs inactifs",
-    "viewer": "Spectateur"
+    "showInactive": "Afficher les utilisateurs inactifs"
   },
   "auth": {
     "username": "Nom d'utilisateur",
@@ -346,7 +350,30 @@
     "upcomingEvents": "Événements à venir",
     "instructions": "Instructions",
     "dragAndDrop": "Glisser, déposer et redimensionner les événements",
-    "selectDates": "Sélectionnez des dates pour créer un nouvel événement"
+    "selectDates": "Sélectionnez des dates pour créer un nouvel événement",
+    "categories": {
+      "title": "Catégories",
+      "general": "Général",
+      "meeting": "Réunion",
+      "task": "Tâche",
+      "reminder": "Rappel",
+      "personal": "Personnel"
+    },
+    "myEvents": "Mes Événements",
+    "quickAdd": "Ajouter Rapidement",
+    "upcoming": "À Venir",
+    "noUpcomingEvents": "Aucun événement à venir",
+    "addSomeEvents": "Ajoutez des événements pour les voir ici",
+    "filters": "Filtres",
+    "monthShort": "M",
+    "weekShort": "S",
+    "dayShort": "J",
+    "listShort": "L",
+    "titleRequired": "Le titre est requis",
+    "eventColor": "Couleur de l'événement",
+    "eventAdded": "Événement ajouté avec succès",
+    "eventUpdated": "Événement mis à jour avec succès",
+    "eventDeleted": "Événement supprimé avec succès"
   },
   "anomalyScan": {
     "scanData": "Analyser les données",
@@ -518,5 +545,37 @@
     "english": "Anglais",
     "french": "Français",
     "changeLanguage": "Changer de langue"
+  },
+  "dots": {
+    "manageDOTs": "Gérer les DOTs",
+    "manageDOTsSubtitle": "Ajouter, modifier et gérer les DOTs (Directions Opérationnelles Territoriales)",
+    "addDOT": "Ajouter un DOT",
+    "editDOT": "Modifier le DOT",
+    "code": "Code",
+    "name": "Nom",
+    "description": "Description",
+    "status": "Statut",
+    "active": "Actif",
+    "inactive": "Inactif",
+    "activate": "Activer",
+    "deactivate": "Désactiver",
+    "noDOTsFound": "Aucun DOT trouvé",
+    "isActive": "Statut actif",
+    "confirmDelete": "Êtes-vous sûr de vouloir supprimer ce DOT ?",
+    "confirmActivate": "Êtes-vous sûr de vouloir activer ce DOT ?",
+    "confirmDeactivate": "Êtes-vous sûr de vouloir désactiver ce DOT ?",
+    "dotCreated": "DOT créé avec succès",
+    "dotUpdated": "DOT mis à jour avec succès",
+    "dotDeleted": "DOT supprimé avec succès",
+    "dotActivated": "DOT activé avec succès",
+    "dotDeactivated": "DOT désactivé avec succès",
+    "errorCreating": "Échec de la création du DOT",
+    "errorUpdating": "Échec de la mise à jour du DOT",
+    "errorDeleting": "Échec de la suppression du DOT",
+    "errorActivating": "Échec de l'activation du DOT",
+    "errorDeactivating": "Échec de la désactivation du DOT",
+    "codeRequired": "Le code est requis",
+    "nameRequired": "Le nom est requis",
+    "errorLoading": "Échec du chargement des DOTs. Veuillez réessayer plus tard."
   }
 }

@@ -80,7 +80,8 @@
     "caDNT": "DNT Revenue",
     "caRFD": "RFD Revenue",
     "caCNT": "CNT Revenue",
-    "dataSource": "Data Source"
+    "dataSource": "Data Source",
+    "rowsPerPage": "Rows per page"
   },
   "dashboard": {
     "overview": "Overview",
@@ -90,7 +91,12 @@
     "totalRevenue": "Total Revenue",
     "recentUploads": "Recent Uploads",
     "anomalies": "Anomalies",
-    "statistics": "Statistics"
+    "statistics": "Statistics",
+    "revenueAnalysis": "Revenue Analysis",
+    "collectionsAnalysis": "Collections Analysis",
+    "receivablesAnalysis": "Receivables Analysis",
+    "corporatePark": "Corporate Park",
+    "unfinishedInvoices": "Unfinished Invoices"
   },
   "users": {
     "manageUsers": "Manage Users",
@@ -106,7 +112,7 @@
     "actions": "Actions",
     "active": "Active",
     "inactive": "Inactive",
-    "admin": "Admin",
+    "admin": "Administrator",
     "user": "User",
     "analyst": "Analyst",
     "firstName": "First Name",
@@ -346,7 +352,30 @@
     "upcomingEvents": "Upcoming Events",
     "instructions": "Instructions",
     "dragAndDrop": "Drag, drop, and resize events",
-    "selectDates": "Select dates to create a new event"
+    "selectDates": "Select dates to create a new event",
+    "categories": {
+      "title": "Categories",
+      "general": "General",
+      "meeting": "Meeting",
+      "task": "Task",
+      "reminder": "Reminder",
+      "personal": "Personal"
+    },
+    "myEvents": "My Events",
+    "quickAdd": "Quick Add Event",
+    "upcoming": "Upcoming",
+    "noUpcomingEvents": "No upcoming events",
+    "addSomeEvents": "Add some events to see them here",
+    "filters": "Filters",
+    "monthShort": "M",
+    "weekShort": "W",
+    "dayShort": "D",
+    "listShort": "L",
+    "titleRequired": "Title is required",
+    "eventColor": "Event Color",
+    "eventAdded": "Event added successfully",
+    "eventUpdated": "Event updated successfully",
+    "eventDeleted": "Event deleted successfully"
   },
   "anomalyScan": {
     "scanData": "Scan Data",
@@ -523,5 +552,37 @@
     "noNotifications": "No notifications",
     "markAllAsRead": "Mark all as read",
     "viewAll": "View all"
+  },
+  "dots": {
+    "manageDOTs": "Manage DOTs",
+    "manageDOTsSubtitle": "Add, edit, and manage DOTs (Directions Opérationnelles Territoriales)",
+    "addDOT": "Add DOT",
+    "editDOT": "Edit DOT",
+    "code": "Code",
+    "name": "Name",
+    "description": "Description",
+    "status": "Status",
+    "active": "Active",
+    "inactive": "Inactive",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "noDOTsFound": "No DOTs found",
+    "isActive": "Active Status",
+    "confirmDelete": "Are you sure you want to delete this DOT?",
+    "confirmActivate": "Are you sure you want to activate this DOT?",
+    "confirmDeactivate": "Are you sure you want to deactivate this DOT?",
+    "dotCreated": "DOT created successfully",
+    "dotUpdated": "DOT updated successfully",
+    "dotDeleted": "DOT deleted successfully",
+    "dotActivated": "DOT activated successfully",
+    "dotDeactivated": "DOT deactivated successfully",
+    "errorCreating": "Failed to create DOT",
+    "errorUpdating": "Failed to update DOT",
+    "errorDeleting": "Failed to delete DOT",
+    "errorActivating": "Failed to activate DOT",
+    "errorDeactivating": "Failed to deactivate DOT",
+    "codeRequired": "Code is required",
+    "nameRequired": "Name is required",
+    "errorLoading": "Failed to load DOTs. Please try again later."
   }
 }

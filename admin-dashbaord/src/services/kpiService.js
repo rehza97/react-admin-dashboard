@@ -1,9 +1,55 @@
 import api from "./api";
 import { handleApiError } from "./utils/errorHandling";
+import mockData from "./mockData";
 
 // Helper functions for components that need them
 export const getCurrentYear = () => new Date().getFullYear();
 export const getCurrentMonth = () => new Date().getMonth() + 1;
+
+// Simple utility to check if we're in development
+const isDevelopment = () => {
+  return (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  );
+};
+
+// Handle API errors with mock data fallback
+const handleKpiApiError = (error, serviceName) => {
+  // Log error details
+  console.error(`Error fetching ${serviceName}:`, error);
+
+  // Check for network errors or server errors
+  const isNetworkError = !error.response || error.code === "ECONNABORTED";
+  const isServerError = error.response && error.response.status >= 500;
+
+  // Use mock data in development when API is unavailable
+  if (isDevelopment() && (isNetworkError || isServerError)) {
+    console.warn(`Using mock data for ${serviceName}`);
+
+    // Return appropriate mock data based on service name
+    switch (serviceName) {
+      case "dashboard summary":
+        return mockData.kpiData.dashboard_summary;
+      case "revenue":
+        return mockData.kpiData.revenue;
+      case "collection":
+        return mockData.kpiData.collection;
+      case "receivables":
+        return mockData.kpiData.receivables;
+      case "corporate park":
+        return mockData.kpiData.corporate_park;
+      default:
+        // If no specific mock data, throw the error
+        throw new Error(
+          `Failed to fetch ${serviceName} data: ${error.message}`
+        );
+    }
+  }
+
+  // If not in development or not a connection issue, use the error handler from utils
+  return handleApiError(error, serviceName);
+};
 
 const kpiService = {
   // Dashboard summary
@@ -42,8 +88,7 @@ const kpiService = {
         console.log("Request cancelled");
         return null;
       }
-      console.error("Error fetching dashboard summary:", error);
-      throw error;
+      return handleKpiApiError(error, "dashboard summary");
     }
   },
 
@@ -69,7 +114,7 @@ const kpiService = {
       );
       return response.data;
     } catch (error) {
-      return handleApiError(error, "revenue");
+      return handleKpiApiError(error, "revenue");
     }
   },
 
@@ -95,7 +140,7 @@ const kpiService = {
       );
       return response.data;
     } catch (error) {
-      return handleApiError(error, "collection");
+      return handleKpiApiError(error, "collection");
     }
   },
 
@@ -125,7 +170,17 @@ const kpiService = {
       );
       return response.data;
     } catch (error) {
-      return handleApiError(error, "receivables");
+      // In development mode with connection issues, provide comprehensive mock data
+      if (
+        isDevelopment() &&
+        (!error.response || error.response.status >= 500)
+      ) {
+        console.warn("Using enhanced mock data for receivables");
+        // Use our enhanced receivables mock data directly
+        return mockData.kpiData.receivables;
+      }
+
+      return handleKpiApiError(error, "receivables");
     }
   },
 
@@ -151,7 +206,7 @@ const kpiService = {
       );
       return response.data;
     } catch (error) {
-      return handleApiError(error, "corporate park");
+      return handleKpiApiError(error, "corporate park");
     }
   },
 
@@ -161,7 +216,25 @@ const kpiService = {
       const response = await api.get("/data/kpi/periodic-revenue/", { params });
       return response.data;
     } catch (error) {
-      return handleApiError(error, "periodic revenue KPIs");
+      // For specific revenue types, use the special structure from mock data
+      if (
+        isDevelopment() &&
+        (!error.response || error.response.status >= 500)
+      ) {
+        console.warn("Using mock data for periodic revenue");
+        return {
+          total: mockData.kpiData.revenue.periodic,
+          by_dot: Object.entries(mockData.kpiData.revenue.by_dot || {}).reduce(
+            (acc, [key, value]) => {
+              acc[key] = value * 0.6; // Simulate that periodic is ~60% of revenue
+              return acc;
+            },
+            {}
+          ),
+          growth: mockData.kpiData.revenue.growth * 0.8,
+        };
+      }
+      return handleKpiApiError(error, "periodic revenue KPIs");
     }
   },
 
@@ -173,7 +246,25 @@ const kpiService = {
       });
       return response.data;
     } catch (error) {
-      return handleApiError(error, "non-periodic revenue KPIs");
+      // For specific revenue types, use the special structure from mock data
+      if (
+        isDevelopment() &&
+        (!error.response || error.response.status >= 500)
+      ) {
+        console.warn("Using mock data for non-periodic revenue");
+        return {
+          total: mockData.kpiData.revenue.non_periodic,
+          by_dot: Object.entries(mockData.kpiData.revenue.by_dot || {}).reduce(
+            (acc, [key, value]) => {
+              acc[key] = value * 0.4; // Simulate that non-periodic is ~40% of revenue
+              return acc;
+            },
+            {}
+          ),
+          growth: mockData.kpiData.revenue.growth * 1.2,
+        };
+      }
+      return handleKpiApiError(error, "non-periodic revenue KPIs");
     }
   },
 
@@ -186,7 +277,29 @@ const kpiService = {
       });
       return response.data;
     } catch (error) {
-      return handleApiError(error, `${type.toUpperCase()} revenue`);
+      // For special revenue types, use the specific mock data
+      if (
+        isDevelopment() &&
+        (!error.response || error.response.status >= 500)
+      ) {
+        console.warn(`Using mock data for ${type.toUpperCase()} revenue`);
+        const specialRevenue =
+          (mockData.kpiData.revenue.special &&
+            mockData.kpiData.revenue.special[type.toLowerCase()]) ||
+          0;
+        return {
+          total: specialRevenue,
+          by_dot: Object.entries(mockData.kpiData.revenue.by_dot || {}).reduce(
+            (acc, [key, value]) => {
+              acc[key] = value * 0.1; // Simulate that each special type is ~10% of revenue
+              return acc;
+            },
+            {}
+          ),
+          growth: mockData.kpiData.revenue.growth * 0.5,
+        };
+      }
+      return handleKpiApiError(error, `${type.toUpperCase()} revenue`);
     }
   },
 
@@ -221,6 +334,73 @@ const kpiService = {
       };
     } catch (error) {
       console.error("Error fetching all revenue KPIs:", error);
+
+      // In development, return a complete mock structure if any API fails
+      if (isDevelopment()) {
+        console.warn("Using complete mock data for all revenue KPIs");
+        return {
+          revenue: mockData.kpiData.revenue,
+          periodicRevenue: {
+            total: mockData.kpiData.revenue.periodic,
+            by_dot: Object.entries(
+              mockData.kpiData.revenue.by_dot || {}
+            ).reduce((acc, [key, value]) => {
+              acc[key] = value * 0.6;
+              return acc;
+            }, {}),
+            growth: mockData.kpiData.revenue.growth * 0.8,
+          },
+          nonPeriodicRevenue: {
+            total: mockData.kpiData.revenue.non_periodic,
+            by_dot: Object.entries(
+              mockData.kpiData.revenue.by_dot || {}
+            ).reduce((acc, [key, value]) => {
+              acc[key] = value * 0.4;
+              return acc;
+            }, {}),
+            growth: mockData.kpiData.revenue.growth * 1.2,
+          },
+          specialRevenue: {
+            dnt: {
+              total:
+                (mockData.kpiData.revenue.special &&
+                  mockData.kpiData.revenue.special.dnt) ||
+                0,
+              by_dot: Object.entries(
+                mockData.kpiData.revenue.by_dot || {}
+              ).reduce((acc, [key, value]) => {
+                acc[key] = value * 0.1;
+                return acc;
+              }, {}),
+            },
+            rfd: {
+              total:
+                (mockData.kpiData.revenue.special &&
+                  mockData.kpiData.revenue.special.rfd) ||
+                0,
+              by_dot: Object.entries(
+                mockData.kpiData.revenue.by_dot || {}
+              ).reduce((acc, [key, value]) => {
+                acc[key] = value * 0.1;
+                return acc;
+              }, {}),
+            },
+            cnt: {
+              total:
+                (mockData.kpiData.revenue.special &&
+                  mockData.kpiData.revenue.special.cnt) ||
+                0,
+              by_dot: Object.entries(
+                mockData.kpiData.revenue.by_dot || {}
+              ).reduce((acc, [key, value]) => {
+                acc[key] = value * 0.1;
+                return acc;
+              }, {}),
+            },
+          },
+        };
+      }
+
       throw error;
     }
   },
@@ -298,7 +478,60 @@ const kpiService = {
       return response;
     } catch (error) {
       console.error("Error in getNGBSSCollectionKPIs:", error);
-      return handleApiError(error, "ngbss collection");
+
+      // If in development mode and API is unavailable, generate mock data from collection
+      if (
+        isDevelopment() &&
+        (!error.response || error.response.status >= 500)
+      ) {
+        console.warn("Using mock data for NGBSS collection");
+        return {
+          data: {
+            // Basic collection data
+            total_collected: mockData.kpiData.collection.total_collected,
+            total_invoiced: mockData.kpiData.collection.total_invoiced,
+            total_objective: mockData.kpiData.collection.total_objective,
+            total_current_year: mockData.kpiData.collection.total_current_year,
+            total_previous_year:
+              mockData.kpiData.collection.total_previous_year,
+            collection_rate: mockData.kpiData.collection.collection_rate,
+            achievement_percentage:
+              mockData.kpiData.collection.achievement_percentage,
+            change_percentage: mockData.kpiData.collection.change_percentage,
+
+            // Collections by organization
+            collection_by_dot: mockData.kpiData.collection.collection_by_dot,
+
+            // Collections by product
+            collection_by_product:
+              mockData.kpiData.collection.collection_by_product,
+
+            // Time series data
+            monthly_trends: mockData.kpiData.collection.monthly_trends,
+
+            // Aging of receivables
+            aging_data: mockData.kpiData.collection.aging_data,
+
+            // Payment behavior
+            payment_behavior: mockData.kpiData.collection.payment_behavior,
+
+            // Collection by segment/method
+            collection_by_segment:
+              mockData.kpiData.collection.collection_by_segment,
+            collection_by_method:
+              mockData.kpiData.collection.collection_by_method,
+
+            // Performance rankings
+            top_performers: mockData.kpiData.collection.top_performers,
+            underperformers: mockData.kpiData.collection.underperformers,
+
+            // Efficiency metrics
+            efficiency_metrics: mockData.kpiData.collection.efficiency_metrics,
+          },
+        };
+      }
+
+      return handleKpiApiError(error, "ngbss collection");
     }
   },
 
@@ -333,9 +566,83 @@ const kpiService = {
       );
       return response.data;
     } catch (error) {
-      return handleApiError(error, "unfinished invoice");
+      // Generate mock data for unfinished invoices in development mode
+      if (
+        isDevelopment() &&
+        (!error.response || error.response.status >= 500)
+      ) {
+        console.warn("Using mock data for unfinished invoices");
+
+        // Generate sample data for unfinished invoices
+        const mockUnfinishedInvoices = {
+          total_count: 42,
+          by_status: {
+            pending: 18,
+            processing: 12,
+            failed: 7,
+            partial: 5,
+          },
+          by_age: {
+            "1-7 days": 15,
+            "8-30 days": 20,
+            "31+ days": 7,
+          },
+          by_dot: Object.fromEntries(
+            mockData.kpiData.revenue.by_dot
+              ? Object.keys(mockData.kpiData.revenue.by_dot).map((dot) => [
+                  dot,
+                  Math.floor(Math.random() * 10),
+                ])
+              : []
+          ),
+          recent_invoices: Array(5)
+            .fill(null)
+            .map((_, i) => ({
+              id: i + 1,
+              invoice_number: `INV-${2023}-${String(i + 100).padStart(3, "0")}`,
+              status: ["pending", "processing", "failed", "partial"][
+                Math.floor(Math.random() * 4)
+              ],
+              days_open: Math.floor(Math.random() * 60) + 1,
+              dot:
+                Object.keys(mockData.kpiData.revenue.by_dot || {}).length > 0
+                  ? Object.keys(mockData.kpiData.revenue.by_dot)[
+                      Math.floor(
+                        Math.random() *
+                          Object.keys(mockData.kpiData.revenue.by_dot).length
+                      )
+                    ]
+                  : "DOT1",
+              upload_date: new Date(Date.now() - Math.random() * 5000000000)
+                .toISOString()
+                .split("T")[0],
+            })),
+        };
+
+        return mockUnfinishedInvoices;
+      }
+
+      return handleKpiApiError(error, "unfinished invoice");
     }
   },
+};
+
+// Helper function to generate month data for mock data
+const generatePastMonths = (count) => {
+  const result = [];
+  const currentDate = new Date();
+
+  for (let i = count - 1; i >= 0; i--) {
+    const pastDate = new Date(currentDate);
+    pastDate.setMonth(currentDate.getMonth() - i);
+
+    result.push({
+      month: pastDate.toLocaleString("default", { month: "long" }),
+      year: pastDate.getFullYear(),
+    });
+  }
+
+  return result;
 };
 
 export default kpiService;

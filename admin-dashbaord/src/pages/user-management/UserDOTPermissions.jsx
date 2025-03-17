@@ -21,8 +21,12 @@ import {
   CircularProgress,
   Alert,
   Snackbar,
+  TextField,
+  InputAdornment,
+  TablePagination,
+  Box,
 } from "@mui/material";
-import { Add, Refresh } from "@mui/icons-material";
+import { Add, Refresh, Search } from "@mui/icons-material";
 import { userService, authService } from "../../services/api";
 import { handleApiError } from "../../utils/errorHandler";
 import PageLayout from "../../components/PageLayout";
@@ -44,6 +48,32 @@ const UserDOTPermissions = () => {
   });
   const [hasPermission, setHasPermission] = useState(false);
   const [addingDot, setAddingDot] = useState(false);
+
+  // Pagination state
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Search and filter state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+
+  // Filtered and paginated data
+  const filteredUsers = users.filter((user) => {
+    const matchesSearch =
+      user.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesRole = roleFilter === "all" || user.role === roleFilter;
+
+    return matchesSearch && matchesRole;
+  });
+
+  const paginatedUsers = filteredUsers.slice(
+    page * rowsPerPage,
+    page * rowsPerPage + rowsPerPage
+  );
 
   useEffect(() => {
     checkPermissions();
@@ -276,6 +306,28 @@ const UserDOTPermissions = () => {
     return user.dot_permissions || [];
   };
 
+  // Handle pagination
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  // Handle search
+  const handleSearchChange = (event) => {
+    setSearchTerm(event.target.value);
+    setPage(0); // Reset to first page when searching
+  };
+
+  // Handle role filter
+  const handleRoleFilterChange = (event) => {
+    setRoleFilter(event.target.value);
+    setPage(0); // Reset to first page when filtering
+  };
+
   if (!hasPermission) {
     return (
       <PageLayout
@@ -302,14 +354,40 @@ const UserDOTPermissions = () => {
         <CircularProgress sx={{ display: "block", mx: "auto", my: 4 }} />
       ) : (
         <>
-          <Button
-            variant="outlined"
-            startIcon={<Refresh />}
-            onClick={loadData}
-            sx={{ mb: 2 }}
-          >
-            {t("common.refresh")}
-          </Button>
+          <Box sx={{ mb: 3, display: "flex", gap: 2, alignItems: "center" }}>
+            <TextField
+              placeholder={t("common.search")}
+              value={searchTerm}
+              onChange={handleSearchChange}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ width: 300 }}
+            />
+            <FormControl sx={{ minWidth: 200 }}>
+              <InputLabel>{t("users.role")}</InputLabel>
+              <Select
+                value={roleFilter}
+                onChange={handleRoleFilterChange}
+                label={t("users.role")}
+              >
+                <MenuItem value="all">{t("common.all")}</MenuItem>
+                <MenuItem value="admin">{t("users.admin")}</MenuItem>
+                <MenuItem value="viewer">{t("users.viewer")}</MenuItem>
+              </Select>
+            </FormControl>
+            <Button
+              variant="outlined"
+              startIcon={<Refresh />}
+              onClick={loadData}
+            >
+              {t("common.refresh")}
+            </Button>
+          </Box>
 
           <TableContainer>
             <Table>
@@ -323,57 +401,75 @@ const UserDOTPermissions = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>
-                      {user.first_name} {user.last_name}
-                    </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={t(`users.${user.role}`)}
-                        color={
-                          user.role === "admin"
-                            ? "primary"
-                            : user.role === "analyst"
-                            ? "secondary"
-                            : "default"
-                        }
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {getUserDOTPermissions(user).length > 0 ? (
-                        getUserDOTPermissions(user).map((dot) => (
-                          <Chip
-                            key={dot.dot_code}
-                            label={dot.dot_name || dot.dot_code}
-                            onDelete={() =>
-                              handleRemoveDot(user.id, dot.dot_code)
-                            }
-                            size="small"
-                            sx={{ mr: 0.5, mb: 0.5 }}
-                          />
-                        ))
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">
-                          {t("permissions.noDOTsAssigned")}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="small"
-                        startIcon={<Add />}
-                        onClick={() => handleOpenDialog(user)}
-                      >
-                        {t("permissions.assignDOT")}
-                      </Button>
+                {paginatedUsers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center">
+                      {t("users.noUsersFound")}
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  paginatedUsers.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell>
+                        {user.first_name} {user.last_name}
+                      </TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={t(`users.${user.role}`)}
+                          color={
+                            user.role === "admin"
+                              ? "primary"
+                              : user.role === "analyst"
+                              ? "secondary"
+                              : "default"
+                          }
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {getUserDOTPermissions(user).length > 0 ? (
+                          getUserDOTPermissions(user).map((dot) => (
+                            <Chip
+                              key={dot.dot_code}
+                              label={dot.dot_name || dot.dot_code}
+                              onDelete={() =>
+                                handleRemoveDot(user.id, dot.dot_code)
+                              }
+                              size="small"
+                              sx={{ mr: 0.5, mb: 0.5 }}
+                            />
+                          ))
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            {t("permissions.noDOTsAssigned")}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="small"
+                          startIcon={<Add />}
+                          onClick={() => handleOpenDialog(user)}
+                        >
+                          {t("permissions.assignDOT")}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
+            <TablePagination
+              component="div"
+              count={filteredUsers.length}
+              page={page}
+              onPageChange={handleChangePage}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+              rowsPerPageOptions={[5, 10, 25, 50]}
+              labelRowsPerPage={t("common.rowsPerPage")}
+            />
           </TableContainer>
 
           <Dialog open={openDialog} onClose={handleCloseDialog}>

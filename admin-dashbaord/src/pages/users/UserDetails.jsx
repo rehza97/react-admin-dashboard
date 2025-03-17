@@ -19,8 +19,7 @@ import { userService } from "../../services/api";
 
 const ROLES = {
   ADMIN: "admin",
-  USER: "user",
-  EDITOR: "editor",
+  VIEWER: "viewer",
 };
 
 const UserDetails = () => {
@@ -31,7 +30,7 @@ const UserDetails = () => {
     email: "",
     first_name: "",
     last_name: "",
-    role: ROLES.USER,
+    role: ROLES.VIEWER,
   });
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(true);
@@ -51,7 +50,7 @@ const UserDetails = () => {
           email: userData.email || "",
           first_name: userData.first_name || "",
           last_name: userData.last_name || "",
-          role: userData.role || ROLES.USER,
+          role: userData.role || ROLES.VIEWER,
         });
       } catch (error) {
         console.error("Error fetching user:", error);
@@ -211,9 +210,8 @@ const UserDetails = () => {
                   onChange={handleChange}
                   label="Role"
                 >
-                  <MenuItem value={ROLES.USER}>User</MenuItem>
-                  <MenuItem value={ROLES.EDITOR}>Editor</MenuItem>
-                  <MenuItem value={ROLES.ADMIN}>Admin</MenuItem>
+                  <MenuItem value={ROLES.VIEWER}>Viewer</MenuItem>
+                  <MenuItem value={ROLES.ADMIN}>Administrator</MenuItem>
                 </Select>
               </FormControl>
             </Grid>

@@ -25,12 +25,19 @@ import {
   CircularProgress,
   Chip,
   AlertTitle,
+  TablePagination,
+  InputAdornment,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import BlockIcon from "@mui/icons-material/Block";
+import SearchIcon from "@mui/icons-material/Search";
 import { userService } from "../../services/api";
 import PageLayout from "../../components/PageLayout";
 import { useTranslation } from "react-i18next";
@@ -61,23 +68,75 @@ const DOTManagement = () => {
     action: null,
   });
 
+  // Pagination state
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Search and filter state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  // Filtered and paginated data
+  const filteredDots = dots.filter((dot) => {
+    const matchesSearch = 
+      dot.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      dot.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (dot.description && dot.description.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    const matchesStatus = 
+      statusFilter === "all" ||
+      (statusFilter === "active" && dot.is_active !== false) ||
+      (statusFilter === "inactive" && dot.is_active === false);
+
+    return matchesSearch && matchesStatus;
+  });
+
+  const paginatedDots = filteredDots.slice(
+    page * rowsPerPage,
+    page * rowsPerPage + rowsPerPage
+  );
+
   const fetchDOTs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await userService.getAllDOTs();
       setDots(response);
+      setTotalCount(response.length);
     } catch (err) {
       console.error("Failed to fetch DOTs:", err);
-      setError("Failed to load DOTs. Please try again later.");
+      setError(t("dots.errorLoading"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchDOTs();
   }, [fetchDOTs]);
+
+  // Handle pagination
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  // Handle search
+  const handleSearchChange = (event) => {
+    setSearchTerm(event.target.value);
+    setPage(0); // Reset to first page when searching
+  };
+
+  // Handle status filter
+  const handleStatusFilterChange = (event) => {
+    setStatusFilter(event.target.value);
+    setPage(0); // Reset to first page when filtering
+  };
 
   const handleOpenAddDialog = () => {
     setDialogMode("add");
@@ -270,6 +329,35 @@ const DOTManagement = () => {
         </Button>
       }
     >
+      {/* Search and Filter Controls */}
+      <Box sx={{ mb: 3, display: "flex", gap: 2, alignItems: "center" }}>
+        <TextField
+          placeholder={t("common.search")}
+          value={searchTerm}
+          onChange={handleSearchChange}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+          sx={{ width: 300 }}
+        />
+        <FormControl sx={{ minWidth: 200 }}>
+          <InputLabel>{t("dots.status")}</InputLabel>
+          <Select
+            value={statusFilter}
+            onChange={handleStatusFilterChange}
+            label={t("dots.status")}
+          >
+            <MenuItem value="all">{t("common.all")}</MenuItem>
+            <MenuItem value="active">{t("dots.active")}</MenuItem>
+            <MenuItem value="inactive">{t("dots.inactive")}</MenuItem>
+          </Select>
+        </FormControl>
+      </Box>
+
       {loading && !dots.length ? (
         <Box sx={{ display: "flex", justifyContent: "center", p: 3 }}>
           <CircularProgress />
@@ -289,14 +377,14 @@ const DOTManagement = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {dots.length === 0 ? (
+              {paginatedDots.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} align="center">
                     {t("dots.noDOTsFound")}
                   </TableCell>
                 </TableRow>
               ) : (
-                dots.map((dot) => (
+                paginatedDots.map((dot) => (
                   <TableRow key={dot.id || dot.code}>
                     <TableCell>{dot.code}</TableCell>
                     <TableCell>{dot.name}</TableCell>
@@ -362,6 +450,16 @@ const DOTManagement = () => {
               )}
             </TableBody>
           </Table>
+          <TablePagination
+            component="div"
+            count={filteredDots.length}
+            page={page}
+            onPageChange={handleChangePage}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            rowsPerPageOptions={[5, 10, 25, 50]}
+            labelRowsPerPage={t("common.rowsPerPage")}
+          />
         </TableContainer>
       )}
 

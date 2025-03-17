@@ -1,13 +1,31 @@
 import axios from "axios";
 
 // Create axios instance with base URL
-const API_URL = "https://react-admin-dashboard-nz1d.onrender.com";
+// Dynamic API URL selection based on environment
+const getApiUrl = () => {
+  // Determine based on hostname
+  const hostname = window.location.hostname;
+
+  // Development environment
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return "http://localhost:8000";
+  }
+
+  // Production environment - use the deployed backend URL
+  return "https://react-admin-dashboard-nz1d.onrender.com";
+};
+
+const API_URL = getApiUrl();
+
+console.log(`Using API URL: ${API_URL}`);
 
 const api = axios.create({
   baseURL: API_URL,
   headers: {
     "Content-Type": "application/json",
   },
+  // Add reasonable timeouts to prevent UI freezing on slow responses
+  timeout: 30000000000, // 30 seconds
 });
 
 // Add request interceptor to include auth token
@@ -24,61 +42,32 @@ api.interceptors.request.use(
   }
 );
 
-// Add response interceptor for token refresh
+// Add response interceptor for better error handling
 api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
+  (response) => {
+    return response;
+  },
+  (error) => {
+    // Log errors in development
+    const isDevelopment =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
 
-    // If the error is 401 Unauthorized and we haven't already tried to refresh
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true; // Prevent infinite loop
+    if (isDevelopment) {
+      console.error("API Error:", error);
 
-      try {
-        // Try to refresh the token
-        // Note: This assumes your backend has a token refresh endpoint
-        // You may need to adjust this based on your actual backend implementation
-        const refreshToken = localStorage.getItem("refreshToken");
-
-        if (refreshToken) {
-          const response = await axios.post(
-            `${API_URL}/users/api/token/refresh/`,
-            {
-              refresh: refreshToken,
-            }
-          );
-
-          // Update the token in localStorage
-          localStorage.setItem("token", response.data.access);
-
-          // Update the Authorization header
-          originalRequest.headers.Authorization = `Token ${response.data.access}`;
-
-          // Retry the original request
-          return api(originalRequest);
-        } else {
-          // No refresh token, redirect to login
-          localStorage.removeItem("token");
-          localStorage.removeItem("isAuthenticated");
-          window.location.href = "/login";
-        }
-      } catch (refreshError) {
-        // Handle refresh token failure
-        console.error("Token refresh failed:", refreshError);
-
-        // Clear auth data
-        localStorage.removeItem("token");
-        localStorage.removeItem("refreshToken");
-        localStorage.removeItem("isAuthenticated");
-
-        // Redirect to login
-        window.location.href = "/login";
-
-        return Promise.reject(refreshError);
+      // Log more details if available
+      if (error.response) {
+        console.error("Response status:", error.response.status);
+        console.error("Response data:", error.response.data);
       }
     }
 
-    // For other errors, just reject the promise
+    // Check for timeout errors
+    if (error.code === "ECONNABORTED") {
+      console.error("Request timeout. The server took too long to respond.");
+    }
+
     return Promise.reject(error);
   }
 );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Box,
@@ -379,7 +379,7 @@ const FileProcessingView = () => {
 
           const previewWithIds = response.preview_data.map((item, index) => {
             // Create a new object with mapped field names
-            const mappedItem = { id: item.id || `preview-${index + 1}` };
+            const mappedItem = {};
 
             // Map each field using the field mapping
             Object.keys(item).forEach((key) => {
@@ -1150,6 +1150,15 @@ const FileProcessingView = () => {
     // Initialize columns array
     const columns = [];
 
+    // Get the field mapping for the current file type
+    const fieldMapping = getFieldMappingForType(fileType);
+    console.log("Field mapping for file type:", fileType);
+    console.log(fieldMapping);
+
+    // Create a set to track which fields we've already processed
+    // This prevents duplicate columns
+    const processedFields = new Set(["id"]);
+
     // Add ID column first
     columns.push({
       field: "id",
@@ -1159,63 +1168,68 @@ const FileProcessingView = () => {
       type: "string",
     });
 
-    // Get the field mapping for the current file type
-    const fieldMapping = getFieldMappingForType(fileType);
-    console.log("Field mapping for file type:", fileType);
-    console.log(fieldMapping);
-
     // For ca_periodique, prioritize the mapped field names
-    if (fileType === "ca_periodique") {
-      // These are the fields we expect in the database
-      const expectedFields = [
-        "dot",
-        "product",
-        "amount_pre_tax",
-        "tax_amount",
-        "total_amount",
-        "discount",
-      ];
-
-      // Check if these fields exist in our data
-      console.log("Checking for expected fields in ca_periodique data:");
-      expectedFields.forEach((field) => {
-        const exists = dataArray.some((item) => field in item);
-        console.log(`Field ${field} exists: ${exists}`);
+    if (fileType === "ca_periodique" || Object.keys(fieldMapping).length > 0) {
+      // Map of original field names to their target field names
+      const originalToMappedField = {};
+      Object.entries(fieldMapping).forEach(([originalField, mappedField]) => {
+        originalToMappedField[originalField] = mappedField;
       });
 
-      // Define the columns we want to show in order based on the CAPeriodique model
-      const priorityFields = [
-        "dot", // DO in the file, dot in the database
-        "product", // PRODUIT in the file, product in the database
-        "amount_pre_tax", // HT in the file, amount_pre_tax in the database
-        "tax_amount", // TAX in the file, tax_amount in the database
-        "total_amount", // TTC in the file, total_amount in the database
-        "discount", // DISCOUNT in the file, discount in the database
-      ];
+      // Inverse map for looking up original fields from mapped fields
+      const mappedToOriginalField = {};
+      Object.entries(fieldMapping).forEach(([originalField, mappedField]) => {
+        mappedToOriginalField[mappedField] = originalField;
+      });
 
       // Use more descriptive names for specific fields
-      const headerNameMap = {
-        dot: "DOT",
-        product: "Product",
-        amount_pre_tax: "Amount (Pre-tax)",
-        tax_amount: "Tax Amount",
-        total_amount: "Total Amount",
-        discount: "Discount",
-      };
+      const headerNameMap = {};
+      Object.entries(fieldMapping).forEach(([originalField, mappedField]) => {
+        // Create a nice header name for the mapped field
+        headerNameMap[mappedField] = originalField
+          .split("_")
+          .map(
+            (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+          )
+          .join(" ");
+      });
 
-      // Add columns for the priority fields
-      priorityFields.forEach((field) => {
-        // Skip if the field doesn't exist in any item
-        if (!dataArray.some((item) => field in item)) {
-          console.log(`Field ${field} not found in data, skipping column`);
+      // First add mapped fields (which should be prioritized)
+      Object.entries(fieldMapping).forEach(([originalField, mappedField]) => {
+        // Skip if we've already processed this field
+        if (
+          processedFields.has(originalField) ||
+          processedFields.has(mappedField)
+        ) {
           return;
         }
+
+        // Skip if the field doesn't exist in any item
+        if (
+          !dataArray.some(
+            (item) => originalField in item || mappedField in item
+          )
+        ) {
+          console.log(
+            `Fields ${originalField}/${mappedField} not found in data, skipping column`
+          );
+          return;
+        }
+
+        // Mark as processed
+        processedFields.add(originalField);
+        processedFields.add(mappedField);
+
+        // Determine which field actually exists in the data
+        const fieldToUse = dataArray.some((item) => originalField in item)
+          ? originalField
+          : mappedField;
 
         // Determine the field type based on the first non-null value
         let sampleValue = null;
         for (const item of dataArray) {
-          if (item[field] !== null && item[field] !== undefined) {
-            sampleValue = item[field];
+          if (item[fieldToUse] !== null && item[fieldToUse] !== undefined) {
+            sampleValue = item[fieldToUse];
             break;
           }
         }
@@ -1230,22 +1244,116 @@ const FileProcessingView = () => {
           /^\d{4}-\d{2}-\d{2}/.test(sampleValue);
 
         console.log(
-          `Column ${field}: type=${
+          `Column ${fieldToUse} (mapped from ${originalField} to ${mappedField}): type=${
             isDate ? "date" : isNumeric ? "number" : "string"
           }, sample value=${sampleValue}`
         );
 
         // Create column definition with human-readable header names
         let headerName =
-          field.charAt(0).toUpperCase() + field.slice(1).replace(/_/g, " ");
-
-        if (headerNameMap[field]) {
-          headerName = headerNameMap[field];
-        }
+          headerNameMap[mappedField] ||
+          originalField.charAt(0).toUpperCase() +
+            originalField.slice(1).replace(/_/g, " ");
 
         columns.push({
-          field,
+          field: fieldToUse,
           headerName,
+          flex: 1,
+          minWidth: 150,
+          align: isNumeric ? "right" : "left",
+          headerAlign: "center",
+          type: isDate ? "dateTime" : isNumeric ? "number" : "string",
+          valueFormatter: (params) => {
+            // Handle null/undefined values
+            if (params?.value == null || params?.value === "") {
+              return "";
+            }
+
+            // Handle object values
+            if (typeof params.value === "object") {
+              try {
+                return JSON.stringify(params.value);
+              } catch (error) {
+                console.error(
+                  `Error stringifying object for ${fieldToUse}:`,
+                  error
+                );
+                return "[Complex Object]";
+              }
+            }
+
+            // Format date fields
+            if (isDate) {
+              try {
+                return new Date(params.value).toLocaleDateString("fr-FR");
+              } catch (error) {
+                console.error(
+                  `Error formatting date for ${fieldToUse}:`,
+                  error
+                );
+                return String(params.value || "");
+              }
+            }
+
+            // Format currency fields
+            if (
+              fieldToUse.includes("amount") ||
+              fieldToUse.includes("tax") ||
+              fieldToUse.includes("total") ||
+              fieldToUse.includes("discount") ||
+              fieldToUse.includes("ht") ||
+              fieldToUse.includes("ttc") ||
+              fieldToUse.includes("tva")
+            ) {
+              try {
+                return new Intl.NumberFormat("fr-FR", {
+                  style: "currency",
+                  currency: "DZD",
+                  minimumFractionDigits: 2,
+                }).format(Number(params.value));
+              } catch (error) {
+                console.error(
+                  `Error formatting value for ${fieldToUse}:`,
+                  error
+                );
+                return String(params.value || "");
+              }
+            }
+
+            // Return the value as is for other fields
+            return String(params.value || "");
+          },
+        });
+      });
+    }
+
+    // Now add any remaining fields that aren't already mapped
+    Object.keys(dataArray[0] || {})
+      .filter((field) => !processedFields.has(field))
+      .forEach((field) => {
+        // Skip already processed fields
+        if (processedFields.has(field)) {
+          return;
+        }
+
+        processedFields.add(field);
+
+        // Determine the field type
+        const sampleValue = dataArray[0][field];
+        const isNumeric =
+          typeof sampleValue === "number" ||
+          (typeof sampleValue === "string" &&
+            !isNaN(parseFloat(sampleValue)) &&
+            isFinite(parseFloat(sampleValue)));
+        const isDate =
+          typeof sampleValue === "string" &&
+          /^\d{4}-\d{2}-\d{2}/.test(sampleValue);
+
+        // Create column definition
+        columns.push({
+          field,
+          headerName:
+            field.charAt(0).toUpperCase() + field.slice(1).replace(/_/g, " "),
           flex: 1,
           minWidth: 150,
           align: isNumeric ? "right" : "left",
@@ -1267,22 +1375,17 @@ const FileProcessingView = () => {
               }
             }
 
-            // Format date fields
-            if (isDate) {
-              try {
-                return new Date(params.value).toLocaleDateString("fr-FR");
-              } catch (error) {
-                console.error(`Error formatting date for ${field}:`, error);
-                return String(params.value || "");
-              }
-            }
-
             // Format currency fields
             if (
-              field.includes("amount") ||
-              field.includes("tax") ||
-              field.includes("total") ||
-              field.includes("discount")
+              isNumeric &&
+              (field.includes("amount") ||
+                field.includes("revenue") ||
+                field.includes("cost") ||
+                field.includes("tax") ||
+                field.includes("ttc") ||
+                field.includes("ht") ||
+                field.includes("price") ||
+                field.includes("total"))
             ) {
               try {
                 return new Intl.NumberFormat("fr-FR", {
@@ -1302,388 +1405,253 @@ const FileProcessingView = () => {
         });
       });
 
-      // Add any original fields that aren't already mapped
-      // This ensures we show all data even if it doesn't match our expected schema
-      Object.keys(dataArray[0] || {})
-        .filter(
-          (field) =>
-            field !== "id" && // Exclude the id field
-            !priorityFields.includes(field) && // Exclude fields we've already added
-            !Object.values(fieldMapping).includes(field) // Exclude fields that are mapped values
-        )
-        .forEach((field) => {
-          // Skip if the field is a mapped field (e.g., DO is mapped to dot)
-          if (fieldMapping[field]) {
-            return;
-          }
-
-          // Determine the field type
-          const sampleValue = dataArray[0][field];
-          const isNumeric =
-            typeof sampleValue === "number" ||
-            (typeof sampleValue === "string" &&
-              !isNaN(parseFloat(sampleValue)) &&
-              isFinite(parseFloat(sampleValue)));
-          const isDate =
-            typeof sampleValue === "string" &&
-            /^\d{4}-\d{2}-\d{2}/.test(sampleValue);
-
-          // Create column definition
-          columns.push({
-            field,
-            headerName: field,
-            flex: 1,
-            minWidth: 150,
-            align: isNumeric ? "right" : "left",
-            headerAlign: "center",
-            type: isDate ? "dateTime" : isNumeric ? "number" : "string",
-            valueFormatter: (params) => {
-              // Handle null/undefined values
-              if (params?.value == null || params?.value === "") {
-                return "";
-              }
-
-              // Handle object values
-              if (typeof params.value === "object") {
-                try {
-                  return JSON.stringify(params.value);
-                } catch (error) {
-                  console.error(
-                    `Error stringifying object for ${field}:`,
-                    error
-                  );
-                  return "[Complex Object]";
-                }
-              }
-
-              // Format currency fields
-              if (
-                isNumeric &&
-                (field.includes("amount") ||
-                  field.includes("revenue") ||
-                  field.includes("cost") ||
-                  field.includes("tax") ||
-                  field.includes("ttc") ||
-                  field.includes("ht") ||
-                  field.includes("price") ||
-                  field.includes("total"))
-              ) {
-                try {
-                  return new Intl.NumberFormat("fr-FR", {
-                    style: "currency",
-                    currency: "DZD",
-                    minimumFractionDigits: 2,
-                  }).format(Number(params.value));
-                } catch (error) {
-                  console.error(`Error formatting value for ${field}:`, error);
-                  return String(params.value || "");
-                }
-              }
-
-              // Return the value as is for other fields
-              return String(params.value || "");
-            },
-          });
-        });
-    } else {
-      // For other file types, use the existing column generation logic
-      Object.keys(dataArray[0] || {})
-        .filter((field) => field !== "id") // Exclude the id field as we've already added it
-        .forEach((field) => {
-          // Determine the field type based on the data
-          const sampleValue = dataArray[0][field];
-          const isNumeric =
-            typeof sampleValue === "number" ||
-            (typeof sampleValue === "string" &&
-              !isNaN(parseFloat(sampleValue)) &&
-              isFinite(parseFloat(sampleValue)));
-          const isDate =
-            typeof sampleValue === "string" &&
-            /^\d{4}-\d{2}-\d{2}/.test(sampleValue);
-
-          console.log(
-            `Column ${field}: type=${
-              isDate ? "date" : isNumeric ? "number" : "string"
-            }, sample value=${sampleValue}`
-          );
-
-          // Create column definition
-          columns.push({
-            field,
-            headerName:
-              field.charAt(0).toUpperCase() + field.slice(1).replace(/_/g, " "),
-            flex: 1,
-            minWidth: 150,
-            align: isNumeric ? "right" : "left",
-            headerAlign: "center",
-            type: isDate ? "dateTime" : isNumeric ? "number" : "string",
-            valueFormatter: (params) => {
-              // Handle null/undefined values
-              if (params?.value == null || params?.value === "") {
-                return "";
-              }
-
-              // Handle object values
-              if (typeof params.value === "object") {
-                try {
-                  return JSON.stringify(params.value);
-                } catch (error) {
-                  console.error(
-                    `Error stringifying object for ${field}:`,
-                    error
-                  );
-                  return "[Complex Object]";
-                }
-              }
-
-              // Format currency fields
-              if (
-                field.includes("amount") ||
-                field.includes("revenue") ||
-                field.includes("cost") ||
-                field.includes("tax") ||
-                field.includes("ttc") ||
-                field.includes("ht") ||
-                field.includes("price") ||
-                field.includes("total")
-              ) {
-                try {
-                  return new Intl.NumberFormat("fr-FR", {
-                    style: "currency",
-                    currency: "DZD",
-                    minimumFractionDigits: 2,
-                  }).format(Number(params.value));
-                } catch (error) {
-                  console.error(`Error formatting value for ${field}:`, error);
-                  return String(params.value || "");
-                }
-              }
-
-              // Return the value as is for other fields
-              return String(params.value || "");
-            },
-          });
-        });
-    }
-
     return (
-      <Box sx={{ height: "calc(100vh - 200px)", width: "100%", p: 2 }}>
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="subtitle1">
-            Showing {dataArray.length} records from preview data
+      <Box sx={{ height: "calc(100vh - 320px)", width: "100%", p: 2 }}>
+        <Box
+          sx={{
+            mb: 4,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Typography
+            variant="h6"
+            component="div"
+            sx={{ fontWeight: "bold", color: theme.palette.primary.main }}
+          >
+            Data Preview -{" "}
+            {summaryData.file_type || fileType || "Unknown File Type"}
+            <Typography variant="body2" sx={{ mt: 1, color: "text.secondary" }}>
+              Showing {dataArray.length} records from preview data
+            </Typography>
           </Typography>
+
+          <Box>
+            <Chip
+              label={`${
+                summaryData.summary_data.row_count || dataArray.length
+              } Rows`}
+              color="primary"
+              variant="outlined"
+              sx={{ mr: 1 }}
+            />
+            <Chip
+              label={`${columns.length - 1} Columns`}
+              color="secondary"
+              variant="outlined"
+            />
+          </Box>
         </Box>
-        <div style={{ height: "100%", width: "100%" }}>
-          {(() => {
-            try {
-              console.log(
-                "______________preview____________________________________________________________"
-              );
-              console.log("Final columns array:", columns);
-              console.log("Data being passed to DataGrid:", {
-                rowCount: processedDataArray.length,
-                sampleRows: processedDataArray.slice(0, 3),
-                columnCount: columns.length,
-                columnFields: columns.map((col) => col.field),
-              });
 
-              // Check if the data has the fields that match the column definitions
-              const firstRow = processedDataArray[0] || {};
-              const missingFields = columns
-                .map((col) => col.field)
-                .filter((field) => !(field in firstRow));
+        <Paper
+          elevation={3}
+          sx={{
+            height: "calc(100vh - 320px)",
+            width: "100%",
+            overflow: "hidden",
+            borderRadius: 2,
+          }}
+        >
+          <TableContainer
+            sx={{
+              maxHeight: "calc(100vh - 400px)",
+              "&::-webkit-scrollbar": {
+                width: "8px",
+                height: "8px",
+              },
+              "&::-webkit-scrollbar-thumb": {
+                backgroundColor: alpha(theme.palette.primary.main, 0.3),
+                borderRadius: "4px",
+                "&:hover": {
+                  backgroundColor: alpha(theme.palette.primary.main, 0.5),
+                },
+              },
+            }}
+          >
+            <Table stickyHeader aria-label="preview data table">
+              <TableHead>
+                <TableRow sx={{ backgroundColor: theme.palette.primary.light }}>
+                  {columns.map((column) => {
+                    // Safe access to properties with type checking
+                    let align = "left";
+                    if ("align" in column) {
+                      align = String(column.align);
+                    } else if ("headerAlign" in column) {
+                      align = String(column.headerAlign);
+                    }
 
-              console.log("Fields missing in data:", missingFields);
+                    let width = 100;
+                    if ("minWidth" in column) {
+                      width = Number(column.minWidth);
+                    } else if ("width" in column) {
+                      width = Number(column.width);
+                    }
 
-              if (missingFields.length > 0) {
-                console.warn(
-                  "Some column fields are missing in the data. This may cause rendering issues."
-                );
-              }
-
-              console.log(
-                "______________preview____________________________________________________________"
-              );
-              return (
-                <Box sx={{ width: "100%", overflow: "auto" }}>
-                  <Paper sx={{ width: "100%", mb: 2 }}>
-                    <Toolbar
+                    return (
+                      <TableCell
+                        key={column.field}
+                        align={
+                          align === "right"
+                            ? "right"
+                            : align === "center"
+                            ? "center"
+                            : "left"
+                        }
+                        style={{
+                          minWidth: width,
+                          fontWeight: "bold",
+                          backgroundColor: theme.palette.primary.main,
+                          color: theme.palette.primary.contrastText,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          padding: "12px 16px",
+                        }}
+                      >
+                        {column.headerName}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {processedDataArray
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((row) => (
+                    <TableRow
+                      hover
+                      role="checkbox"
+                      tabIndex={-1}
+                      key={row.id}
                       sx={{
-                        pl: { sm: 2 },
-                        pr: { xs: 1, sm: 1 },
+                        "&:nth-of-type(odd)": {
+                          backgroundColor: alpha(
+                            theme.palette.primary.light,
+                            0.05
+                          ),
+                        },
+                        "&:hover": {
+                          backgroundColor: alpha(
+                            theme.palette.primary.light,
+                            0.1
+                          ),
+                        },
                       }}
                     >
-                      <Typography
-                        sx={{ flex: "1 1 100%" }}
-                        variant="h6"
-                        id="tableTitle"
-                        component="div"
-                      >
-                        Preview Data
-                      </Typography>
-                      <Tooltip title="Filter list">
-                        <IconButton>
-                          <InfoOutlinedIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </Toolbar>
-                    <TableContainer sx={{ maxHeight: "calc(100vh - 300px)" }}>
-                      <Table stickyHeader aria-label="preview data table">
-                        <TableHead>
-                          <TableRow>
-                            {columns.map((column) => {
-                              // Safe access to properties with type checking
-                              let align = "left";
-                              if ("align" in column) {
-                                align = String(column.align);
-                              } else if ("headerAlign" in column) {
-                                align = String(column.headerAlign);
-                              }
+                      {columns.map((column) => {
+                        const value = row[column.field];
 
-                              let width = 100;
-                              if ("minWidth" in column) {
-                                width = Number(column.minWidth);
-                              } else if ("width" in column) {
-                                width = Number(column.width);
-                              }
-
-                              return (
-                                <TableCell
-                                  key={column.field}
-                                  align={
-                                    align === "right"
-                                      ? "right"
-                                      : align === "center"
-                                      ? "center"
-                                      : "left"
-                                  }
-                                  style={{
-                                    minWidth: width,
-                                    fontWeight: "bold",
-                                  }}
-                                >
-                                  {column.headerName}
-                                </TableCell>
-                              );
-                            })}
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {processedDataArray
-                            .slice(
-                              page * rowsPerPage,
-                              page * rowsPerPage + rowsPerPage
-                            )
-                            .map((row) => (
-                              <TableRow
-                                hover
-                                role="checkbox"
-                                tabIndex={-1}
-                                key={row.id}
-                              >
-                                {columns.map((column) => {
-                                  const value = row[column.field];
-
-                                  // Safe access to properties with type checking
-                                  let align = "left";
-                                  if ("align" in column) {
-                                    align = String(column.align);
-                                  } else if ("headerAlign" in column) {
-                                    align = String(column.headerAlign);
-                                  }
-
-                                  let width = 100;
-                                  if ("minWidth" in column) {
-                                    width = Number(column.minWidth);
-                                  } else if ("width" in column) {
-                                    width = Number(column.width);
-                                  }
-
-                                  return (
-                                    <TableCell
-                                      key={column.field}
-                                      align={
-                                        align === "right"
-                                          ? "right"
-                                          : align === "center"
-                                          ? "center"
-                                          : "left"
-                                      }
-                                      style={{ minWidth: width }}
-                                    >
-                                      {column.valueFormatter
-                                        ? column.valueFormatter({ value })
-                                        : safeToString(value)}
-                                    </TableCell>
-                                  );
-                                })}
-                              </TableRow>
-                            ))}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                    <Box
-                      sx={{ display: "flex", justifyContent: "flex-end", p: 2 }}
-                    >
-                      <Typography
-                        variant="caption"
-                        sx={{ mr: 2, alignSelf: "center" }}
-                      >
-                        Rows per page:
-                      </Typography>
-                      <select
-                        value={rowsPerPage}
-                        onChange={(e) => setRowsPerPage(Number(e.target.value))}
-                        style={{ marginRight: "20px", padding: "5px" }}
-                      >
-                        {[10, 25, 50, 100].map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                      <Typography
-                        variant="caption"
-                        sx={{ mr: 2, alignSelf: "center" }}
-                      >
-                        {page * rowsPerPage + 1}-
-                        {Math.min(
-                          (page + 1) * rowsPerPage,
-                          processedDataArray.length
-                        )}{" "}
-                        of {processedDataArray.length}
-                      </Typography>
-                      <IconButton
-                        disabled={page === 0}
-                        onClick={() => setPage(page - 1)}
-                      >
-                        <ArrowBackIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton
-                        disabled={
-                          (page + 1) * rowsPerPage >= processedDataArray.length
+                        // Safe access to properties with type checking
+                        let align = "left";
+                        if ("align" in column) {
+                          align = String(column.align);
+                        } else if ("headerAlign" in column) {
+                          align = String(column.headerAlign);
                         }
-                        onClick={() => setPage(page + 1)}
-                      >
-                        <ArrowBackIcon
-                          fontSize="small"
-                          style={{ transform: "rotate(180deg)" }}
-                        />
-                      </IconButton>
-                    </Box>
-                  </Paper>
-                </Box>
-              );
-            } catch (error) {
-              console.error("Error rendering DataGrid:", error);
-              return (
-                <Alert severity="error" sx={{ mt: 2 }}>
-                  Error displaying data: {error.message}
-                </Alert>
-              );
-            }
-          })()}
-        </div>
+
+                        let width = 100;
+                        if ("minWidth" in column) {
+                          width = Number(column.minWidth);
+                        } else if ("width" in column) {
+                          width = Number(column.width);
+                        }
+
+                        return (
+                          <TableCell
+                            key={`${column.field}-${row.id}`}
+                            align={
+                              align === "right"
+                                ? "right"
+                                : align === "center"
+                                ? "center"
+                                : "left"
+                            }
+                            style={{
+                              minWidth: width,
+                              padding: "8px 16px",
+                              borderBottom:
+                                "1px solid rgba(224, 224, 224, 0.5)",
+                            }}
+                          >
+                            {column.valueFormatter
+                              ? column.valueFormatter({ value })
+                              : safeToString(value)}
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              p: 2,
+              borderTop: "1px solid rgba(224, 224, 224, 0.5)",
+              backgroundColor: alpha(theme.palette.background.paper, 0.9),
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+              <Typography variant="body2" sx={{ mr: 2 }}>
+                Rows per page:
+              </Typography>
+              <select
+                value={rowsPerPage}
+                onChange={(e) => setRowsPerPage(Number(e.target.value))}
+                style={{
+                  marginRight: "20px",
+                  padding: "8px 12px",
+                  borderRadius: "4px",
+                  border: "1px solid #ccc",
+                }}
+              >
+                {[10, 25, 50, 100].map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Box>
+
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+              <Typography variant="body2" sx={{ mr: 2 }}>
+                {page * rowsPerPage + 1}-
+                {Math.min((page + 1) * rowsPerPage, processedDataArray.length)}{" "}
+                of {processedDataArray.length}
+              </Typography>
+              <IconButton
+                disabled={page === 0}
+                onClick={() => setPage(page - 1)}
+                sx={{
+                  mr: 1,
+                  "&.Mui-disabled": {
+                    opacity: 0.3,
+                  },
+                }}
+              >
+                <ArrowBackIcon fontSize="small" />
+              </IconButton>
+              <IconButton
+                disabled={(page + 1) * rowsPerPage >= processedDataArray.length}
+                onClick={() => setPage(page + 1)}
+                sx={{
+                  "&.Mui-disabled": {
+                    opacity: 0.3,
+                  },
+                }}
+              >
+                <ArrowBackIcon
+                  fontSize="small"
+                  style={{ transform: "rotate(180deg)" }}
+                />
+              </IconButton>
+            </Box>
+          </Box>
+        </Paper>
       </Box>
     );
   };
@@ -1700,57 +1668,84 @@ const FileProcessingView = () => {
       return (
         <Box
           sx={{
-            p: 2,
+            p: 4,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
+            justifyContent: "center",
+            height: "50vh",
           }}
         >
-          <CircularProgress sx={{ mb: 2 }} />
-          <Typography variant="body1">Loading database data...</Typography>
+          <CircularProgress size={40} sx={{ mb: 3 }} />
+          <Typography variant="h6" color="text.secondary">
+            Loading database data...
+          </Typography>
         </Box>
       );
     }
 
     if (error) {
       return (
-        <Box sx={{ p: 2 }}>
-          <Alert severity="error" sx={{ mb: 2 }}>
+        <Box sx={{ p: 3 }}>
+          <Alert severity="error" sx={{ mb: 3 }}>
             {error}
           </Alert>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
             There was an error loading the database data. Please try again or
             check the console for more details.
           </Typography>
+          <Button
+            variant="outlined"
+            onClick={() => fetchDatabaseData()}
+            startIcon={<DatabaseIcon />}
+          >
+            Retry Loading Data
+          </Button>
         </Box>
       );
     }
 
     if (!fileType) {
       return (
-        <Box sx={{ p: 2 }}>
-          <Typography variant="body1" gutterBottom>
-            File type detection is required to display database data.
+        <Box sx={{ p: 3, textAlign: "center" }}>
+          <Typography variant="h6" gutterBottom color="text.secondary">
+            File type detection is required to display database data
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Click the Process button to analyze the file and determine its type.
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            Click the Process button in the toolbar to analyze the file and
+            determine its type.
           </Typography>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<PlayArrowIcon />}
+            onClick={handleProcess}
+          >
+            Process File
+          </Button>
         </Box>
       );
     }
 
     if (databaseData.length === 0) {
       return (
-        <Box sx={{ p: 2 }}>
-          <Typography variant="body1" gutterBottom>
-            No data has been saved to the database yet. Click the Save button to
-            save the processed data.
+        <Box sx={{ p: 3, textAlign: "center" }}>
+          <Typography variant="h6" gutterBottom color="text.secondary">
+            No data has been saved to the database yet
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            If you have already saved the data and are seeing this message,
-            there might be an issue with the data retrieval. Try refreshing the
-            page or check the console for errors.
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            Click the Save button in the toolbar to save the processed data to
+            the database.
           </Typography>
+          <Button
+            variant="contained"
+            color="success"
+            startIcon={<SaveIcon />}
+            onClick={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? "Saving..." : "Save to Database"}
+          </Button>
         </Box>
       );
     }
@@ -1802,41 +1797,67 @@ const FileProcessingView = () => {
       type: "string",
     });
 
+    // Get the field mapping for the current file type
+    const fieldMapping = getFieldMappingForType(fileType);
+    console.log("Field mapping for database preview:", fieldMapping);
+
+    // Create a set to track which fields we've already processed
+    // This prevents duplicate columns
+    const processedFields = new Set(["id"]);
+
     // For ca_periodique, prioritize the mapped field names
-    if (fileType === "ca_periodique") {
-      // Define the columns we want to show in order based on the CAPeriodique model
-      const priorityFields = [
-        "dot", // DO in the file, dot in the database
-        "product", // PRODUIT in the file, product in the database
-        "amount_pre_tax", // HT in the file, amount_pre_tax in the database
-        "tax_amount", // TAX in the file, tax_amount in the database
-        "total_amount", // TTC in the file, total_amount in the database
-        "discount", // DISCOUNT in the file, discount in the database
-        "created_at", // Metadata field from the database
-        "updated_at", // Metadata field from the database
-      ];
+    if (fileType === "ca_periodique" || Object.keys(fieldMapping).length > 0) {
+      // Map of original field names to their target field names
+      const originalToMappedField = {};
+      Object.entries(fieldMapping).forEach(([originalField, mappedField]) => {
+        originalToMappedField[originalField] = mappedField;
+      });
 
-      // Log the fields we're looking for
-      console.log("Looking for these fields in database data:", priorityFields);
-      console.log(
-        "Available fields in database data:",
-        databaseData[0] ? Object.keys(databaseData[0]) : "No data available"
-      );
+      // Inverse map for looking up original fields from mapped fields
+      const mappedToOriginalField = {};
+      Object.entries(fieldMapping).forEach(([originalField, mappedField]) => {
+        mappedToOriginalField[mappedField] = originalField;
+      });
 
-      priorityFields.forEach((field) => {
-        // Skip if the field doesn't exist in any item
-        if (!databaseData.some((item) => field in item)) {
+      // Use more descriptive names for specific fields
+      const headerNameMap = {};
+      Object.entries(fieldMapping).forEach(([originalField, mappedField]) => {
+        // Create a nice header name for the mapped field
+        headerNameMap[mappedField] = originalField
+          .split("_")
+          .map(
+            (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+          )
+          .join(" ");
+      });
+
+      // First add mapped fields (which should be prioritized)
+      Object.entries(fieldMapping).forEach(([originalField, mappedField]) => {
+        // Skip if we've already processed this field
+        if (
+          processedFields.has(originalField) ||
+          processedFields.has(mappedField)
+        ) {
+          return;
+        }
+
+        // Check if the mapped field exists in the database data
+        if (!processedDatabaseData.some((item) => mappedField in item)) {
           console.log(
-            `Field ${field} not found in database data, skipping column`
+            `Mapped field ${mappedField} not found in database data, skipping column`
           );
           return;
         }
 
+        // Mark both fields as processed
+        processedFields.add(originalField);
+        processedFields.add(mappedField);
+
         // Determine the field type based on the first non-null value
         let sampleValue = null;
-        for (const item of databaseData) {
-          if (item[field] !== null && item[field] !== undefined) {
-            sampleValue = item[field];
+        for (const item of processedDatabaseData) {
+          if (item[mappedField] !== null && item[mappedField] !== undefined) {
+            sampleValue = item[mappedField];
             break;
           }
         }
@@ -1851,34 +1872,116 @@ const FileProcessingView = () => {
           /^\d{4}-\d{2}-\d{2}/.test(sampleValue);
 
         console.log(
-          `Column ${field}: type=${
+          `Column ${mappedField} (mapped from ${originalField}): type=${
             isDate ? "date" : isNumeric ? "number" : "string"
           }, sample value=${sampleValue}`
         );
 
         // Create column definition with human-readable header names
         let headerName =
-          field.charAt(0).toUpperCase() + field.slice(1).replace(/_/g, " ");
-
-        // Use more descriptive names for specific fields
-        const headerNameMap = {
-          dot: "DOT",
-          product: "Product",
-          amount_pre_tax: "Amount (Pre-tax)",
-          tax_amount: "Tax Amount",
-          total_amount: "Total Amount",
-          discount: "Discount",
-          created_at: "Created At",
-          updated_at: "Updated At",
-        };
-
-        if (headerNameMap[field]) {
-          headerName = headerNameMap[field];
-        }
+          headerNameMap[mappedField] ||
+          mappedField.charAt(0).toUpperCase() +
+            mappedField.slice(1).replace(/_/g, " ");
 
         columns.push({
-          field,
+          field: mappedField,
           headerName,
+          flex: 1,
+          minWidth: 150,
+          align: isNumeric ? "right" : "left",
+          headerAlign: "center",
+          type: isDate ? "dateTime" : isNumeric ? "number" : "string",
+          valueFormatter: (params) => {
+            // Handle null/undefined values
+            if (params?.value == null || params?.value === "") {
+              return "";
+            }
+
+            // Handle object values
+            if (typeof params.value === "object") {
+              try {
+                return JSON.stringify(params.value);
+              } catch (error) {
+                console.error(
+                  `Error stringifying object for ${mappedField}:`,
+                  error
+                );
+                return "[Complex Object]";
+              }
+            }
+
+            // Format date fields
+            if (isDate) {
+              try {
+                return new Date(params.value).toLocaleDateString("fr-FR");
+              } catch (error) {
+                console.error(
+                  `Error formatting date for ${mappedField}:`,
+                  error
+                );
+                return String(params.value || "");
+              }
+            }
+
+            // Format currency fields
+            if (
+              mappedField.includes("amount") ||
+              mappedField.includes("tax") ||
+              mappedField.includes("total") ||
+              mappedField.includes("discount") ||
+              mappedField.includes("ht") ||
+              mappedField.includes("ttc") ||
+              mappedField.includes("tva")
+            ) {
+              try {
+                return new Intl.NumberFormat("fr-FR", {
+                  style: "currency",
+                  currency: "DZD",
+                  minimumFractionDigits: 2,
+                }).format(Number(params.value));
+              } catch (error) {
+                console.error(
+                  `Error formatting value for ${mappedField}:`,
+                  error
+                );
+                return String(params.value || "");
+              }
+            }
+
+            // Return the value as is for other fields
+            return String(params.value || "");
+          },
+        });
+      });
+    }
+
+    // Now add any remaining fields that aren't already mapped
+    Object.keys(processedDatabaseData[0] || {})
+      .filter((field) => !processedFields.has(field))
+      .forEach((field) => {
+        // Skip already processed fields
+        if (processedFields.has(field)) {
+          return;
+        }
+
+        processedFields.add(field);
+
+        // Determine the field type
+        const sampleValue = processedDatabaseData[0][field];
+        const isNumeric =
+          typeof sampleValue === "number" ||
+          (typeof sampleValue === "string" &&
+            !isNaN(parseFloat(sampleValue)) &&
+            isFinite(parseFloat(sampleValue)));
+        const isDate =
+          typeof sampleValue === "string" &&
+          /^\d{4}-\d{2}-\d{2}/.test(sampleValue);
+
+        // Create column definition
+        columns.push({
+          field,
+          headerName:
+            field.charAt(0).toUpperCase() + field.slice(1).replace(/_/g, " "),
           flex: 1,
           minWidth: 150,
           align: isNumeric ? "right" : "left",
@@ -1900,22 +2003,17 @@ const FileProcessingView = () => {
               }
             }
 
-            // Format date fields
-            if (isDate) {
-              try {
-                return new Date(params.value).toLocaleDateString("fr-FR");
-              } catch (error) {
-                console.error(`Error formatting date for ${field}:`, error);
-                return String(params.value || "");
-              }
-            }
-
             // Format currency fields
             if (
-              field.includes("amount") ||
-              field.includes("tax") ||
-              field.includes("total") ||
-              field.includes("discount")
+              isNumeric &&
+              (field.includes("amount") ||
+                field.includes("revenue") ||
+                field.includes("cost") ||
+                field.includes("tax") ||
+                field.includes("ttc") ||
+                field.includes("ht") ||
+                field.includes("price") ||
+                field.includes("total"))
             ) {
               try {
                 return new Intl.NumberFormat("fr-FR", {
@@ -1934,298 +2032,273 @@ const FileProcessingView = () => {
           },
         });
       });
-    } else {
-      // For other file types, use the existing column generation logic
-      Object.keys(databaseData[0] || {})
-        .filter((field) => field !== "id") // Exclude the id field as we've already added it
-        .forEach((field) => {
-          // Determine the field type based on the data
-          const sampleValue = databaseData[0][field];
-          const isNumeric =
-            typeof sampleValue === "number" ||
-            (typeof sampleValue === "string" &&
-              !isNaN(parseFloat(sampleValue)) &&
-              isFinite(parseFloat(sampleValue)));
-          const isDate =
-            typeof sampleValue === "string" &&
-            /^\d{4}-\d{2}-\d{2}/.test(sampleValue);
-
-          console.log(
-            `Column ${field}: type=${
-              isDate ? "date" : isNumeric ? "number" : "string"
-            }, sample value=${sampleValue}`
-          );
-
-          // Create column definition
-          columns.push({
-            field,
-            headerName:
-              field.charAt(0).toUpperCase() + field.slice(1).replace(/_/g, " "),
-            flex: 1,
-            minWidth: 150,
-            align: isNumeric ? "right" : "left",
-            headerAlign: "center",
-            type: isDate ? "dateTime" : isNumeric ? "number" : "string",
-            valueFormatter: (params) => {
-              // Handle null/undefined values
-              if (params?.value == null || params?.value === "") {
-                return "";
-              }
-
-              // Handle object values
-              if (typeof params.value === "object") {
-                try {
-                  return JSON.stringify(params.value);
-                } catch (error) {
-                  console.error(
-                    `Error stringifying object for ${field}:`,
-                    error
-                  );
-                  return "[Complex Object]";
-                }
-              }
-
-              // Format currency fields
-              if (
-                isNumeric &&
-                (field.includes("amount") ||
-                  field.includes("tax") ||
-                  field.includes("total") ||
-                  field.includes("price"))
-              ) {
-                return new Intl.NumberFormat("fr-FR", {
-                  style: "currency",
-                  currency: "DZD",
-                }).format(parseFloat(params.value));
-              }
-
-              return params.value;
-            },
-          });
-        });
-    }
 
     return (
-      <Box sx={{ height: "calc(100vh - 200px)", width: "100%", p: 2 }}>
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="subtitle1">
-            Showing {databaseData.length} records from the database
+      <Box sx={{ height: "calc(100vh - 320px)", width: "100%", p: 2 }}>
+        <Box
+          sx={{
+            mb: 4,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Typography
+            variant="h6"
+            component="div"
+            sx={{ fontWeight: "bold", color: theme.palette.primary.main }}
+          >
+            Database Data - {getFileTypeDisplayName(fileType)}
+            <Typography variant="body2" sx={{ mt: 1, color: "text.secondary" }}>
+              Showing saved records from database
+            </Typography>
           </Typography>
+
+          <Box>
+            <Chip
+              label={`${processedDatabaseData.length} Records`}
+              color="primary"
+              variant="outlined"
+              sx={{ mr: 1 }}
+            />
+            <Chip
+              label={`${columns.length - 1} Columns`}
+              color="secondary"
+              variant="outlined"
+            />
+          </Box>
         </Box>
-        <div style={{ height: "100%", width: "100%" }}>
-          {(() => {
-            try {
-              console.log(
-                "______________database____________________________________________________________"
-              );
-              console.log("Final columns array:", columns);
-              console.log("Data being passed to DataGrid:", {
-                rowCount: processedDatabaseData.length,
-                sampleRows: processedDatabaseData.slice(0, 3),
-                columnCount: columns.length,
-                columnFields: columns.map((col) => col.field),
-              });
 
-              // Check if the data has the fields that match the column definitions
-              const firstRow = processedDatabaseData[0] || {};
-              const missingFields = columns
-                .map((col) => col.field)
-                .filter((field) => !(field in firstRow));
+        <Paper
+          elevation={3}
+          sx={{
+            height: "calc(100vh - 320px)",
+            width: "100%",
+            overflow: "hidden",
+            borderRadius: 2,
+          }}
+        >
+          <TableContainer
+            sx={{
+              maxHeight: "calc(100vh - 400px)",
+              "&::-webkit-scrollbar": {
+                width: "8px",
+                height: "8px",
+              },
+              "&::-webkit-scrollbar-thumb": {
+                backgroundColor: alpha(theme.palette.primary.main, 0.3),
+                borderRadius: "4px",
+                "&:hover": {
+                  backgroundColor: alpha(theme.palette.primary.main, 0.5),
+                },
+              },
+            }}
+          >
+            <Table stickyHeader aria-label="database data table">
+              <TableHead>
+                <TableRow>
+                  {columns.map((column) => {
+                    // Safe access to properties with type checking
+                    let align = "left";
+                    if ("align" in column) {
+                      align = String(column.align);
+                    } else if ("headerAlign" in column) {
+                      align = String(column.headerAlign);
+                    }
 
-              console.log("Fields missing in database data:", missingFields);
+                    let width = 100;
+                    if ("minWidth" in column) {
+                      width = Number(column.minWidth);
+                    } else if ("width" in column) {
+                      width = Number(column.width);
+                    }
 
-              if (missingFields.length > 0) {
-                console.warn(
-                  "Some column fields are missing in the database data. This may cause rendering issues."
-                );
-              }
-
-              console.log(
-                "______________database____________________________________________________________"
-              );
-              return (
-                <Box sx={{ width: "100%", overflow: "auto" }}>
-                  <Paper sx={{ width: "100%", mb: 2 }}>
-                    <Toolbar
+                    return (
+                      <TableCell
+                        key={column.field}
+                        align={
+                          align === "right"
+                            ? "right"
+                            : align === "center"
+                            ? "center"
+                            : "left"
+                        }
+                        style={{
+                          minWidth: width,
+                          fontWeight: "bold",
+                          backgroundColor: theme.palette.primary.main,
+                          color: theme.palette.primary.contrastText,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          padding: "12px 16px",
+                        }}
+                      >
+                        {column.headerName}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {processedDatabaseData
+                  .slice(
+                    dbPage * dbRowsPerPage,
+                    dbPage * dbRowsPerPage + dbRowsPerPage
+                  )
+                  .map((row) => (
+                    <TableRow
+                      hover
+                      role="checkbox"
+                      tabIndex={-1}
+                      key={row.id}
                       sx={{
-                        pl: { sm: 2 },
-                        pr: { xs: 1, sm: 1 },
+                        "&:nth-of-type(odd)": {
+                          backgroundColor: alpha(
+                            theme.palette.primary.light,
+                            0.05
+                          ),
+                        },
+                        "&:hover": {
+                          backgroundColor: alpha(
+                            theme.palette.primary.light,
+                            0.1
+                          ),
+                        },
                       }}
                     >
-                      <Typography
-                        sx={{ flex: "1 1 100%" }}
-                        variant="h6"
-                        id="tableTitle"
-                        component="div"
-                      >
-                        Database Data
-                      </Typography>
-                      <Tooltip title="Filter list">
-                        <IconButton>
-                          <InfoOutlinedIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </Toolbar>
-                    <TableContainer sx={{ maxHeight: "calc(100vh - 300px)" }}>
-                      <Table stickyHeader aria-label="database data table">
-                        <TableHead>
-                          <TableRow>
-                            {columns.map((column) => {
-                              // Safe access to properties with type checking
-                              let align = "left";
-                              if ("align" in column) {
-                                align = String(column.align);
-                              } else if ("headerAlign" in column) {
-                                align = String(column.headerAlign);
-                              }
+                      {columns.map((column) => {
+                        const value = row[column.field];
 
-                              let width = 100;
-                              if ("minWidth" in column) {
-                                width = Number(column.minWidth);
-                              } else if ("width" in column) {
-                                width = Number(column.width);
-                              }
+                        // Safe access to properties with type checking
+                        let align = "left";
+                        if ("align" in column) {
+                          align = String(column.align);
+                        } else if ("headerAlign" in column) {
+                          align = String(column.headerAlign);
+                        }
 
-                              return (
-                                <TableCell
-                                  key={column.field}
-                                  align={
-                                    align === "right"
-                                      ? "right"
-                                      : align === "center"
-                                      ? "center"
-                                      : "left"
-                                  }
-                                  style={{
-                                    minWidth: width,
-                                    fontWeight: "bold",
-                                  }}
-                                >
-                                  {column.headerName}
-                                </TableCell>
-                              );
-                            })}
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {processedDatabaseData
-                            .slice(
-                              dbPage * dbRowsPerPage,
-                              dbPage * dbRowsPerPage + dbRowsPerPage
-                            )
-                            .map((row) => (
-                              <TableRow
-                                hover
-                                role="checkbox"
-                                tabIndex={-1}
-                                key={row.id}
-                              >
-                                {columns.map((column) => {
-                                  const value = row[column.field];
-
-                                  // Safe access to properties with type checking
-                                  let align = "left";
-                                  if ("align" in column) {
-                                    align = String(column.align);
-                                  } else if ("headerAlign" in column) {
-                                    align = String(column.headerAlign);
-                                  }
-
-                                  let width = 100;
-                                  if ("minWidth" in column) {
-                                    width = Number(column.minWidth);
-                                  } else if ("width" in column) {
-                                    width = Number(column.width);
-                                  }
-
-                                  return (
-                                    <TableCell
-                                      key={column.field}
-                                      align={
-                                        align === "right"
-                                          ? "right"
-                                          : align === "center"
-                                          ? "center"
-                                          : "left"
-                                      }
-                                      style={{ minWidth: width }}
-                                    >
-                                      {column.valueFormatter
-                                        ? column.valueFormatter({ value })
-                                        : safeToString(value)}
-                                    </TableCell>
-                                  );
-                                })}
-                              </TableRow>
-                            ))}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                    <Box
-                      sx={{ display: "flex", justifyContent: "flex-end", p: 2 }}
+                        return (
+                          <TableCell
+                            key={`${column.field}-${row.id}`}
+                            align={
+                              align === "right"
+                                ? "right"
+                                : align === "center"
+                                ? "center"
+                                : "left"
+                            }
+                            style={{
+                              padding: "8px 16px",
+                              borderBottom:
+                                "1px solid rgba(224, 224, 224, 0.5)",
+                            }}
+                          >
+                            {column.valueFormatter
+                              ? column.valueFormatter({ value })
+                              : safeToString(value)}
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  ))}
+                {processedDatabaseData.length === 0 && (
+                  <TableRow style={{ height: 53 * 5 }}>
+                    <TableCell
+                      colSpan={columns.length}
+                      align="center"
+                      sx={{ py: 5 }}
                     >
                       <Typography
-                        variant="caption"
-                        sx={{ mr: 2, alignSelf: "center" }}
+                        variant="h6"
+                        color="text.secondary"
+                        gutterBottom
                       >
-                        Rows per page:
+                        No records found
                       </Typography>
-                      <select
-                        value={dbRowsPerPage}
-                        onChange={(e) =>
-                          setDbRowsPerPage(Number(e.target.value))
-                        }
-                        style={{ marginRight: "20px", padding: "5px" }}
-                      >
-                        {[10, 25, 50, 100].map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                      <Typography
-                        variant="caption"
-                        sx={{ mr: 2, alignSelf: "center" }}
-                      >
-                        {dbPage * dbRowsPerPage + 1}-
-                        {Math.min(
-                          (dbPage + 1) * dbRowsPerPage,
-                          processedDatabaseData.length
-                        )}{" "}
-                        of {processedDatabaseData.length}
+                      <Typography variant="body2" color="text.secondary">
+                        No data is available in the database for this file
                       </Typography>
-                      <IconButton
-                        disabled={dbPage === 0}
-                        onClick={() => setDbPage(dbPage - 1)}
-                      >
-                        <ArrowBackIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton
-                        disabled={
-                          (dbPage + 1) * dbRowsPerPage >=
-                          processedDatabaseData.length
-                        }
-                        onClick={() => setDbPage(dbPage + 1)}
-                      >
-                        <ArrowBackIcon
-                          fontSize="small"
-                          style={{ transform: "rotate(180deg)" }}
-                        />
-                      </IconButton>
-                    </Box>
-                  </Paper>
-                </Box>
-              );
-            } catch (error) {
-              console.error("Error rendering DataGrid:", error);
-              return (
-                <Alert severity="error" sx={{ mt: 2 }}>
-                  Error displaying data: {error.message}
-                </Alert>
-              );
-            }
-          })()}
-        </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              p: 2,
+              borderTop: "1px solid rgba(224, 224, 224, 0.5)",
+              backgroundColor: alpha(theme.palette.background.paper, 0.9),
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+              <Typography variant="body2" sx={{ mr: 2 }}>
+                Rows per page:
+              </Typography>
+              <select
+                value={dbRowsPerPage}
+                onChange={(e) => setDbRowsPerPage(Number(e.target.value))}
+                style={{
+                  marginRight: "20px",
+                  padding: "8px 12px",
+                  borderRadius: "4px",
+                  border: "1px solid #ccc",
+                }}
+              >
+                {[10, 25, 50, 100].map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Box>
+
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+              <Typography variant="body2" sx={{ mr: 2 }}>
+                {processedDatabaseData.length === 0
+                  ? "0-0 of 0"
+                  : `${dbPage * dbRowsPerPage + 1}-${Math.min(
+                      (dbPage + 1) * dbRowsPerPage,
+                      processedDatabaseData.length
+                    )} of ${processedDatabaseData.length}`}
+              </Typography>
+              <IconButton
+                disabled={dbPage === 0}
+                onClick={() => setDbPage(dbPage - 1)}
+                sx={{
+                  mr: 1,
+                  "&.Mui-disabled": {
+                    opacity: 0.3,
+                  },
+                }}
+              >
+                <ArrowBackIcon fontSize="small" />
+              </IconButton>
+              <IconButton
+                disabled={
+                  (dbPage + 1) * dbRowsPerPage >=
+                    processedDatabaseData.length ||
+                  processedDatabaseData.length === 0
+                }
+                onClick={() => setDbPage(dbPage + 1)}
+                sx={{
+                  "&.Mui-disabled": {
+                    opacity: 0.3,
+                  },
+                }}
+              >
+                <ArrowBackIcon
+                  fontSize="small"
+                  style={{ transform: "rotate(180deg)" }}
+                />
+              </IconButton>
+            </Box>
+          </Box>
+        </Paper>
       </Box>
     );
   };
@@ -2286,7 +2359,7 @@ const FileProcessingView = () => {
   }
 
   return (
-    <Box sx={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <AppBar position="static" color="default" elevation={1}>
         <Toolbar>
           <IconButton
