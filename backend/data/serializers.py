@@ -684,6 +684,8 @@ class AnomalySerializer(serializers.ModelSerializer):
         source='get_status_display', read_only=True)
     resolved_by_email = serializers.EmailField(
         source='resolved_by.email', read_only=True)
+    data_source_display = serializers.CharField(
+        source='get_data_source_display', read_only=True)
 
     class Meta:
         model = Anomaly
@@ -701,7 +703,9 @@ class AnomalySerializer(serializers.ModelSerializer):
             'updated_at',
             'resolved_by',
             'resolved_by_email',
-            'resolution_notes'
+            'resolution_notes',
+            'data_source',
+            'data_source_display'
         ]
         read_only_fields = ['id', 'invoice', 'type',
                             'description', 'data', 'created_at', 'updated_at']

@@ -77,6 +77,7 @@ from .cleanup_methods import (
     clean_ca_periodique, clean_ca_cnt, clean_ca_dnt, clean_ca_rfd,
     clean_journal_ventes, clean_etat_facture
 )
+from threading import Thread
 
 
 logger = logging.getLogger(__name__)
@@ -1525,7 +1526,8 @@ class InvoiceSaveView(APIView):
                     dot_code=dot_code,  # Store the original code as backup
                     customer_lev1=row.get('CUST_LEV1', ''),
                     customer_lev2=row.get('CUST_LEV2', ''),
-                    customer_lev3=row.get('CUST_LEV3', '')
+                    customer_lev3=row.get('CUST_LEV3', ''),
+                    department=row.get('DEPARTEMENT', '')
                 )
                 saved_count += 1
             except Exception as e:
@@ -2919,7 +2921,8 @@ class DatabaseAnomalyScanner:
             self.scan_journal_etat_mismatches,
             self.scan_zero_values,
             self.scan_temporal_patterns,
-            self.scan_empty_cells  # Add the new scan method
+            self.scan_empty_cells,
+            self.scan_dot_field_validity  # Add the new scan method
         ]
 
         self.anomalies = []  # Reset anomalies list
@@ -3421,6 +3424,52 @@ class DatabaseAnomalyScanner:
                 })
 
         return anomalies
+
+    def scan_dot_field_validity(self):
+        """Scan for DOT field validity issues across models with DOT fields"""
+        dot_field_models = [CreancesNGBSS, CAPeriodique,
+                            CANonPeriodique, CADNT, CARFD, CACNT]
+        batch_size = 1000
+
+        for model in dot_field_models:
+            # Get base queryset
+            queryset = model.objects.all()
+
+            # Filter by invoice if specified
+            if self.invoice:
+                queryset = queryset.filter(invoice=self.invoice)
+
+            # Process in batches for better performance
+            total_processed = 0
+            total_records = queryset.count()
+            offset = 0
+
+            while offset < total_records:
+                batch = queryset[offset:offset+batch_size]
+
+                for record in batch:
+                    # Check both the FK and legacy field
+                    dot_fk = getattr(record, 'dot', None)
+                    dot_code = getattr(record, 'dot_code', '')
+
+                    # Check for mismatches between FK and legacy field
+                    if dot_fk and dot_code and dot_fk.code != dot_code:
+                        self._create_anomaly(
+                            invoice=record.invoice,
+                            anomaly_type='inconsistent_data',
+                            description=f"DOT field mismatch in {model.__name__}: FK={dot_fk.code}, legacy={dot_code}",
+                            data={
+                                'model': model.__name__,
+                                'record_id': record.id,
+                                'dot_fk': str(dot_fk),
+                                'dot_code': dot_code
+                            }
+                        )
+
+                offset += batch_size
+                total_processed += len(batch)
+                logger.info(
+                    f"Processed {total_processed}/{total_records} records from {model.__name__}")
 
 
 class TriggerAnomalyScanView(APIView):
@@ -4458,8 +4507,57 @@ class DashboardEnhancedView(APIView):
     2. Top/Flop structure rankings by revenue and collection
     3. Visualization data for offer quantities and physical park
     4. Trend analysis for CA, collections, and receivables
+    5. DOT data health metrics and consistency checks
     """
     permission_classes = [IsAuthenticated]
+
+    def get_dot_health_metrics(self):
+        """Generate metrics about DOT data health across models"""
+        from django.db.models import F, Q
+
+        dot_field_models = [CreancesNGBSS, CAPeriodique,
+                            CANonPeriodique, CADNT, CARFD, CACNT]
+        metrics = {}
+
+        for model in dot_field_models:
+            model_name = model.__name__
+            total_records = model.objects.count()
+
+            metrics[model_name] = {
+                'total_records': total_records,
+                'missing_dot_fk': model.objects.filter(dot__isnull=True).count(),
+                'missing_dot_code': model.objects.filter(
+                    Q(dot_code__isnull=True) | Q(dot_code='')).count(),
+                'inconsistent': 0  # We'll calculate this
+            }
+
+            # Calculate inconsistencies more efficiently
+            # This query identifies records where FK code doesn't match legacy code
+            inconsistent_records = model.objects.filter(
+                dot__isnull=False
+            ).exclude(
+                dot_code=F('dot__code')
+            )
+
+            metrics[model_name]['inconsistent'] = inconsistent_records.count()
+
+            # Calculate percentages for easier interpretation
+            if total_records > 0:
+                metrics[model_name]['missing_dot_fk_pct'] = round(
+                    (metrics[model_name]['missing_dot_fk'] / total_records) * 100, 2)
+                metrics[model_name]['missing_dot_code_pct'] = round(
+                    (metrics[model_name]['missing_dot_code'] / total_records) * 100, 2)
+                metrics[model_name]['inconsistent_pct'] = round(
+                    (metrics[model_name]['inconsistent'] / total_records) * 100, 2)
+                metrics[model_name]['health_score'] = 100 - \
+                    metrics[model_name]['inconsistent_pct']
+            else:
+                metrics[model_name]['missing_dot_fk_pct'] = 0
+                metrics[model_name]['missing_dot_code_pct'] = 0
+                metrics[model_name]['inconsistent_pct'] = 0
+                metrics[model_name]['health_score'] = 100
+
+        return metrics
 
     def get(self, request):
         """
@@ -4469,38 +4567,46 @@ class DashboardEnhancedView(APIView):
         - year: Year for data filtering (default: current year)
         - month: Month for data filtering (optional)
         - dot: DOT code for filtering (optional)
-        - period_count: Number of periods for trend analysis (default: 6)
+        - period_count: Number of periods for historical data (default: 12)
         """
         try:
             # Get query parameters
             year = request.query_params.get('year', datetime.now().year)
             month = request.query_params.get('month')
             dot = request.query_params.get('dot')
-            period_count = int(request.query_params.get('period_count', 6))
+            period_count = int(request.query_params.get('period_count', 12))
 
-            # Validate year
+            # Convert year to integer
             try:
                 year = int(year)
-            except (ValueError, TypeError):
-                return Response(
-                    {"error": f"Invalid year format: {year}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            except (TypeError, ValueError):
+                year = datetime.now().year
 
-            # Validate month if provided
+            # Convert month to integer if provided
             if month:
                 try:
                     month = int(month)
                     if month < 1 or month > 12:
                         return Response(
-                            {"error": f"Month must be between 1 and 12, got: {month}"},
+                            {"error": f"Month must be between 1 and 12"},
                             status=status.HTTP_400_BAD_REQUEST
                         )
-                except (ValueError, TypeError):
+                except (TypeError, ValueError):
+                    month = None
+
+            # Validate year
+            try:
+                year = int(year)
+                if month < 1 or month > 12:
                     return Response(
-                        {"error": f"Invalid month format: {month}"},
+                        {"error": f"Month must be between 1 and 12, got: {month}"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
+            except (ValueError, TypeError):
+                return Response(
+                    {"error": f"Invalid month format: {month}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
             # Check DOT permission if dot is provided
             if dot and not self._has_dot_permission(request.user, dot):
@@ -5665,56 +5771,6 @@ class DataValidationView(APIView):
             result['error'] = str(e)
         return result
 
-    def _clean_ca_periodique(self, dot_filter=None, data_processor=None):
-        """
-        Cleans CAPeriodique data according to client requirements:
-        - For DOT "Siège", keep all products
-        - For other DOTs, keep only 'Specialized Line' and 'LTE' products
-        - Identify and flag empty cells as anomalies
-        """
-        logger.info("Cleaning CAPeriodique data")
-        result = {
-            'model': 'CAPeriodique',
-            'records_checked': 0,
-            'records_cleaned': 0,
-            'deleted_records': 0,
-            'issues': []
-        }
-        try:
-            # Base queryset
-            queryset = CAPeriodique.objects.all()
-            # Apply optional DOT filter if relevant
-            if dot_filter:
-                queryset = queryset.filter(
-                    Q(dot_code=dot_filter) | Q(dot__code=dot_filter))
-            # Count total records to check
-            result['records_checked'] = queryset.count()
-
-            # Find records that don't match the client's requirements
-            # For non-Siège DOTs, keep only Specialized Line and LTE
-            records_to_delete = queryset.filter(
-                # Not Siège DOT
-                ~Q(dot_code='Siège') & ~Q(dot__name='Siège') &
-                # And not one of the valid products for non-Siège
-                ~Q(product__in=['Specialized Line', 'LTE'])
-            )
-
-            # Count and log records to be deleted
-            deletion_count = records_to_delete.count()
-            result['deleted_records'] = deletion_count
-
-            # Delete the invalid records
-            records_to_delete.delete()
-
-            result['records_cleaned'] = result['records_checked'] - deletion_count
-
-            logger.info(
-                f"Cleaned {deletion_count} invalid records from CAPeriodique")
-        except Exception as e:
-            logger.error(f"Error cleaning CAPeriodique data: {str(e)}")
-            result['error'] = str(e)
-        return result
-
     def _clean_ca_non_periodique(self, dot_filter=None, data_processor=None):
         """
         Cleans CANonPeriodique data according to client requirements:
@@ -5761,181 +5817,253 @@ class DataValidationView(APIView):
             result['error'] = str(e)
         return result
 
-    def _clean_journal_ventes(self, start_date=None, end_date=None, data_processor=None):
+    def _clean_ca_periodique(self, dot_filter=None, data_processor=None):
         """
-        Cleans JournalVentes data according to client requirements:
-        - AT Siège: Keep only DCC and DCGC organizations
-        - Remove formatting issues in org_name (DOT_, _, -)
-        - Remove records with billing_period containing previous year
-        - Filter by date range if provided
+        Cleans CAPeriodique data according to client requirements:
+        - For non-Siège DOTs, keep only records with product in ['Specialized Line', 'LTE']
         """
-        logger.info("Cleaning JournalVentes data")
+        logger.info("Cleaning CAPeriodique data")
         result = {
-            'model': 'JournalVentes',
+            'model': 'CAPeriodique',
             'records_checked': 0,
             'records_cleaned': 0,
             'deleted_records': 0,
             'issues': []
         }
+
         try:
-            # Base queryset
-            queryset = JournalVentes.objects.all()
-
-            # Apply date filters if provided
-            if start_date:
-                queryset = queryset.filter(invoice_date__gte=start_date)
-            if end_date:
-                queryset = queryset.filter(invoice_date__lte=end_date)
-
-            # Count total records to check
-            result['records_checked'] = queryset.count()
-
-            # Identify records for AT Siège that are not DCC or DCGC
-            siege_records_to_delete = queryset.filter(
-                # Is AT Siège
-                Q(organization__icontains='AT Siège') &
-                # Not DCC or DCGC
-                ~Q(organization__icontains='DCC') & ~Q(
-                    organization__icontains='DCGC')
+            # Find records that don't match the client's requirements
+            # For non-Siège DOTs, keep only records with product in ['Specialized Line', 'LTE']
+            records_to_delete = CAPeriodique.objects.filter(
+                ~Q(dot_code='Siège') & ~Q(dot__name='Siège') &
+                ~Q(product__in=['Specialized Line', 'LTE'])
             )
 
-            # Identify records with billing period containing previous year
-            current_year = datetime.now().year
-            previous_year = str(current_year - 1)
-            records_with_previous_year = queryset.filter(
-                billing_period__icontains=previous_year
-            )
-
-            # Combine querysets for deletion
-            records_to_delete = siege_records_to_delete | records_with_previous_year
-
-            # Count and log records to be deleted
+            # Count and delete the invalid records
             deletion_count = records_to_delete.count()
-            result['deleted_records'] = deletion_count
-
-            # Delete the invalid records
             records_to_delete.delete()
 
-            # Clean organization names by removing DOT_, _, -
-            # This would require updating each record individually
-            if data_processor:
-                # Get remaining records
-                remaining_records = queryset.exclude(
-                    id__in=records_to_delete.values_list('id', flat=True))
+            result['total_deleted'] = deletion_count
+            result['total_after'] = CAPeriodique.objects.count()
 
-                # Fix organization names
-                for record in remaining_records:
-                    original_name = record.organization
-                    cleaned_name = original_name.replace(
-                        'DOT_', '').replace('_', '').replace('-', '')
+            logger.info(
+                f"Cleaned {deletion_count} invalid records from CAPeriodique")
+        except Exception as e:
+            logger.error(f"Error cleaning CAPeriodique data: {str(e)}")
+            result['error'] = str(e)
 
-                    if original_name != cleaned_name:
-                        record.organization = cleaned_name
-                        record.save()
-                        logger.info(
-                            f"Updated organization name from '{original_name}' to '{cleaned_name}'")
+        return result
 
-            result['records_cleaned'] = result['records_checked'] - deletion_count
+    def _clean_ca_cnt(self):
+        """
+        Cleans CACNT data according to client requirements:
+        - Keep only records with department = 'Direction Commerciale Corporate'
+        """
+        logger.info("Cleaning CACNT data")
+        result = {
+            'total_before': CACNT.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            # Find records that don't match the client's requirements
+            records_to_delete = CACNT.objects.filter(
+                ~Q(department='Direction Commerciale Corporate')
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = CACNT.objects.count()
+
+            logger.info(f"Cleaned {deletion_count} invalid records from CACNT")
+        except Exception as e:
+            logger.error(f"Error cleaning CACNT data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _clean_ca_dnt(self):
+        """
+        Cleans CADNT data according to client requirements:
+        - Keep only records with department = 'Direction Commerciale Corporate'
+        """
+        logger.info("Cleaning CADNT data")
+        result = {
+            'total_before': CADNT.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            # Find records that don't match the client's requirements
+            records_to_delete = CADNT.objects.filter(
+                ~Q(department='Direction Commerciale Corporate')
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = CADNT.objects.count()
+
+            logger.info(f"Cleaned {deletion_count} invalid records from CADNT")
+        except Exception as e:
+            logger.error(f"Error cleaning CADNT data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _clean_ca_rfd(self):
+        """
+        Cleans CARFD data according to client requirements:
+        - Keep only records with department = 'Direction Commerciale Corporate'
+        """
+        logger.info("Cleaning CARFD data")
+        result = {
+            'total_before': CARFD.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            # Find records that don't match the client's requirements
+            records_to_delete = CARFD.objects.filter(
+                ~Q(department='Direction Commerciale Corporate')
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = CARFD.objects.count()
+
+            logger.info(f"Cleaned {deletion_count} invalid records from CARFD")
+        except Exception as e:
+            logger.error(f"Error cleaning CARFD data: {str(e)}")
+            result['error'] = str(e)
+
+        return result
+
+    def _clean_journal_ventes(self):
+        """
+        Cleans JournalVentes data according to client requirements:
+        - Clean records with specific organization criteria
+        - Remove records from previous years
+        - Fix formatting issues in organization names
+        """
+        logger.info("Cleaning JournalVentes data")
+        result = {
+            'total_before': JournalVentes.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
+        }
+
+        try:
+            current_year = datetime.now().year
+            previous_year = str(current_year - 1)
+
+            # Find records that don't match the client's requirements
+            records_to_delete = JournalVentes.objects.filter(
+                Q(
+                    Q(organization__icontains='AT Siège') &
+                    ~Q(organization__icontains='DCC') &
+                    ~Q(organization__icontains='DCGC')
+                ) |
+                Q(billing_period__icontains=previous_year)
+            )
+
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
+
+            # Fix formatting issues
+            records_to_fix = JournalVentes.objects.filter(
+                Q(organization__icontains='DOT_') |
+                Q(organization__icontains='_') |
+                Q(organization__icontains='-')
+            )
+
+            for record in records_to_fix:
+                org_name = record.organization
+                # Clean up formatting
+                if 'DOT_' in org_name:
+                    org_name = org_name.replace('DOT_', 'DOT ')
+                org_name = org_name.replace('_', ' ').replace('-', ' ')
+                record.organization = org_name
+                record.save()
+
+            result['total_deleted'] = deletion_count
+            result['total_after'] = JournalVentes.objects.count()
 
             logger.info(
                 f"Cleaned {deletion_count} invalid records from JournalVentes")
         except Exception as e:
             logger.error(f"Error cleaning JournalVentes data: {str(e)}")
             result['error'] = str(e)
+
         return result
 
-    def _clean_etat_facture(self, start_date=None, end_date=None, data_processor=None):
+    def _clean_etat_facture(self):
         """
         Cleans EtatFacture data according to client requirements:
-        - AT Siège: Keep only DCC and DCGC organizations
-        - Remove formatting issues in org_name (DOT_, _, -)
-        - Format invoice_number as numeric
-        - Filter by date range if provided
+        - Clean records with specific organization criteria
+        - Fix formatting issues in organization names
         """
         logger.info("Cleaning EtatFacture data")
         result = {
-            'model': 'EtatFacture',
-            'records_checked': 0,
-            'records_cleaned': 0,
-            'deleted_records': 0,
-            'issues': []
+            'total_before': EtatFacture.objects.count(),
+            'total_deleted': 0,
+            'total_after': 0,
+            'anomalies_created': 0
         }
+
         try:
-            # Base queryset
-            queryset = EtatFacture.objects.all()
-
-            # Apply date filters if provided
-            if start_date:
-                queryset = queryset.filter(invoice_date__gte=start_date)
-            if end_date:
-                queryset = queryset.filter(invoice_date__lte=end_date)
-
-            # Count total records to check
-            result['records_checked'] = queryset.count()
-
-            # Identify records for AT Siège that are not DCC or DCGC
-            siege_records_to_delete = queryset.filter(
-                # Is AT Siège
+            # Find records that don't match the client's requirements
+            records_to_delete = EtatFacture.objects.filter(
                 Q(organization__icontains='AT Siège') &
-                # Not DCC or DCGC
-                ~Q(organization__icontains='DCC') & ~Q(
-                    organization__icontains='DCGC')
+                ~Q(organization__icontains='DCC') &
+                ~Q(organization__icontains='DCGC')
             )
 
-            # Count and log records to be deleted
-            deletion_count = siege_records_to_delete.count()
-            result['deleted_records'] = deletion_count
+            # Count and delete the invalid records
+            deletion_count = records_to_delete.count()
+            records_to_delete.delete()
 
-            # Delete the invalid records
-            siege_records_to_delete.delete()
+            # Fix formatting issues
+            records_to_fix = EtatFacture.objects.filter(
+                Q(organization__icontains='DOT_') |
+                Q(organization__icontains='_') |
+                Q(organization__icontains='-')
+            )
 
-            # Clean organization names and format invoice numbers
-            if data_processor:
-                # Get remaining records
-                remaining_records = queryset.exclude(
-                    id__in=siege_records_to_delete.values_list('id', flat=True))
+            for record in records_to_fix:
+                org_name = record.organization
+                # Clean up formatting
+                if 'DOT_' in org_name:
+                    org_name = org_name.replace('DOT_', 'DOT ')
+                org_name = org_name.replace('_', ' ').replace('-', ' ')
+                record.organization = org_name
+                record.save()
 
-                # Fix organization names and format invoice numbers
-                for record in remaining_records:
-                    # Clean organization name
-                    original_name = record.organization
-                    cleaned_name = original_name.replace(
-                        'DOT_', '').replace('_', '').replace('-', '')
-
-                    changes_made = False
-                    if original_name != cleaned_name:
-                        record.organization = cleaned_name
-                        changes_made = True
-
-                    # Format invoice_number if needed
-                    # This assumes invoice_number is stored as a string and needs to be numeric
-                    if hasattr(record, 'invoice_number') and record.invoice_number:
-                        try:
-                            # Try to convert to numeric and back to string to standardize format
-                            numeric_invoice = str(
-                                int(float(record.invoice_number)))
-                            if record.invoice_number != numeric_invoice:
-                                record.invoice_number = numeric_invoice
-                                changes_made = True
-                        except (ValueError, TypeError):
-                            # If conversion fails, note it as an issue
-                            result['issues'].append({
-                                'id': record.id,
-                                'type': 'invalid_invoice_number',
-                                'description': f"Could not convert invoice_number '{record.invoice_number}' to numeric format"
-                            })
-
-                    # Save if changes were made
-                    if changes_made:
-                        record.save()
-
-            result['records_cleaned'] = result['records_checked'] - deletion_count
+            result['total_deleted'] = deletion_count
+            result['total_after'] = EtatFacture.objects.count()
 
             logger.info(
                 f"Cleaned {deletion_count} invalid records from EtatFacture")
         except Exception as e:
             logger.error(f"Error cleaning EtatFacture data: {str(e)}")
             result['error'] = str(e)
+
         return result
 
 
@@ -6726,6 +6854,243 @@ class DataCleanupView(APIView):
 
         cache.set(progress_key, progress_data,
                   timeout=86400)  # 24-hour timeout
+
+    def post(self, request):
+        # Get data type from request
+        data_type = request.data.get('data_type', 'all')
+
+        # Create a unique task ID for tracking progress
+        task_id = str(uuid.uuid4())
+
+        # Start cleanup process in a background thread
+        thread = threading.Thread(target=self._run_cleanup_process,
+                                  args=(request, data_type, task_id))
+        thread.daemon = True
+        thread.start()
+
+        # Return task ID for frontend to track progress
+        return Response({
+            'task_id': task_id,
+            'message': 'Data cleanup started',
+            'status': 'running'
+        })
+
+    def _run_cleanup_process(self, request, data_type, task_id):
+        """Run the cleanup process in a background thread"""
+        try:
+            # Initialize progress tracker
+            self._update_cleanup_progress(task_id, 0, 'Starting cleanup process...',
+                                          time.time())
+
+            results = {}
+
+            # Determine which models to clean based on data_type
+            models_to_clean = []
+            if data_type == 'all':
+                models_to_clean = [
+                    ('parc_corporate', clean_parc_corporate),
+                    ('creances_ngbss', clean_creances_ngbss),
+                    ('ca_non_periodique', clean_ca_non_periodique),
+                    ('ca_periodique', clean_ca_periodique),
+                    ('ca_cnt', clean_ca_cnt),
+                    ('ca_dnt', clean_ca_dnt),
+                    ('ca_rfd', clean_ca_rfd),
+                    ('journal_ventes', clean_journal_ventes),
+                    ('etat_facture', clean_etat_facture)
+                ]
+            else:
+                # Map data_type to its corresponding cleanup function
+                cleanup_map = {
+                    'parc_corporate': clean_parc_corporate,
+                    'creances_ngbss': clean_creances_ngbss,
+                    'ca_non_periodique': clean_ca_non_periodique,
+                    'ca_periodique': clean_ca_periodique,
+                    'ca_cnt': clean_ca_cnt,
+                    'ca_dnt': clean_ca_dnt,
+                    'ca_rfd': clean_ca_rfd,
+                    'journal_ventes': clean_journal_ventes,
+                    'etat_facture': clean_etat_facture
+                }
+                if data_type in cleanup_map:
+                    models_to_clean = [(data_type, cleanup_map[data_type])]
+                else:
+                    raise ValueError(f"Invalid data type: {data_type}")
+
+            # Clean each model and track progress
+            total_models = len(models_to_clean)
+            for i, (model_name, cleanup_func) in enumerate(models_to_clean):
+                progress = int((i / total_models) * 100)
+                self._update_cleanup_progress(
+                    task_id, progress, f"Cleaning {model_name} data...", time.time())
+
+                # Call the cleanup function and store results
+                result = cleanup_func()
+                results[model_name] = result
+
+                # Update progress
+                progress = int(((i + 1) / total_models) * 100)
+                self._update_cleanup_progress(
+                    task_id, progress,
+                    f"Completed cleaning {model_name} data", time.time())
+
+            # Finalize progress
+            self._update_cleanup_progress(
+                task_id, 100, "Data cleanup completed", time.time(), is_complete=True)
+
+            # Store the final results in the progress tracker
+            progress_tracker = CleanupProgressView.objects.get(task_id=task_id)
+            progress_tracker.result = results
+            progress_tracker.save()
+
+        except Exception as e:
+            logger.error(f"Error in data cleanup process: {str(e)}")
+            logger.error(traceback.format_exc())
+            self._update_cleanup_progress(
+                task_id, 0, f"Error: {str(e)}", time.time(), is_complete=True)
+
+            # Store the error in the progress tracker
+            try:
+                progress_tracker = CleanupProgressView.objects.get(
+                    task_id=task_id)
+                progress_tracker.error = str(e)
+                progress_tracker.status = 'failed'
+                progress_tracker.save()
+            except Exception as inner_e:
+                logger.error(
+                    f"Failed to update progress tracker: {str(inner_e)}")
+
+    def _backup_data_before_cleanup(self, data_type):
+        """Create a JSON backup of data before cleanup operations"""
+        from django.core.serializers import serialize
+        import os
+        from datetime import datetime
+        from django.conf import settings
+
+        models_map = {
+            'parc_corporate': ParcCorporate,
+            'creances_ngbss': CreancesNGBSS,
+            'ca_non_periodique': CANonPeriodique,
+            'ca_periodique': CAPeriodique,
+            'ca_cnt': CACNT,
+            'ca_dnt': CADNT,
+            'ca_rfd': CARFD,
+            'journal_ventes': JournalVentes,
+            'etat_facture': EtatFacture
+        }
+
+        if data_type not in models_map and data_type != 'all':
+            logger.warning(f"Invalid data type for backup: {data_type}")
+            return False
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_dir = os.path.join(settings.MEDIA_ROOT, 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+
+        logger.info(f"Creating backup before cleaning {data_type}")
+
+        if data_type == 'all':
+            for model_name, model in models_map.items():
+                filename = os.path.join(
+                    backup_dir, f"{model_name}_{timestamp}.json")
+                with open(filename, 'w') as f:
+                    # Limit to 10,000 records to avoid memory issues
+                    data = serialize('json', model.objects.all()[:10000])
+                    f.write(data)
+                logger.info(f"Backed up {model_name} to {filename}")
+        else:
+            model = models_map[data_type]
+            filename = os.path.join(
+                backup_dir, f"{data_type}_{timestamp}.json")
+            with open(filename, 'w') as f:
+                data = serialize('json', model.objects.all()[:10000])
+                f.write(data)
+            logger.info(f"Backed up {data_type} to {filename}")
+
+        return True
+
+    def _run_cleanup_process(self, request, data_type, task_id):
+        """Run the cleanup process in a background thread"""
+        try:
+            # Initialize progress tracker
+            self._update_cleanup_progress(task_id, 0, 'Starting cleanup process...',
+                                          time.time())
+
+            results = {}
+
+            # Determine which models to clean based on data_type
+            models_to_clean = []
+            if data_type == 'all':
+                models_to_clean = [
+                    ('parc_corporate', clean_parc_corporate),
+                    ('creances_ngbss', clean_creances_ngbss),
+                    ('ca_non_periodique', clean_ca_non_periodique),
+                    ('ca_periodique', clean_ca_periodique),
+                    ('ca_cnt', clean_ca_cnt),
+                    ('ca_dnt', clean_ca_dnt),
+                    ('ca_rfd', clean_ca_rfd),
+                    ('journal_ventes', clean_journal_ventes),
+                    ('etat_facture', clean_etat_facture)
+                ]
+            else:
+                # Map data_type to its corresponding cleanup function
+                cleanup_map = {
+                    'parc_corporate': clean_parc_corporate,
+                    'creances_ngbss': clean_creances_ngbss,
+                    'ca_non_periodique': clean_ca_non_periodique,
+                    'ca_periodique': clean_ca_periodique,
+                    'ca_cnt': clean_ca_cnt,
+                    'ca_dnt': clean_ca_dnt,
+                    'ca_rfd': clean_ca_rfd,
+                    'journal_ventes': clean_journal_ventes,
+                    'etat_facture': clean_etat_facture
+                }
+                if data_type in cleanup_map:
+                    models_to_clean = [(data_type, cleanup_map[data_type])]
+                else:
+                    raise ValueError(f"Invalid data type: {data_type}")
+
+            # Clean each model and track progress
+            total_models = len(models_to_clean)
+            for i, (model_name, cleanup_func) in enumerate(models_to_clean):
+                progress = int((i / total_models) * 100)
+                self._update_cleanup_progress(
+                    task_id, progress, f"Cleaning {model_name} data...", time.time())
+
+                # Call the cleanup function and store results
+                result = cleanup_func()
+                results[model_name] = result
+
+                # Update progress
+                progress = int(((i + 1) / total_models) * 100)
+                self._update_cleanup_progress(
+                    task_id, progress,
+                    f"Completed cleaning {model_name} data", time.time())
+
+            # Finalize progress
+            self._update_cleanup_progress(
+                task_id, 100, "Data cleanup completed", time.time(), is_complete=True)
+
+            # Store the final results in the progress tracker
+            progress_tracker = CleanupProgressView.objects.get(task_id=task_id)
+            progress_tracker.result = results
+            progress_tracker.save()
+
+        except Exception as e:
+            logger.error(f"Error in data cleanup process: {str(e)}")
+            logger.error(traceback.format_exc())
+            self._update_cleanup_progress(
+                task_id, 0, f"Error: {str(e)}", time.time(), is_complete=True)
+
+            # Store the error in the progress tracker
+            try:
+                progress_tracker = CleanupProgressView.objects.get(
+                    task_id=task_id)
+                progress_tracker.error = str(e)
+                progress_tracker.status = 'failed'
+                progress_tracker.save()
+            except Exception as inner_e:
+                logger.error(
+                    f"Failed to update progress tracker: {str(inner_e)}")
 
 
 class CleanupProgressView(APIView):

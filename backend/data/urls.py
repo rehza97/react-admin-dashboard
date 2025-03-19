@@ -12,6 +12,8 @@ from . import export_views
 from .views import (
     DOTSView,
 )
+from .progress_views import ValidationProgressView
+from .validation_views import DataValidationView
 
 from decimal import Decimal
 logger = logging.getLogger(__name__)
@@ -122,8 +124,8 @@ urlpatterns = [
          name='anomaly-scan'),
 
     # Data validation endpoints
-    path('validation/', views.DataValidationView.as_view(), name='data-validation'),
-    path('cleaning/', views.DataValidationView.as_view(), name='data-cleaning'),
+    path('validation/', DataValidationView.as_view(), name='data-validation'),
+    path('cleaning/', DataValidationView.as_view(), name='data-cleaning'),
 
     # Progress tracking
     path('progress/', views.ProgressTrackerView.as_view(), name='progress-list'),
@@ -131,7 +133,7 @@ urlpatterns = [
          views.ProgressTrackerView.as_view(), name='progress-detail'),
 
     # Validation progress
-    path('validation-progress/', views.ValidationProgressView.as_view(),
+    path('validation-progress/', ValidationProgressView.as_view(),
          name='validation-progress'),
 
     # Comprehensive reports

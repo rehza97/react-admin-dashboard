@@ -190,7 +190,17 @@ const kpiService = {
       // Build query parameters
       const queryParams = new URLSearchParams();
 
-      // Only add parameters that have values
+      // Add parameters that match what the component sends
+      if (filters.state && filters.state !== "") {
+        queryParams.append("state", filters.state);
+      }
+      if (filters.telecom_type && filters.telecom_type !== "") {
+        queryParams.append("telecom_type", filters.telecom_type);
+      }
+      if (filters.offer_name && filters.offer_name !== "") {
+        queryParams.append("offer_name", filters.offer_name);
+      }
+      // For backward compatibility, still support year/month/dot
       if (filters.year) {
         queryParams.append("year", filters.year);
       }
@@ -201,9 +211,14 @@ const kpiService = {
         queryParams.append("dot", filters.dot);
       }
 
+      console.log("Fetching corporate park data with filters:", filters);
+      console.log("Query parameters:", queryParams.toString());
+
       const response = await api.get(
         `/data/kpi/corporate-park/?${queryParams.toString()}`
       );
+
+      console.log("Corporate park data response:", response.data);
       return response.data;
     } catch (error) {
       return handleKpiApiError(error, "corporate park");

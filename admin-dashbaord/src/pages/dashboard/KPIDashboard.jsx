@@ -64,37 +64,7 @@ function a11yProps(index) {
 const getCurrentYear = () => new Date().getFullYear();
 const getCurrentMonth = () => new Date().getMonth() + 1;
 
-// Mock data for when API fails
-const mockSummaryData = {
-  total_revenue: 1250000000,
-  previous_year_revenue: 1100000000,
-  revenue_change: 13.64,
-  total_collection: 980000000,
-  collection_rate: 78.4,
-  collections_change: 8.89,
-  total_receivables: 270000000,
-  receivables_change: -5.26,
-  total_corporate_subscribers: 12500,
-  subscribers_change: 4.17,
-  objective_achievement_rate: 83.33,
-  top_performing_dots: [
-    { organization: "Algiers", total: 450000000 },
-    { organization: "Oran", total: 320000000 },
-    { organization: "Constantine", total: 280000000 },
-    { organization: "Annaba", total: 200000000 },
-  ],
-  anomalies: {
-    missing_invoices: 12,
-    duplicate_entries: 5,
-    negative_values: 3,
-    outlier_values: 8,
-  },
-  zero_revenue_dots: [{ organization: "Illizi" }, { organization: "Tindouf" }],
-  zero_collection_dots: [
-    { organization: "Naama" },
-    { organization: "El Bayadh" },
-  ],
-};
+
 
 const KPIDashboard = () => {
   const theme = useTheme();

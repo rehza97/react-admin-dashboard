@@ -1,30 +1,41 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Box,
   Button,
   TextField,
   Typography,
   Paper,
-  Divider,
   InputAdornment,
   IconButton,
-  Checkbox,
-  FormControlLabel,
   Link,
-  useTheme,
   Container,
+  Divider,
+  ToggleButtonGroup,
+  ToggleButton,
+  useMediaQuery,
 } from "@mui/material";
-import { Visibility, VisibilityOff, Email, Lock } from "@mui/icons-material";
+import {
+  Visibility,
+  VisibilityOff,
+  Email,
+  Lock,
+  LightMode,
+  DarkMode,
+} from "@mui/icons-material";
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom";
-import GoogleIcon from "@mui/icons-material/Google";
-import FacebookIcon from "@mui/icons-material/Facebook";
-import TwitterIcon from "@mui/icons-material/Twitter";
 import { authService } from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
+import { useTranslation } from "react-i18next";
 
 const Login = () => {
-  const theme = useTheme();
+  const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
+  const { t, i18n } = useTranslation();
+  const [language, setLanguage] = useState(i18n.language);
   const [showPassword, setShowPassword] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(
+    localStorage.getItem("theme") === "dark" ||
+      (localStorage.getItem("theme") === null && prefersDarkMode)
+  );
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -35,6 +46,38 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { setCurrentUser } = useAuth();
+
+  // Color palette based on Algérie Télécom branding
+  const colors = {
+    primary: "#1976d2", // Primary blue color
+    primaryDark: "#115293", // Darker blue for hover states
+    primaryLight: "#4791db", // Lighter blue for background
+    inputBg: "#1976d2", // Blue background for inputs
+    inputText: "white", // Text color for inputs
+    labelLight: "rgba(255, 255, 255, 0.9)", // Label color for inputs in light mode
+    labelDark: "rgba(255, 255, 255, 0.9)", // Label color for inputs in dark mode
+    darkBg: "#121212", // Dark mode background
+    lightBg: "#f5f5f5", // Light mode background
+  };
+
+  useEffect(() => {
+    // Apply theme to body
+    document.body.style.backgroundColor = isDarkMode
+      ? colors.darkBg
+      : colors.lightBg;
+    localStorage.setItem("theme", isDarkMode ? "dark" : "light");
+  }, [isDarkMode, colors.darkBg, colors.lightBg]);
+
+  const handleThemeChange = () => {
+    setIsDarkMode(!isDarkMode);
+  };
+
+  const handleLanguageChange = (event, newLanguage) => {
+    if (newLanguage !== null) {
+      setLanguage(newLanguage);
+      i18n.changeLanguage(newLanguage);
+    }
+  };
 
   const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
@@ -59,14 +102,14 @@ const Login = () => {
   const validate = () => {
     const newErrors = {};
     if (!formData.email) {
-      newErrors.email = "Email is required";
+      newErrors.email = t("login.emailRequired");
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = "Email is invalid";
+      newErrors.email = t("login.emailInvalid");
     }
     if (!formData.password) {
-      newErrors.password = "Password is required";
+      newErrors.password = t("login.passwordRequired");
     } else if (formData.password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
+      newErrors.password = t("login.passwordLength");
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -94,6 +137,8 @@ const Login = () => {
         // Store token and authentication status
         localStorage.setItem("token", token);
         localStorage.setItem("isAuthenticated", "true");
+        localStorage.setItem("language", language);
+        localStorage.setItem("theme", isDarkMode ? "dark" : "light");
 
         // Also cache the user data for offline use
         localStorage.setItem("cachedUser", JSON.stringify(userData));
@@ -121,14 +166,14 @@ const Login = () => {
         setGeneralError(
           error.response?.data?.error ||
             error.message ||
-            "Invalid credentials. Please try again."
+            t("login.invalidCredentials")
         );
       }
     }
   };
 
   return (
-    <Container component="main" maxWidth="xs">
+    <Container component="main" maxWidth="sm">
       <Box
         sx={{
           display: "flex",
@@ -136,122 +181,317 @@ const Login = () => {
           justifyContent: "center",
           alignItems: "center",
           minHeight: "100vh",
+          py: 4,
         }}
       >
+        <Box
+          sx={{
+            position: "absolute",
+            top: 16,
+            right: 16,
+            zIndex: 1000,
+            display: "flex",
+            gap: 1,
+          }}
+        >
+          <IconButton
+            onClick={handleThemeChange}
+            sx={{
+              color: isDarkMode
+                ? "rgba(255, 255, 255, 0.8)"
+                : "rgba(0, 0, 0, 0.8)",
+              bgcolor: isDarkMode
+                ? "rgba(255, 255, 255, 0.1)"
+                : "rgba(0, 0, 0, 0.1)",
+              "&:hover": {
+                bgcolor: isDarkMode
+                  ? "rgba(255, 255, 255, 0.15)"
+                  : "rgba(0, 0, 0, 0.15)",
+              },
+            }}
+          >
+            {isDarkMode ? <LightMode /> : <DarkMode />}
+          </IconButton>
+
+          <ToggleButtonGroup
+            value={language}
+            exclusive
+            onChange={handleLanguageChange}
+            aria-label="language selection"
+            size="small"
+            sx={{
+              backgroundColor: isDarkMode
+                ? "rgba(255, 255, 255, 0.1)"
+                : "rgba(0, 0, 0, 0.1)",
+              "& .MuiToggleButton-root": {
+                color: isDarkMode
+                  ? "rgba(255, 255, 255, 0.8)"
+                  : "rgba(0, 0, 0, 0.8)",
+                "&.Mui-selected": {
+                  color: isDarkMode ? "#fff" : "#000",
+                  backgroundColor: isDarkMode
+                    ? "rgba(255, 255, 255, 0.15)"
+                    : "rgba(0, 0, 0, 0.15)",
+                },
+              },
+            }}
+          >
+            <ToggleButton value="en" aria-label="English">
+              EN
+            </ToggleButton>
+            <ToggleButton value="fr" aria-label="French">
+              FR
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+
         <Paper
           elevation={3}
           sx={{
             p: { xs: 3, sm: 4 },
             width: "100%",
+            maxWidth: 500,
+            mx: "auto",
             borderRadius: 2,
+            boxShadow: isDarkMode
+              ? "0 8px 24px rgba(0, 0, 0, 0.4)"
+              : "0 8px 24px rgba(0, 0, 0, 0.15)",
+            background: isDarkMode
+              ? "linear-gradient(to bottom, #1e1e1e, #121212)"
+              : "#fff",
+            color: isDarkMode ? "#fff" : "inherit",
           }}
         >
-          <Box sx={{ textAlign: "center", mb: 3 }}>
+          <Box sx={{ textAlign: "center", mb: 4 }}>
+            <Box sx={{ mb: 2, display: "flex", justifyContent: "center" }}>
+              <img
+                src="/LOGO.png"
+                alt="ALGERIE TELECOM"
+                style={{ height: "90px", maxWidth: "100%" }}
+              />
+            </Box>
+
             <Typography
-              variant="h4"
+              variant="h5"
               component="h1"
-              gutterBottom
               fontWeight="bold"
-              sx={{ fontSize: { xs: "1.75rem", sm: "2.125rem" } }}
+              gutterBottom
+              sx={{
+                fontSize: { xs: "1.5rem", sm: "1.75rem" },
+                color: isDarkMode ? "#90caf9" : colors.primary,
+              }}
             >
-              Welcome Back
+              Algérie Télécom
             </Typography>
-            <Typography variant="body1" color="text.secondary">
-              Enter your credentials to access your account
+
+            <Typography
+              variant="subtitle1"
+              fontWeight="medium"
+              color={
+                isDarkMode ? "rgba(144, 202, 249, 0.9)" : colors.primaryLight
+              }
+              gutterBottom
+              sx={{ fontSize: { xs: "1rem", sm: "1.1rem" }, mb: 1 }}
+            >
+              {t("app.subtitle")}
             </Typography>
+
+            <Divider
+              sx={{
+                my: 2,
+                borderColor: isDarkMode
+                  ? "rgba(255, 255, 255, 0.15)"
+                  : "rgba(0, 0, 0, 0.15)",
+              }}
+            />
           </Box>
 
           {generalError && (
-            <Typography color="error" variant="body2" align="center">
+            <Typography
+              color="error"
+              variant="body2"
+              align="center"
+              sx={{ mb: 2, fontWeight: 500 }}
+            >
               {generalError}
             </Typography>
           )}
 
-          <Box component="form" onSubmit={handleSubmit} noValidate>
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="email"
-              label="Email Address"
-              name="email"
-              autoComplete="email"
-              autoFocus
-              value={formData.email}
-              onChange={handleChange}
-              error={!!errors.email}
-              helperText={errors.email}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Email color="action" />
-                  </InputAdornment>
-                ),
-              }}
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="password"
-              label="Password"
-              type={showPassword ? "text" : "password"}
-              id="password"
-              autoComplete="current-password"
-              value={formData.password}
-              onChange={handleChange}
-              error={!!errors.password}
-              helperText={errors.password}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Lock color="action" />
-                  </InputAdornment>
-                ),
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      aria-label="toggle password visibility"
-                      onClick={handleClickShowPassword}
-                      edge="end"
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{ mb: 1 }}
-            />
+          <Box
+            component="form"
+            onSubmit={handleSubmit}
+            noValidate
+            sx={{ mt: 2 }}
+          >
+            <Box sx={{ mb: 3, position: "relative" }}>
+              <Typography
+                variant="caption"
+                sx={{
+                  position: "absolute",
+                  top: -8,
+                  left: 16,
+                  color: colors.primary,
+                  fontWeight: "500",
+                  fontSize: "0.75rem",
+                  zIndex: 1,
+                  backgroundColor: isDarkMode ? colors.darkBg : "#fff",
+                  px: 0.5,
+                }}
+              >
+                {t("login.emailAddress")}
+              </Typography>
+              <TextField
+                fullWidth
+                id="email"
+                name="email"
+                placeholder={t("login.emailAddress")}
+                autoComplete="email"
+                autoFocus
+                value={formData.email}
+                onChange={handleChange}
+                error={!!errors.email}
+                helperText={errors.email}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Email sx={{ color: colors.inputText }} />
+                    </InputAdornment>
+                  ),
+                  sx: {
+                    backgroundColor: colors.inputBg,
+                    color: colors.inputText,
+                    borderRadius: 1,
+                    "& .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "transparent",
+                    },
+                    "&:hover .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "transparent",
+                    },
+                    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "transparent",
+                    },
+                  },
+                }}
+                InputLabelProps={{
+                  sx: {
+                    color: colors.labelLight,
+                    "&.Mui-focused": {
+                      color: colors.labelLight,
+                    },
+                  },
+                }}
+                sx={{
+                  "& .MuiFormHelperText-root": {
+                    color: (theme) => theme.palette.error.main,
+                    mt: 1,
+                    ml: 0,
+                  },
+                }}
+              />
+            </Box>
+
+            <Box sx={{ mb: 1, position: "relative" }}>
+              <Typography
+                variant="caption"
+                sx={{
+                  position: "absolute",
+                  top: -8,
+                  left: 16,
+                  color: colors.primary,
+                  fontWeight: "500",
+                  fontSize: "0.75rem",
+                  zIndex: 1,
+                  backgroundColor: isDarkMode ? colors.darkBg : "#fff",
+                  px: 0.5,
+                }}
+              >
+                {t("login.password")}
+              </Typography>
+              <TextField
+                fullWidth
+                name="password"
+                type={showPassword ? "text" : "password"}
+                id="password"
+                placeholder={t("login.password")}
+                autoComplete="current-password"
+                value={formData.password}
+                onChange={handleChange}
+                error={!!errors.password}
+                helperText={errors.password}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Lock sx={{ color: colors.inputText }} />
+                    </InputAdornment>
+                  ),
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        aria-label="toggle password visibility"
+                        onClick={handleClickShowPassword}
+                        edge="end"
+                        sx={{ color: colors.inputText }}
+                      >
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                  sx: {
+                    backgroundColor: colors.inputBg,
+                    color: colors.inputText,
+                    borderRadius: 1,
+                    "& .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "transparent",
+                    },
+                    "&:hover .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "transparent",
+                    },
+                    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "transparent",
+                    },
+                  },
+                }}
+                InputLabelProps={{
+                  sx: {
+                    color: colors.labelLight,
+                    "&.Mui-focused": {
+                      color: colors.labelLight,
+                    },
+                  },
+                }}
+                sx={{
+                  "& .MuiFormHelperText-root": {
+                    color: (theme) => theme.palette.error.main,
+                    mt: 1,
+                    ml: 0,
+                  },
+                }}
+              />
+            </Box>
 
             <Box
               sx={{
                 display: "flex",
-                justifyContent: "space-between",
+                justifyContent: "flex-end",
                 alignItems: "center",
-                flexWrap: { xs: "wrap", sm: "nowrap" },
-                mt: 1,
+                mt: 2,
+                mb: 3,
               }}
             >
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    name="rememberMe"
-                    checked={formData.rememberMe}
-                    onChange={handleChange}
-                    color="primary"
-                    size="small"
-                  />
-                }
-                label={<Typography variant="body2">Remember me</Typography>}
-              />
               <Link
                 component={RouterLink}
                 to="/reset-password"
                 variant="body2"
-                sx={{ textDecoration: "none", ml: { xs: 0, sm: 1 } }}
+                sx={{
+                  textDecoration: "none",
+                  color: isDarkMode ? "#90caf9" : colors.primary,
+                  fontWeight: 500,
+                  "&:hover": {
+                    textDecoration: "underline",
+                  },
+                }}
               >
-                Forgot password?
+                {t("login.forgotPassword")}
               </Link>
             </Box>
 
@@ -259,11 +499,24 @@ const Login = () => {
               type="submit"
               fullWidth
               variant="contained"
-              sx={{ mt: 3, mb: 2, py: 1.2 }}
+              sx={{
+                py: 1.5,
+                backgroundColor: colors.primary,
+                color: "#fff",
+                boxShadow: "0 4px 12px rgba(25, 118, 210, 0.25)",
+                "&:hover": {
+                  backgroundColor: colors.primaryDark,
+                  boxShadow: "0 6px 14px rgba(25, 118, 210, 0.35)",
+                },
+                transition: "all 0.3s ease",
+                borderRadius: 1,
+                fontSize: "1rem",
+                fontWeight: "500",
+                textTransform: "uppercase",
+              }}
             >
-              Sign In
+              {language === "fr" ? "SE CONNECTER" : t("login.signIn")}
             </Button>
-
           </Box>
         </Paper>
       </Box>

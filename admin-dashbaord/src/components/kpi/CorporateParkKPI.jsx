@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
 import {
   Box,
@@ -14,6 +14,7 @@ import {
   Tabs,
   Tab,
   Divider,
+  Button,
 } from "@mui/material";
 import {
   PieChart,
@@ -74,11 +75,42 @@ const CorporateParkKPI = () => {
         if (telecomTypeFilter) params.telecom_type = telecomTypeFilter;
         if (offerNameFilter) params.offer_name = offerNameFilter;
 
+        console.log("Fetching corporate park data with filters:", params);
+
         const data = await kpiService.getCorporateParkKPIs(params);
-        setParkData(data);
+
+        console.log("Received corporate park data:", {
+          totalSubscribers: data.total_subscribers,
+          byState: data.subscribers_by_state?.length,
+          byTelecom: data.subscribers_by_telecom?.length,
+          byOffer: data.subscribers_by_offer?.length,
+        });
+
+        // Ensure we have all required data or provide defaults
+        const processedData = {
+          total_subscribers: data.total_subscribers || 0,
+          subscribers_by_state: data.subscribers_by_state || [],
+          subscribers_by_telecom: data.subscribers_by_telecom || [],
+          subscribers_by_offer: data.subscribers_by_offer || [],
+          subscribers_by_status: data.subscribers_by_status || [],
+          subscribers_by_customer: data.subscribers_by_customer || [],
+          new_subscribers: data.new_subscribers || [],
+        };
+
+        setParkData(processedData);
       } catch (err) {
         console.error("Error fetching corporate park data:", err);
-        setError("Failed to load corporate park data. Please try again later.");
+        if (err.message === "Network Error") {
+          setError(
+            "Network error. Please check your connection and try again."
+          );
+        } else if (err.response && err.response.status === 404) {
+          setError("Data not found for the selected filters.");
+        } else {
+          setError(
+            "Failed to load corporate park data. Please try again later."
+          );
+        }
       } finally {
         setLoading(false);
       }
@@ -117,17 +149,16 @@ const CorporateParkKPI = () => {
 
   // Get unique filter options
   const getUniqueOptions = useCallback((data, key) => {
-    if (!data || !data.length) return [];
+    if (!data || !Array.isArray(data) || !data.length) return [];
 
     // Use Array.from instead of spread operator for Set
-    const uniqueValues = Array.from(new Set(data.map((item) => item[key])));
-    return uniqueValues.filter(Boolean).sort();
-  }, []);
+    const uniqueValues = Array.from(new Set(data.map((item) => item[key])))
+      .filter(Boolean)
+      .sort();
 
-  const uniqueStates = useMemo(
-    () => getUniqueOptions(parkData?.subscribers_by_state || [], "state"),
-    [parkData?.subscribers_by_state, getUniqueOptions]
-  );
+    console.log(`Unique ${key} values:`, uniqueValues);
+    return uniqueValues;
+  }, []);
 
   // Custom colors for charts
   const COLORS = [
@@ -141,6 +172,15 @@ const CorporateParkKPI = () => {
       .fill()
       .map((_, i) => theme.palette.primary[(i % 9) * 100 + 100]),
   ];
+
+  // Reset all filters
+  const resetFilters = () => {
+    setStateFilter("");
+    setTelecomTypeFilter("");
+    setOfferNameFilter("");
+    // Reset to overview tab
+    setTabValue(0);
+  };
 
   return (
     <Paper elevation={2} sx={{ p: 0, borderRadius: 2, overflow: "hidden" }}>
@@ -195,11 +235,19 @@ const CorporateParkKPI = () => {
                       onChange={handleStateChange}
                     >
                       <MenuItem value="">All States</MenuItem>
-                      {uniqueStates.map((state) => (
-                        <MenuItem key={state} value={state}>
-                          {state}
-                        </MenuItem>
-                      ))}
+                      {parkData?.subscribers_by_state &&
+                      parkData.subscribers_by_state.length > 0 ? (
+                        getUniqueOptions(
+                          parkData.subscribers_by_state,
+                          "state"
+                        ).map((state) => (
+                          <MenuItem key={state} value={state}>
+                            {state}
+                          </MenuItem>
+                        ))
+                      ) : (
+                        <MenuItem disabled>No states available</MenuItem>
+                      )}
                     </Select>
                   </FormControl>
                 </Grid>
@@ -216,18 +264,23 @@ const CorporateParkKPI = () => {
                       onChange={handleTelecomTypeChange}
                     >
                       <MenuItem value="">All Types</MenuItem>
-                      {getUniqueOptions(
-                        parkData.subscribers_by_telecom,
-                        "telecom_type"
-                      ).map((type) => (
-                        <MenuItem key={type} value={type}>
-                          {type}
-                        </MenuItem>
-                      ))}
+                      {parkData?.subscribers_by_telecom &&
+                      parkData.subscribers_by_telecom.length > 0 ? (
+                        getUniqueOptions(
+                          parkData.subscribers_by_telecom,
+                          "telecom_type"
+                        ).map((type) => (
+                          <MenuItem key={type} value={type}>
+                            {type}
+                          </MenuItem>
+                        ))
+                      ) : (
+                        <MenuItem disabled>No telecom types available</MenuItem>
+                      )}
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid item xs={12} sm={4}>
+                <Grid item xs={12} sm={3}>
                   <FormControl fullWidth size="small">
                     <InputLabel id="offer-name-select-label">
                       Offer Name
@@ -240,105 +293,200 @@ const CorporateParkKPI = () => {
                       onChange={handleOfferNameChange}
                     >
                       <MenuItem value="">All Offers</MenuItem>
-                      {getUniqueOptions(
-                        parkData.subscribers_by_offer,
-                        "offer_name"
-                      ).map((offer) => (
-                        <MenuItem key={offer} value={offer}>
-                          {offer}
-                        </MenuItem>
-                      ))}
+                      {parkData?.subscribers_by_offer &&
+                      parkData.subscribers_by_offer.length > 0 ? (
+                        getUniqueOptions(
+                          parkData.subscribers_by_offer,
+                          "offer_name"
+                        ).map((offer) => (
+                          <MenuItem key={offer} value={offer}>
+                            {offer}
+                          </MenuItem>
+                        ))
+                      ) : (
+                        <MenuItem disabled>No offers available</MenuItem>
+                      )}
                     </Select>
                   </FormControl>
                 </Grid>
+                <Grid
+                  item
+                  xs={12}
+                  sm={1}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  <Button
+                    variant="outlined"
+                    color="primary"
+                    size="small"
+                    onClick={resetFilters}
+                    disabled={
+                      !stateFilter && !telecomTypeFilter && !offerNameFilter
+                    }
+                  >
+                    Reset
+                  </Button>
+                </Grid>
               </Grid>
+
+              {/* Add a message when filters are applied */}
+              {(stateFilter || telecomTypeFilter || offerNameFilter) && (
+                <Box sx={{ mt: 2 }}>
+                  <Alert
+                    severity="info"
+                    sx={{ display: "flex", alignItems: "center" }}
+                  >
+                    <Box>
+                      Filters applied:
+                      {stateFilter && <strong> State: {stateFilter}</strong>}
+                      {telecomTypeFilter && (
+                        <strong> Type: {telecomTypeFilter}</strong>
+                      )}
+                      {offerNameFilter && (
+                        <strong> Offer: {offerNameFilter}</strong>
+                      )}
+                    </Box>
+                  </Alert>
+                </Box>
+              )}
             </Box>
 
             {/* Overview Tab */}
             <TabPanel value={tabValue} index={0}>
               <Box sx={{ textAlign: "center", mb: 3 }}>
                 <Typography variant="h4" fontWeight="bold" color="primary">
-                  {parkData.total_subscribers.toLocaleString()}
+                  {(parkData.total_subscribers || 0).toLocaleString()}
                 </Typography>
                 <Typography variant="subtitle1">
                   Total Active Subscribers
                 </Typography>
               </Box>
 
+              {/* If we have no distribution data, show a message */}
+              {(!parkData.subscribers_by_telecom ||
+                parkData.subscribers_by_telecom.length === 0) &&
+                (!parkData.subscribers_by_status ||
+                  parkData.subscribers_by_status.length === 0) && (
+                  <Alert severity="info" sx={{ mb: 3 }}>
+                    No detailed distribution data available for the selected
+                    filters.
+                  </Alert>
+                )}
+
               <Grid container spacing={3}>
                 <Grid item xs={12} md={6}>
                   <Typography variant="h6" sx={{ mb: 2 }}>
                     Distribution by Telecom Type
                   </Typography>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={prepareChartData(
-                          parkData.subscribers_by_telecom,
-                          "count",
-                          "telecom_type"
-                        )}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={true}
-                        label={({ name, percent }) =>
-                          `${name}: ${(percent * 100).toFixed(0)}%`
-                        }
-                        outerRadius={100}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {prepareChartData(
-                          parkData.subscribers_by_telecom,
-                          "count",
-                          "telecom_type"
-                        ).map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={COLORS[index % COLORS.length]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => value.toLocaleString()} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  {parkData.subscribers_by_telecom &&
+                  parkData.subscribers_by_telecom.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie
+                          data={prepareChartData(
+                            parkData.subscribers_by_telecom,
+                            "count",
+                            "telecom_type"
+                          )}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={true}
+                          label={({ name, percent }) =>
+                            `${name}: ${(percent * 100).toFixed(0)}%`
+                          }
+                          outerRadius={100}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {prepareChartData(
+                            parkData.subscribers_by_telecom,
+                            "count",
+                            "telecom_type"
+                          ).map((entry, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={COLORS[index % COLORS.length]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value) => value.toLocaleString()}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <Box
+                      sx={{
+                        height: 300,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Typography color="text.secondary">
+                        No telecom type data available
+                      </Typography>
+                    </Box>
+                  )}
                 </Grid>
                 <Grid item xs={12} md={6}>
                   <Typography variant="h6" sx={{ mb: 2 }}>
                     Distribution by Subscriber Status
                   </Typography>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={prepareChartData(
-                          parkData.subscribers_by_status,
-                          "count",
-                          "subscriber_status"
-                        )}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={true}
-                        label={({ name, percent }) =>
-                          `${name}: ${(percent * 100).toFixed(0)}%`
-                        }
-                        outerRadius={100}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {prepareChartData(
-                          parkData.subscribers_by_status,
-                          "count",
-                          "subscriber_status"
-                        ).map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={COLORS[index % COLORS.length]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => value.toLocaleString()} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  {parkData.subscribers_by_status &&
+                  parkData.subscribers_by_status.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie
+                          data={prepareChartData(
+                            parkData.subscribers_by_status,
+                            "count",
+                            "subscriber_status"
+                          )}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={true}
+                          label={({ name, percent }) =>
+                            `${name}: ${(percent * 100).toFixed(0)}%`
+                          }
+                          outerRadius={100}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {prepareChartData(
+                            parkData.subscribers_by_status,
+                            "count",
+                            "subscriber_status"
+                          ).map((entry, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={COLORS[index % COLORS.length]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value) => value.toLocaleString()}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <Box
+                      sx={{
+                        height: 300,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Typography color="text.secondary">
+                        No subscriber status data available
+                      </Typography>
+                    </Box>
+                  )}
                 </Grid>
               </Grid>
             </TabPanel>

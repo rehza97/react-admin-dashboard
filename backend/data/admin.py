@@ -42,10 +42,10 @@ class ProcessedInvoiceDataAdmin(admin.ModelAdmin):
 
 @admin.register(FacturationManuelle)
 class FacturationManuelleAdmin(admin.ModelAdmin):
-    list_display = ('invoice', 'month', 'invoice_date', 'department', 'invoice_number', 'fiscal_year',
-                    'client', 'amount_pre_tax', 'vat_percentage', 'vat_amount', 'total_amount', 'description', 'period')
-    list_filter = ('invoice__status', 'invoice_date', 'fiscal_year')
-    search_fields = ('invoice__invoice_number', 'department', 'client')
+    list_display = ('invoice', 'department', 'fiscal_year',
+                    'amount_pre_tax', 'total_amount', 'description')
+    list_filter = ('invoice__status', 'fiscal_year')
+    search_fields = ('invoice__invoice_number', 'department', 'description')
     ordering = ('invoice__upload_date',)
 
 
@@ -53,7 +53,8 @@ class FacturationManuelleAdmin(admin.ModelAdmin):
 class JournalVentesAdmin(admin.ModelAdmin):
     list_display = ('invoice', 'organization', 'invoice_number',
                     'invoice_type', 'invoice_date', 'client', 'revenue_amount')
-    list_filter = ('invoice__status', 'invoice_date', 'organization', 'billing_period')
+    list_filter = ('invoice__status', 'invoice_date',
+                   'organization', 'billing_period')
     search_fields = ('invoice__invoice_number',
                      'organization', 'client', 'invoice_number')
     ordering = ('invoice__upload_date',)
@@ -136,15 +137,15 @@ class CACNTAdmin(admin.ModelAdmin):
 
 @admin.register(Anomaly)
 class AnomalyAdmin(admin.ModelAdmin):
-    list_display = ['id', 'type', 'description',
+    list_display = ['id', 'type', 'description', 'data_source',
                     'status', 'created_at', 'updated_at']
-    list_filter = ['status', 'type', 'created_at', 'updated_at']
-    search_fields = ['description', 'invoice__invoice_number']
+    list_filter = ['status', 'type', 'data_source', 'created_at', 'updated_at']
+    search_fields = ['description', 'invoice__invoice_number', 'data_source']
     readonly_fields = ['created_at', 'updated_at']
     raw_id_fields = ['invoice', 'resolved_by']
     fieldsets = (
         (None, {
-            'fields': ('invoice', 'type', 'description', 'data')
+            'fields': ('invoice', 'type', 'description', 'data', 'data_source')
         }),
         ('Resolution', {
             'fields': ('status', 'resolved_by', 'resolution_notes')

@@ -96,7 +96,17 @@
     "collectionsAnalysis": "Collections Analysis",
     "receivablesAnalysis": "Receivables Analysis",
     "corporatePark": "Corporate Park",
-    "unfinishedInvoices": "Unfinished Invoices"
+    "unfinishedInvoices": "Unfinished Invoices",
+    "summary": {
+      "title": "Dashboard Summary",
+      "totalRevenue": "Total Revenue",
+      "totalCollection": "Total Collection",
+      "totalReceivables": "Total Receivables",
+      "totalSubscribers": "Total Subscribers",
+      "anomaliesDetected": "Anomalies Detected",
+      "emptyFieldsReceivables": "empty fields in receivables",
+      "emptyFieldsPark": "empty fields in corporate park"
+    }
   },
   "users": {
     "manageUsers": "Manage Users",
@@ -250,16 +260,10 @@
     "quarterly": "Quarterly",
     "yearly": "Yearly",
     "custom": "Custom",
-    "pdf": "PDF",
-    "excel": "Excel",
-    "csv": "CSV",
-    "html": "HTML",
-    "userActivityReport": "User Activity Report",
-    "fileUploadReport": "File Upload Report",
-    "anomalyReport": "Anomaly Report",
-    "systemPerformanceReport": "System Performance Report",
-    "customReport": "Custom Report",
-    "errorLoadingData": "Error loading report data"
+    "exportDefault": "Export Report",
+    "exportSuccess": "Report exported successfully",
+    "exportError": "Failed to export report",
+    "errorLoadingData": "Failed to load report data. Please try again later."
   },
   "profile": {
     "profileSettings": "Profile Settings",
@@ -584,5 +588,25 @@
     "codeRequired": "Code is required",
     "nameRequired": "Name is required",
     "errorLoading": "Failed to load DOTs. Please try again later."
+  },
+  "app": {
+    "title": "Algérie Télécom",
+    "subtitle": "Leader in telecommunications in Algeria",
+    "organization": "Division Corporate and IT Solutions Integration (DCISIT)",
+    "description": "Commercial Performance Monitoring via a Commercial Dashboard"
+  },
+  "login": {
+    "welcomeBack": "Welcome Back",
+    "enterCredentials": "Enter your credentials to access your account",
+    "emailAddress": "Email Address",
+    "password": "Password",
+    "rememberMe": "Remember me",
+    "forgotPassword": "Forgot password?",
+    "signIn": "Sign In",
+    "emailRequired": "Email is required",
+    "emailInvalid": "Email is invalid",
+    "passwordRequired": "Password is required",
+    "passwordLength": "Password must be at least 6 characters",
+    "invalidCredentials": "Invalid credentials. Please try again."
   }
 }

@@ -8,7 +8,7 @@ const isDevelopment = () => {
   );
 };
 
-// Mock data for anomaly statistics
+// Update the mockAnomalyStats to include model-specific data
 const mockAnomalyStats = {
   total_anomalies: 42,
   by_status: {
@@ -18,11 +18,34 @@ const mockAnomalyStats = {
     ignored: 3,
   },
   by_type: [
-    { type: "missing_data", count: 12 },
-    { type: "duplicate_data", count: 8 },
-    { type: "invalid_data", count: 10 },
-    { type: "outlier", count: 5 },
-    { type: "inconsistent_data", count: 7 },
+    { type: "missing_data", type_display: "Missing Data", count: 12 },
+    { type: "duplicate_data", type_display: "Duplicate Data", count: 8 },
+    { type: "invalid_data", type_display: "Invalid Data", count: 10 },
+    { type: "outlier", type_display: "Outlier", count: 5 },
+    { type: "inconsistent_data", type_display: "Inconsistent Data", count: 7 },
+  ],
+  by_data_source: [
+    { data_source: "journal_ventes", count: 15 },
+    { data_source: "etat_facture", count: 10 },
+    { data_source: "ca_periodique", count: 8 },
+    { data_source: "creances_ngbss", count: 5 },
+    { data_source: "ca_dnt", count: 4 },
+  ],
+  by_field: [
+    { field: "invoice_date", count: 8 },
+    { field: "amount", count: 12 },
+    { field: "client_name", count: 6 },
+    { field: "product_code", count: 9 },
+    { field: "tax_amount", count: 7 },
+  ],
+  time_series: [
+    { date: "2023-01-01", count: 2 },
+    { date: "2023-01-02", count: 3 },
+    { date: "2023-01-03", count: 5 },
+    { date: "2023-01-04", count: 8 },
+    { date: "2023-01-05", count: 6 },
+    { date: "2023-01-06", count: 12 },
+    { date: "2023-01-07", count: 6 },
   ],
   top_invoices: [
     { invoice_id: 1, invoice_number: "INV-2023-001", anomaly_count: 5 },
@@ -59,6 +82,123 @@ const mockAnomalyStats = {
       invoice_number: "INV-2023-003",
     },
   ],
+};
+
+// Model-specific mock stats
+const mockModelStats = {
+  journal_ventes: {
+    total_anomalies: 15,
+    by_status: {
+      open: 7,
+      in_progress: 3,
+      resolved: 4,
+      ignored: 1,
+    },
+    by_type: [
+      { type: "missing_data", type_display: "Missing Data", count: 5 },
+      { type: "duplicate_data", type_display: "Duplicate Data", count: 6 },
+      { type: "outlier", type_display: "Outlier", count: 4 },
+    ],
+    by_field: [
+      { field: "invoice_date", count: 4 },
+      { field: "client_name", count: 3 },
+      { field: "amount", count: 8 },
+    ],
+    time_series: [
+      { date: "2023-01-01", count: 1 },
+      { date: "2023-01-02", count: 2 },
+      { date: "2023-01-03", count: 3 },
+      { date: "2023-01-04", count: 5 },
+      { date: "2023-01-05", count: 2 },
+      { date: "2023-01-06", count: 1 },
+      { date: "2023-01-07", count: 1 },
+    ],
+  },
+  etat_facture: {
+    total_anomalies: 10,
+    by_status: {
+      open: 4,
+      in_progress: 2,
+      resolved: 3,
+      ignored: 1,
+    },
+    by_type: [
+      { type: "missing_data", type_display: "Missing Data", count: 3 },
+      { type: "invalid_data", type_display: "Invalid Data", count: 4 },
+      {
+        type: "inconsistent_data",
+        type_display: "Inconsistent Data",
+        count: 3,
+      },
+    ],
+    by_field: [
+      { field: "invoice_status", count: 5 },
+      { field: "payment_date", count: 3 },
+      { field: "amount_paid", count: 2 },
+    ],
+    time_series: [
+      { date: "2023-01-01", count: 1 },
+      { date: "2023-01-03", count: 2 },
+      { date: "2023-01-04", count: 3 },
+      { date: "2023-01-05", count: 1 },
+      { date: "2023-01-07", count: 3 },
+    ],
+  },
+  ca_periodique: {
+    total_anomalies: 8,
+    by_status: {
+      open: 2,
+      in_progress: 1,
+      resolved: 5,
+      ignored: 0,
+    },
+    by_type: [
+      { type: "outlier", type_display: "Outlier", count: 4 },
+      { type: "invalid_data", type_display: "Invalid Data", count: 2 },
+      {
+        type: "inconsistent_data",
+        type_display: "Inconsistent Data",
+        count: 2,
+      },
+    ],
+    time_series: [
+      { date: "2023-01-02", count: 1 },
+      { date: "2023-01-03", count: 2 },
+      { date: "2023-01-05", count: 3 },
+      { date: "2023-01-06", count: 2 },
+    ],
+  },
+  creances_ngbss: {
+    total_anomalies: 5,
+    by_status: {
+      open: 1,
+      in_progress: 1,
+      resolved: 2,
+      ignored: 1,
+    },
+    by_type: [
+      { type: "missing_data", type_display: "Missing Data", count: 2 },
+      { type: "invalid_data", type_display: "Invalid Data", count: 3 },
+    ],
+  },
+  ca_dnt: {
+    total_anomalies: 4,
+    by_status: {
+      open: 1,
+      in_progress: 1,
+      resolved: 2,
+      ignored: 0,
+    },
+    by_type: [
+      { type: "outlier", type_display: "Outlier", count: 1 },
+      { type: "invalid_data", type_display: "Invalid Data", count: 1 },
+      {
+        type: "inconsistent_data",
+        type_display: "Inconsistent Data",
+        count: 2,
+      },
+    ],
+  },
 };
 
 /**
@@ -282,13 +422,35 @@ const anomalyService = {
 
   /**
    * Get anomaly statistics
+   * @param {Object} options - Options for filtering statistics
+   * @param {string} options.dataSource - Filter statistics by data source
    * @returns {Promise} - Promise with anomaly statistics
    */
-  getAnomalyStats: async () => {
+  getAnomalyStats: async (options = {}) => {
     try {
-      const response = await api.get("/data/anomalies/stats/");
+      let url = "/data/anomalies/stats/";
+      const params = new URLSearchParams();
+
+      if (options.dataSource) {
+        params.append("data_source", options.dataSource);
+      }
+
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+
+      const response = await api.get(url);
       return response.data;
     } catch (error) {
+      // In development, return model-specific mock data if dataSource is provided
+      if (
+        isDevelopment() &&
+        options.dataSource &&
+        mockModelStats[options.dataSource]
+      ) {
+        return mockModelStats[options.dataSource];
+      }
+
       return handleApiError(error, "anomaly statistics", mockAnomalyStats);
     }
   },

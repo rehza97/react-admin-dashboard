@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { useTranslation } from "react-i18next";
 // Fix imports to match how the services are exported
@@ -17,34 +17,30 @@ import {
   Alert,
   Tabs,
   Tab,
-  Divider,
   Button,
   Snackbar,
-  Card,
-  CardContent,
-  List,
-  ListItem,
-  ListItemText,
+  TableContainer,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+  Chip,
+  TablePagination,
+  Skeleton,
 } from "@mui/material";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
+  PieChart,
+  Pie,
   Tooltip,
   Legend,
   ResponsiveContainer,
-  PieChart,
-  Pie,
   Cell,
 } from "recharts";
 import { DownloadOutlined } from "@mui/icons-material";
 import PageLayout from "../../components/PageLayout";
 import useDOTPermissions from "../../hooks/useDOTPermissions";
-import { handleApiError } from "../../services/utils/errorHandling";
 import PerformanceMetricsCard from "../../components/PerformanceMetricsCard";
-import { exportReport } from "../../services/exportService";
 
 // Tab panel component
 function TabPanel(props) {
@@ -63,6 +59,13 @@ function TabPanel(props) {
   );
 }
 
+// Add PropTypes validation for TabPanel
+TabPanel.propTypes = {
+  children: PropTypes.node,
+  index: PropTypes.number.isRequired,
+  value: PropTypes.number.isRequired,
+};
+
 // Helper function for tab props
 function a11yProps(index) {
   return {
@@ -74,26 +77,22 @@ function a11yProps(index) {
 // Helper function to get current year
 const getCurrentYear = () => new Date().getFullYear();
 
-// Helper function to get current month
-const getCurrentMonth = () => new Date().getMonth() + 1;
-
 // Helper function to format currency
 const formatCurrency = (value) => {
   if (value === null || value === undefined) return "N/A";
+
+  // Some API responses may be returning numbers as strings
+  const numValue = typeof value === "string" ? parseFloat(value) : value;
+
+  // Format the number as currency
   return new Intl.NumberFormat("fr-DZ", {
     style: "currency",
     currency: "DZD",
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(numValue);
 };
 
-// Helper function to format percentage
-const formatPercentage = (value) => {
-  if (value === null || value === undefined) return "N/A";
-  return `${(value * 100).toFixed(2)}%`;
-};
-
-// Add this after the imports
+// Add back the ErrorFallback component
 const ErrorFallback = ({ message }) => (
   <Box sx={{ p: 3, textAlign: "center" }}>
     <Alert severity="error" sx={{ mb: 2 }}>
@@ -104,6 +103,84 @@ const ErrorFallback = ({ message }) => (
     </Typography>
   </Box>
 );
+
+// Add PropTypes validation for ErrorFallback
+ErrorFallback.propTypes = {
+  message: PropTypes.string,
+};
+
+// Add these constants back
+const ITEMS_PER_PAGE = 10;
+const MAX_CHART_ITEMS = 20;
+const CHART_COLORS = [
+  "#0088FE", // Blue
+  "#00C49F", // Green
+  "#FFBB28", // Yellow
+  "#FF8042", // Orange
+  "#8884D8", // Purple
+  "#FF6B6B", // Red
+  "#6B8E23", // Olive
+  "#483D8B", // Dark Slate Blue
+  "#CD853F", // Peru
+  "#708090", // Slate Gray
+];
+
+// Helper function for chart data processing
+const processChartData = (data, maxItems = MAX_CHART_ITEMS) => {
+  if (!data || data.length <= maxItems) return data;
+
+  const sortedData = [...data].sort((a, b) => b.value - a.value);
+  const topItems = sortedData.slice(0, maxItems - 1);
+
+  // Aggregate remaining items
+  const otherItems = sortedData.slice(maxItems - 1);
+  const otherValue = otherItems.reduce((sum, item) => sum + item.value, 0);
+
+  return [
+    ...topItems,
+    {
+      name: "Others",
+      value: otherValue,
+    },
+  ];
+};
+
+// Add this helper function to extract the base type from anomaly type names
+const getAnomalyBaseType = (anomalyType) => {
+  if (!anomalyType) return "Unknown";
+
+  // Remove any numeric suffixes or detailed identifiers
+  const parts = anomalyType.split("_");
+  if (parts.length > 2) {
+    // Return a more readable format
+    return `${parts[0]} ${parts[1]}`;
+  }
+  return anomalyType;
+};
+
+// Add a function to group anomalies by their base type
+const groupAnomaliesByBaseType = (anomalies) => {
+  if (!anomalies || !anomalies.length) return [];
+
+  const groups = {};
+
+  anomalies.forEach((anomaly) => {
+    const baseType = getAnomalyBaseType(anomaly.type || "Unknown");
+
+    if (!groups[baseType]) {
+      groups[baseType] = {
+        name: baseType,
+        value: 0,
+        items: [],
+      };
+    }
+
+    groups[baseType].value += 1;
+    groups[baseType].items.push(anomaly);
+  });
+
+  return Object.values(groups);
+};
 
 const ReportPage = () => {
   const { t } = useTranslation();
@@ -120,6 +197,10 @@ const ReportPage = () => {
   const [corporateParkReport, setCorporateParkReport] = useState(null);
   const [receivablesReport, setReceivablesReport] = useState(null);
 
+  // Add pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(ITEMS_PER_PAGE);
+
   // State for loading and error
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -134,86 +215,164 @@ const ReportPage = () => {
   // Replace availableDots state with useDOTPermissions hook
   const {
     availableDots,
-    userDots,
     loading: dotsLoading,
     error: dotsError,
     hasDOTPermission,
   } = useDOTPermissions();
 
-  // Add setExporting state variable
-  const [exporting, setExporting] = useState(false);
-
   // Add state for dashboard summary
   const [dashboardSummary, setDashboardSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
-  // Effect to fetch report data based on selected tab and filters
+  // Create a proper effect for fetching dashboard summary
   useEffect(() => {
+    const controller = new AbortController();
+
+    const fetchDashboardSummary = async () => {
+      setSummaryLoading(true);
+      try {
+        const filters = {
+          year,
+          month: month || undefined,
+          dot: selectedDot || undefined,
+        };
+        console.log("Fetching dashboard summary with filters:", filters);
+        const summaryData = await kpiService.getDashboardSummary(filters);
+        if (!controller.signal.aborted) {
+          console.log("Dashboard summary received:", summaryData);
+          setDashboardSummary(summaryData);
+        }
+      } catch (error) {
+        console.error("Error fetching dashboard summary:", error);
+      } finally {
+        if (!controller.signal.aborted) {
+          setSummaryLoading(false);
+        }
+      }
+    };
+
+    fetchDashboardSummary();
+
+    return () => {
+      controller.abort();
+    };
+  }, [year, month, selectedDot]);
+
+  // Modify the report data fetch to use dashboard summary as fallback
+  useEffect(() => {
+    const controller = new AbortController();
+
     const fetchReportData = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        // Prepare params
         const params = {
           year,
-          ...(month ? { month } : {}),
+          ...(month ? { month: Number(month) } : {}),
           ...(selectedDot ? { dot: selectedDot } : {}),
         };
 
-        // Fetch data based on selected tab
+        let data;
         if (tabValue === 0) {
-          const data = await reportService.getRevenueCollectionReport(params);
+          data = await reportService.getRevenueCollectionReport(params);
           console.log("Revenue Collection Report Data:", data);
+
+          // If the report data has empty values but dashboard summary has data,
+          // supplement the report data with summary values
+          if (dashboardSummary && data) {
+            const kpis = data.kpis || data.summary || {};
+
+            // Check if report data values are zero or missing
+            if (!kpis.total_revenue || kpis.total_revenue === 0) {
+              console.log("Using dashboard summary value for total_revenue");
+              if (!data.kpis) data.kpis = {};
+              if (!data.summary) data.summary = {};
+              data.kpis.total_revenue = dashboardSummary.total_revenue;
+              data.summary.total_revenue = dashboardSummary.total_revenue;
+            }
+
+            if (!kpis.total_collection || kpis.total_collection === 0) {
+              console.log("Using dashboard summary value for total_collection");
+              if (!data.kpis) data.kpis = {};
+              if (!data.summary) data.summary = {};
+              data.kpis.total_collection = dashboardSummary.total_collection;
+              data.summary.total_collection = dashboardSummary.total_collection;
+            }
+          }
+
           setRevenueCollectionReport(data);
         } else if (tabValue === 1) {
-          const data = await reportService.getCorporateParkReport(params);
+          data = await reportService.getCorporateParkReport(params);
           console.log("Corporate Park Report Data:", data);
+
+          // If the report data has empty values but dashboard summary has data,
+          // supplement the report data with summary values
+          if (dashboardSummary && data) {
+            const kpis = data.kpis || data.summary || {};
+
+            // Check if report data values are zero or missing
+            if (!kpis.total_subscribers || kpis.total_subscribers === 0) {
+              console.log(
+                "Using dashboard summary value for total_subscribers"
+              );
+              if (!data.kpis) data.kpis = {};
+              if (!data.summary) data.summary = {};
+              data.kpis.total_subscribers = dashboardSummary.total_subscribers;
+              data.summary.total_subscribers =
+                dashboardSummary.total_subscribers;
+            }
+          }
+
           setCorporateParkReport(data);
         } else if (tabValue === 2) {
-          const data = await reportService.getReceivablesReport(params);
+          data = await reportService.getReceivablesReport(params);
           console.log("Receivables Report Data:", data);
+
+          // If the report data has empty values but dashboard summary has data,
+          // supplement the report data with summary values
+          if (dashboardSummary && data) {
+            const kpis = data.kpis || data.summary || {};
+
+            // Check if report data values are zero or missing
+            if (!kpis.total_receivables || kpis.total_receivables === 0) {
+              console.log(
+                "Using dashboard summary value for total_receivables"
+              );
+              if (!data.kpis) data.kpis = {};
+              if (!data.summary) data.summary = {};
+              data.kpis.total_receivables = dashboardSummary.total_receivables;
+              data.summary.total_receivables =
+                dashboardSummary.total_receivables;
+            }
+          }
+
           setReceivablesReport(data);
         }
       } catch (err) {
-        handleApiError(
-          err,
-          "fetching report data",
-          setSnackbar,
-          setError,
-          t("reports.errorLoadingData")
-        );
+        console.error("Error fetching report data:", err);
+        setError("Failed to load report data. Please try again later.");
+        setSnackbar({
+          open: true,
+          message: t("reports.errorLoadingData"),
+          severity: "error",
+        });
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchReportData();
-    // Add a call to fetch dashboard summary
-    fetchDashboardSummary();
-  }, [tabValue, year, month, selectedDot, t]);
-
-  // Add function to fetch dashboard summary
-  const fetchDashboardSummary = async () => {
-    setSummaryLoading(true);
-
-    const filters = {
-      year,
-      month: month || undefined,
-      dot: selectedDot || undefined,
-    };
-
-    try {
-      const summaryData = await kpiService.getDashboardSummary(filters);
-      setDashboardSummary(summaryData);
-      console.log("Dashboard summary data:", summaryData);
-    } catch (error) {
-      console.error("Error fetching dashboard summary:", error);
-      // Don't show an error message for this, as it's supplementary information
-    } finally {
-      setSummaryLoading(false);
+    // Wait for dashboard summary to be available before fetching report data
+    if (dashboardSummary || summaryLoading === false) {
+      fetchReportData();
     }
-  };
+
+    return () => {
+      controller.abort();
+    };
+  }, [tabValue, year, month, selectedDot, dashboardSummary, t]);
 
   // Handle tab change
   const handleTabChange = (event, newValue) => {
@@ -246,10 +405,15 @@ const ReportPage = () => {
     }
   };
 
-  // Update the handleExport function to use error handler
+  // Update the handleExport function to remove reference to exporting state
   const handleExport = async (format) => {
     try {
-      setExporting(true);
+      // Show loading in snackbar instead
+      setSnackbar({
+        open: true,
+        message: t("reports.exportLoading"),
+        severity: "info",
+      });
 
       // Determine report type based on active tab
       let reportType;
@@ -285,8 +449,6 @@ const ReportPage = () => {
           t("reports.exportError") + ": " + (err.message || "Unknown error"),
         severity: "error",
       });
-    } finally {
-      setExporting(false);
     }
   };
 
@@ -300,8 +462,6 @@ const ReportPage = () => {
     if (!revenueCollectionReport) return null;
 
     try {
-      // Check if the report has the expected structure
-      // If not, extract data from the summary field which is used in the backend
       const kpis =
         revenueCollectionReport.kpis || revenueCollectionReport.summary || {};
       const breakdowns = revenueCollectionReport.breakdowns || {};
@@ -311,9 +471,20 @@ const ReportPage = () => {
         revenueCollectionReport.anomalies ||
         [];
 
+      // Process chart data with better grouping
+      const groupedAnomalies = groupAnomaliesByBaseType(anomalies);
+      const chartData = processChartData(groupedAnomalies);
+
+      // Calculate pagination
+      const startIndex = (currentPage - 1) * itemsPerPage;
+      const paginatedAnomalies = anomalies.slice(
+        startIndex,
+        startIndex + itemsPerPage
+      );
+
       return (
         <Box>
-          {/* KPI Cards */}
+          {/* KPI Cards with enhanced styling */}
           <Grid container spacing={3} sx={{ mb: 4 }}>
             <Grid item xs={12} md={4}>
               <PerformanceMetricsCard
@@ -381,19 +552,137 @@ const ReportPage = () => {
             </Grid>
           </Grid>
 
-          {/* Anomalies */}
-          {anomalies && anomalies.length > 0 && (
+          {/* Improved Charts Section */}
+          {chartData.length > 0 && (
+            <Box sx={{ height: 400, mb: 4 }}>
+              <Typography variant="h6" gutterBottom>
+                Anomaly Distribution
+              </Typography>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={150}
+                    fill="#8884d8"
+                    label={({ name, value, percent }) =>
+                      `${name}: ${value} (${(percent * 100).toFixed(1)}%)`
+                    }
+                  >
+                    {chartData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={CHART_COLORS[index % CHART_COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value, name) => [`${value} anomalies`, name]}
+                    labelFormatter={() => "Count"}
+                  />
+                  <Legend formatter={(value) => value} />
+                </PieChart>
+              </ResponsiveContainer>
+            </Box>
+          )}
+
+          {/* Improved Anomalies Table with Pagination */}
+          {anomalies.length > 0 && (
             <Box sx={{ mb: 4 }}>
               <Typography variant="h6" sx={{ mb: 2 }}>
-                Detected Anomalies
+                Detected Anomalies ({anomalies.length})
               </Typography>
-              {anomalies.map((anomaly, index) => (
-                <Alert key={index} severity="warning" sx={{ mb: 1 }}>
-                  {anomaly.description}{" "}
-                  {anomaly.invoice_number &&
-                    `(Invoice: ${anomaly.invoice_number})`}
-                </Alert>
-              ))}
+              <TableContainer component={Paper}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ backgroundColor: "primary.main" }}>
+                      <TableCell
+                        sx={{ color: "common.white", fontWeight: "bold" }}
+                      >
+                        Type
+                      </TableCell>
+                      <TableCell
+                        sx={{ color: "common.white", fontWeight: "bold" }}
+                      >
+                        Description
+                      </TableCell>
+                      <TableCell
+                        sx={{ color: "common.white", fontWeight: "bold" }}
+                      >
+                        Invoice
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {paginatedAnomalies.map((anomaly, index) => {
+                      const baseType = getAnomalyBaseType(
+                        anomaly.type || "Unknown"
+                      );
+                      const typeIndex = chartData.findIndex(
+                        (item) => item.name === baseType
+                      );
+                      const typeColor =
+                        CHART_COLORS[typeIndex % CHART_COLORS.length];
+
+                      return (
+                        <TableRow
+                          key={index}
+                          sx={{
+                            "&:nth-of-type(odd)": {
+                              backgroundColor: "action.hover",
+                            },
+                            borderLeft: `4px solid ${typeColor}`,
+                          }}
+                        >
+                          <TableCell>
+                            <Box sx={{ display: "flex", alignItems: "center" }}>
+                              <Box
+                                sx={{
+                                  width: 12,
+                                  height: 12,
+                                  borderRadius: "50%",
+                                  bgcolor: typeColor,
+                                  mr: 1,
+                                }}
+                              />
+                              {baseType}
+                            </Box>
+                          </TableCell>
+                          <TableCell>{anomaly.description}</TableCell>
+                          <TableCell>
+                            {anomaly.invoice_number && (
+                              <Chip
+                                label={anomaly.invoice_number}
+                                size="small"
+                                color="primary"
+                              />
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              {/* Pagination Controls */}
+              <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 2 }}>
+                <TablePagination
+                  component="div"
+                  count={anomalies.length}
+                  page={currentPage - 1}
+                  onPageChange={(event, newPage) => setCurrentPage(newPage + 1)}
+                  rowsPerPage={itemsPerPage}
+                  rowsPerPageOptions={[5, 10, 25, 50]}
+                  onRowsPerPageChange={(event) => {
+                    setCurrentPage(1);
+                    setItemsPerPage(parseInt(event.target.value, 10));
+                  }}
+                />
+              </Box>
             </Box>
           )}
 
@@ -571,7 +860,7 @@ const ReportPage = () => {
         </Alert>
       )}
 
-      {/* Add Dashboard Summary Card */}
+      {/* Enhanced Dashboard Summary Card */}
       {dashboardSummary && (
         <Paper sx={{ p: 2, mb: 3 }}>
           <Typography variant="h6" gutterBottom>
@@ -579,7 +868,20 @@ const ReportPage = () => {
           </Typography>
           <Grid container spacing={3}>
             <Grid item xs={12} sm={6} md={3}>
-              <Box sx={{ textAlign: "center", p: 1 }}>
+              <Box
+                sx={{
+                  textAlign: "center",
+                  p: 1,
+                  borderRadius: 1,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                  bgcolor: "background.paper",
+                  transition: "all 0.3s ease",
+                  "&:hover": {
+                    boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
+                    transform: "translateY(-2px)",
+                  },
+                }}
+              >
                 <Typography variant="subtitle2" color="text.secondary">
                   {t("dashboard.summary.totalRevenue")}
                 </Typography>
@@ -589,7 +891,20 @@ const ReportPage = () => {
               </Box>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
-              <Box sx={{ textAlign: "center", p: 1 }}>
+              <Box
+                sx={{
+                  textAlign: "center",
+                  p: 1,
+                  borderRadius: 1,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                  bgcolor: "background.paper",
+                  transition: "all 0.3s ease",
+                  "&:hover": {
+                    boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
+                    transform: "translateY(-2px)",
+                  },
+                }}
+              >
                 <Typography variant="subtitle2" color="text.secondary">
                   {t("dashboard.summary.totalCollection")}
                 </Typography>
@@ -599,7 +914,20 @@ const ReportPage = () => {
               </Box>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
-              <Box sx={{ textAlign: "center", p: 1 }}>
+              <Box
+                sx={{
+                  textAlign: "center",
+                  p: 1,
+                  borderRadius: 1,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                  bgcolor: "background.paper",
+                  transition: "all 0.3s ease",
+                  "&:hover": {
+                    boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
+                    transform: "translateY(-2px)",
+                  },
+                }}
+              >
                 <Typography variant="subtitle2" color="text.secondary">
                   {t("dashboard.summary.totalReceivables")}
                 </Typography>
@@ -609,7 +937,20 @@ const ReportPage = () => {
               </Box>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
-              <Box sx={{ textAlign: "center", p: 1 }}>
+              <Box
+                sx={{
+                  textAlign: "center",
+                  p: 1,
+                  borderRadius: 1,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                  bgcolor: "background.paper",
+                  transition: "all 0.3s ease",
+                  "&:hover": {
+                    boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
+                    transform: "translateY(-2px)",
+                  },
+                }}
+              >
                 <Typography variant="subtitle2" color="text.secondary">
                   {t("dashboard.summary.totalSubscribers")}
                 </Typography>
@@ -619,21 +960,21 @@ const ReportPage = () => {
               </Box>
             </Grid>
           </Grid>
-          {(dashboardSummary.anomalies.empty_fields_receivables > 0 ||
-            dashboardSummary.anomalies.empty_fields_park > 0) && (
+          {(dashboardSummary.anomalies?.empty_fields_receivables > 0 ||
+            dashboardSummary.anomalies?.empty_fields_park > 0) && (
             <Box sx={{ mt: 2 }}>
               <Typography variant="subtitle2" color="warning.main">
                 {t("dashboard.summary.anomaliesDetected")}:
               </Typography>
               <Typography variant="body2">
-                {dashboardSummary.anomalies.empty_fields_receivables > 0 &&
+                {dashboardSummary.anomalies?.empty_fields_receivables > 0 &&
                   `${dashboardSummary.anomalies.empty_fields_receivables} ${t(
                     "dashboard.summary.emptyFieldsReceivables"
                   )}`}
-                {dashboardSummary.anomalies.empty_fields_receivables > 0 &&
-                  dashboardSummary.anomalies.empty_fields_park > 0 &&
+                {dashboardSummary.anomalies?.empty_fields_receivables > 0 &&
+                  dashboardSummary.anomalies?.empty_fields_park > 0 &&
                   ", "}
-                {dashboardSummary.anomalies.empty_fields_park > 0 &&
+                {dashboardSummary.anomalies?.empty_fields_park > 0 &&
                   `${dashboardSummary.anomalies.empty_fields_park} ${t(
                     "dashboard.summary.emptyFieldsPark"
                   )}`}
@@ -643,9 +984,22 @@ const ReportPage = () => {
         </Paper>
       )}
 
+      {/* Improved loading state for summary */}
       {summaryLoading && !dashboardSummary && (
-        <Paper sx={{ p: 2, mb: 3, display: "flex", justifyContent: "center" }}>
-          <CircularProgress size={24} />
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            <Skeleton width="40%" />
+          </Typography>
+          <Grid container spacing={3}>
+            {[1, 2, 3, 4].map((item) => (
+              <Grid item xs={12} sm={6} md={3} key={item}>
+                <Box sx={{ textAlign: "center", p: 1 }}>
+                  <Skeleton variant="text" width="60%" sx={{ mx: "auto" }} />
+                  <Skeleton variant="text" height={40} sx={{ mx: "auto" }} />
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
         </Paper>
       )}
 

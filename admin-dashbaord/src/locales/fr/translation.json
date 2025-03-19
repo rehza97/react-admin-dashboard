@@ -96,7 +96,17 @@
     "collectionsAnalysis": "Analyse des encours",
     "receivablesAnalysis": "Analyse des créances",
     "corporatePark": "Parc Corporate",
-    "unfinishedInvoices": "Factures non terminées"
+    "unfinishedInvoices": "Factures non terminées",
+    "summary": {
+      "title": "Résumé du tableau de bord",
+      "totalRevenue": "Revenu total",
+      "totalCollection": "Encaissement total",
+      "totalReceivables": "Créances totales",
+      "totalSubscribers": "Abonnés totaux",
+      "anomaliesDetected": "Anomalies détectées",
+      "emptyFieldsReceivables": "Champs vides dans les créances",
+      "emptyFieldsPark": "Champs vides dans le parc"
+    }
   },
   "users": {
     "manageUsers": "Gérer les utilisateurs",
@@ -257,7 +267,10 @@
     "anomalyReport": "Rapport d'anomalies",
     "systemPerformanceReport": "Rapport de performance du système",
     "customReport": "Rapport personnalisé",
-    "errorLoadingData": "Erreur lors du chargement des données du rapport"
+    "errorLoadingData": "Erreur lors du chargement des données du rapport",
+    "exportDefault": "Exporter le rapport",
+    "exportSuccess": "Rapport exporté avec succès",
+    "exportError": "Échec de l'exportation du rapport"
   },
   "profile": {
     "profileSettings": "Paramètres du profil",
@@ -577,5 +590,25 @@
     "codeRequired": "Le code est requis",
     "nameRequired": "Le nom est requis",
     "errorLoading": "Échec du chargement des DOTs. Veuillez réessayer plus tard."
+  },
+  "app": {
+    "title": "Algérie Télécom",
+    "subtitle": "Leader des télécommunications en Algérie",
+    "organization": "Division Corporate et Intégration de Solutions IT (DCISIT)",
+    "description": "Suivi de la performance commerciale via un tableau de bord commercial"
+  },
+  "login": {
+    "welcomeBack": "Bienvenue",
+    "enterCredentials": "Entrez vos identifiants pour accéder à votre compte",
+    "emailAddress": "Adresse e-mail",
+    "password": "Mot de passe",
+    "rememberMe": "Se souvenir de moi",
+    "forgotPassword": "Mot de passe oublié?",
+    "signIn": "Se connecter",
+    "emailRequired": "L'email est requis",
+    "emailInvalid": "L'email est invalide",
+    "passwordRequired": "Le mot de passe est requis",
+    "passwordLength": "Le mot de passe doit comporter au moins 6 caractères",
+    "invalidCredentials": "Identifiants invalides. Veuillez réessayer."
   }
 }

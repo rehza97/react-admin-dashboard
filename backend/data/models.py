@@ -5,6 +5,8 @@ from django.utils import timezone
 from django.db.models import Q
 import re
 from datetime import datetime
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
 
 
 class DOT(models.Model):
@@ -112,6 +114,8 @@ class ProcessedInvoiceData(models.Model):
     def __str__(self):
         return f"{self.invoice_number} - {self.client}"
 
+# month , invoice_date , invoice_number  client , amount_pre_tax , vat_percentage , vat_amount , total_amount , description , period
+
 
 class FacturationManuelle(models.Model):
     """Model for storing Facturation Manuelle AR data"""
@@ -124,7 +128,8 @@ class FacturationManuelle(models.Model):
     invoice_date = models.DateField(null=True, blank=True)  # Date de Facture
     department = models.CharField(
         max_length=20, blank=True, null=True)  # Dépts
-    invoice_number = models.CharField(max_length=100)  # N° Facture
+    invoice_number = models.CharField(
+        max_length=100, null=True, blank=True)  # N° Facture
     fiscal_year = models.CharField(
         max_length=10, blank=True, null=True)  # Exercices
     client = models.CharField(max_length=255, blank=True, null=True)  # Client
@@ -1232,6 +1237,19 @@ class Anomaly(models.Model):
         ('ignored', 'Ignored')
     ]
 
+    # Define available data sources based on your models
+    DATA_SOURCES = [
+        ('journal_ventes', 'Journal des Ventes'),
+        ('etat_facture', 'État de Facture'),
+        ('parc_corporate', 'Parc Corporate'),
+        ('creances_ngbss', 'Créances NGBSS'),
+        ('ca_periodique', 'CA Périodique'),
+        ('ca_non_periodique', 'CA Non Périodique'),
+        ('ca_dnt', 'CA DNT'),
+        ('ca_rfd', 'CA RFD'),
+        ('ca_cnt', 'CA CNT'),
+    ]
+
     invoice = models.ForeignKey(
         Invoice, on_delete=models.CASCADE, related_name='invoice_anomalies')
     type = models.CharField(max_length=50, choices=ANOMALY_TYPES)
@@ -1239,6 +1257,16 @@ class Anomaly(models.Model):
     data = models.JSONField(null=True, blank=True)  # Store the anomalous data
     status = models.CharField(
         max_length=20, choices=ANOMALY_STATUS, default='open')
+
+    # Add the new data_source field
+    data_source = models.CharField(
+        max_length=30,
+        choices=DATA_SOURCES,
+        null=True,
+        blank=True,
+        db_index=True  # Add an index for better query performance
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     resolved_by = models.ForeignKey(
@@ -1487,3 +1515,29 @@ class UnfinishedInvoice(models.Model):
 
     def __str__(self):
         return f"{self.invoice_number} - {self.client} - {self.status}"
+
+
+@receiver(pre_save, sender=CreancesNGBSS)
+@receiver(pre_save, sender=CAPeriodique)
+@receiver(pre_save, sender=CANonPeriodique)
+@receiver(pre_save, sender=CADNT)
+@receiver(pre_save, sender=CARFD)
+@receiver(pre_save, sender=CACNT)
+def sync_dot_fields(sender, instance, **kwargs):
+    """Ensure DOT foreign key and legacy text field are in sync before saving"""
+    dot_fk = getattr(instance, 'dot', None)
+
+    if dot_fk:
+        # Update legacy field to match FK
+        instance.dot_code = dot_fk.code
+    elif instance.dot_code:
+        # Try to set FK based on legacy field
+        try:
+            dot = DOT.objects.get(code__iexact=instance.dot_code)
+            instance.dot = dot
+        except DOT.DoesNotExist:
+            # Just log the issue but don't block the save
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Could not find DOT with code '{instance.dot_code}' when saving {sender.__name__}")
