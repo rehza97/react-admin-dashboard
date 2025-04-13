@@ -22,8 +22,10 @@ import {
 } from "@mui/material";
 import { Warning } from "@mui/icons-material";
 import dataService from "../../services/dataService";
+import { useTranslation } from "react-i18next";
 
 export default function Row2() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [overviewData, setOverviewData] = useState({
     users: { total: 0, active: 0, disabled: 0 },
@@ -81,13 +83,13 @@ export default function Row2() {
         setLoading(false);
       } catch (err) {
         console.error("Error fetching overview data:", err);
-        setError("Failed to load dashboard data");
+        setError(t("dashboard.errorLoading"));
         setLoading(false);
       }
     };
 
     fetchOverviewData();
-  }, []);
+  }, [t]);
 
   if (loading) {
     return (
@@ -118,7 +120,7 @@ export default function Row2() {
 
   // Format date for display
   const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
+    if (!dateString) return t("common.noData");
     const date = new Date(dateString);
     return date.toLocaleDateString("fr-FR", {
       year: "numeric",
@@ -128,6 +130,21 @@ export default function Row2() {
       minute: "2-digit",
     });
   };
+
+  const getStatusTranslation = (status) => {
+    switch (status) {
+      case "completed":
+        return t("fileUpload.completed");
+      case "failed":
+        return t("fileUpload.failed");
+      case "processing":
+        return t("fileUpload.processing");
+      default:
+        return status;
+    }
+  };
+
+  const formatter = new Intl.NumberFormat("fr-FR");
 
   return (
     <Grid
@@ -156,17 +173,17 @@ export default function Row2() {
           }}
         >
           <Typography variant="h6" gutterBottom fontWeight="bold">
-            Recent Uploads
+            {t("dashboard.recentUploads")}
           </Typography>
           <Divider sx={{ mb: 2 }} />
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Invoice Number</TableCell>
-                  <TableCell>Uploaded By</TableCell>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Status</TableCell>
+                  <TableCell>{t("fileUpload.invoiceNumber")}</TableCell>
+                  <TableCell>{t("fileUpload.uploadedBy")}</TableCell>
+                  <TableCell>{t("common.date")}</TableCell>
+                  <TableCell>{t("common.status")}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -179,7 +196,7 @@ export default function Row2() {
                       <TableCell>
                         <Chip
                           size="small"
-                          label={upload.status}
+                          label={getStatusTranslation(upload.status)}
                           color={
                             upload.status === "completed"
                               ? "success"
@@ -196,7 +213,7 @@ export default function Row2() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={4} align="center">
-                      No recent uploads
+                      {t("fileUpload.noRecentUploads")}
                     </TableCell>
                   </TableRow>
                 )}
@@ -222,7 +239,7 @@ export default function Row2() {
           }}
         >
           <Typography variant="h6" gutterBottom fontWeight="bold">
-            Data Statistics
+            {t("dashboard.statistics")}
           </Typography>
           <Divider sx={{ mb: 2 }} />
           <Grid container spacing={2}>
@@ -230,13 +247,13 @@ export default function Row2() {
               <Card variant="outlined">
                 <CardContent>
                   <Typography variant="h6" color="primary">
-                    Journal Ventes
+                    {t("common.journalVentes")}
                   </Typography>
                   <Typography variant="h4">
-                    {overviewData.data.journal_ventes.toLocaleString()}
+                    {formatter.format(overviewData.data.journal_ventes)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Records
+                    {t("dashboard.records")}
                   </Typography>
                 </CardContent>
               </Card>
@@ -245,13 +262,13 @@ export default function Row2() {
               <Card variant="outlined">
                 <CardContent>
                   <Typography variant="h6" color="secondary">
-                    Etat Facture
+                    {t("common.etatFacture")}
                   </Typography>
                   <Typography variant="h4">
-                    {overviewData.data.etat_facture.toLocaleString()}
+                    {formatter.format(overviewData.data.etat_facture)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Records
+                    {t("dashboard.records")}
                   </Typography>
                 </CardContent>
               </Card>
@@ -259,14 +276,14 @@ export default function Row2() {
             <Grid item xs={12} sm={6}>
               <Card variant="outlined">
                 <CardContent>
-                  <Typography variant="h6" sx={{ color: "warning.main" }}>
-                    Parc Corporate
+                  <Typography variant="h6" color="success.main">
+                    {t("common.parcCorporate")}
                   </Typography>
                   <Typography variant="h4">
-                    {overviewData.data.parc_corporate.toLocaleString()}
+                    {formatter.format(overviewData.data.parc_corporate)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Records
+                    {t("dashboard.records")}
                   </Typography>
                 </CardContent>
               </Card>
@@ -274,14 +291,14 @@ export default function Row2() {
             <Grid item xs={12} sm={6}>
               <Card variant="outlined">
                 <CardContent>
-                  <Typography variant="h6" sx={{ color: "error.main" }}>
-                    Creances NGBSS
+                  <Typography variant="h6" color="warning.main">
+                    {t("common.creancesNGBSS")}
                   </Typography>
                   <Typography variant="h4">
-                    {overviewData.data.creances_ngbss.toLocaleString()}
+                    {formatter.format(overviewData.data.creances_ngbss)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Records
+                    {t("dashboard.records")}
                   </Typography>
                 </CardContent>
               </Card>

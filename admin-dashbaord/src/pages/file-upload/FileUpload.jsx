@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Box,
   Button,
@@ -44,6 +44,7 @@ import {
   Download as DownloadIcon,
   PlayArrow as PlayArrowIcon,
   Visibility as VisibilityIcon,
+  Refresh as RefreshIcon,
 } from "@mui/icons-material";
 import { useDropzone } from "react-dropzone";
 import axios from "axios";
@@ -61,6 +62,13 @@ import FileListTable from "../../components/FileListTable";
 import ProcessingLogs from "../../components/ProcessingLogs";
 import { useNavigate } from "react-router-dom";
 
+const STORAGE_KEYS = {
+  UPLOAD_STATUS: "fileUpload_uploadStatus",
+  LAST_REFRESH: "fileUpload_lastRefresh",
+  UPLOAD_PROGRESS: "fileUpload_progress",
+  BACKGROUND_UPLOADS: "fileUpload_backgroundUploads",
+};
+
 const FileUpload = () => {
   const { currentUser } = useAuth();
   const [files, setFiles] = useState([]);
@@ -70,7 +78,10 @@ const FileUpload = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [editedInvoiceNumber, setEditedInvoiceNumber] = useState("");
-  const [isUploading, setIsUploading] = useState(false);
+  const [isUploading, setIsUploading] = useState(() => {
+    const savedStatus = localStorage.getItem(STORAGE_KEYS.UPLOAD_STATUS);
+    return savedStatus ? JSON.parse(savedStatus) : false;
+  });
   const [uploadError, setUploadError] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -79,6 +90,7 @@ const FileUpload = () => {
     fileSize: "",
     general: "",
   });
+  const [refreshInterval, setRefreshInterval] = useState(null);
 
   // Processing options for file processing
   const [processingOptions, setProcessingOptions] = useState({
@@ -93,8 +105,15 @@ const FileUpload = () => {
   const [successMessage, setSuccessMessage] = useState("");
   const [snackbarOpen, setSnackbarOpen] = useState(false);
 
+  // Track background uploads
+  const [backgroundUploads, setBackgroundUploads] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.BACKGROUND_UPLOADS);
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const theme = useTheme();
   const navigate = useNavigate();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -109,13 +128,14 @@ const FileUpload = () => {
     try {
       setIsLoading(true);
       const data = await fileService.getUploadedFiles();
-      setUploadedFiles(data);
-      console.log("Fetched files:", data);
+      setUploadedFiles(data.results || data);
+      setError(null);
     } catch (error) {
       console.error("Error fetching files:", error);
-      setError("Failed to fetch files. Please try again.");
+      setError(`Failed to fetch files: ${error.message}`);
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -189,19 +209,115 @@ const FileUpload = () => {
     setFiles((prevFiles) => [...prevFiles, ...validFiles]);
   };
 
-  // Handle successful upload from FileUploadDropzone
+  // Save background uploads to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEYS.BACKGROUND_UPLOADS,
+      JSON.stringify(backgroundUploads)
+    );
+  }, [backgroundUploads]);
+
+  // Handle upload status changes and manage auto-refresh
+  const handleUploadStatusChange = useCallback(
+    (uploading, progress = null) => {
+      setIsUploading(uploading);
+      localStorage.setItem(
+        STORAGE_KEYS.UPLOAD_STATUS,
+        JSON.stringify(uploading)
+      );
+
+      // Store progress in localStorage
+      if (progress) {
+        localStorage.setItem(
+          STORAGE_KEYS.UPLOAD_PROGRESS,
+          JSON.stringify(progress)
+        );
+      }
+
+      // Clear existing interval if any
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        setRefreshInterval(null);
+      }
+
+      // If uploading, start auto-refresh
+      if (uploading) {
+        const interval = setInterval(() => {
+          const lastRefresh = localStorage.getItem(STORAGE_KEYS.LAST_REFRESH);
+          const now = Date.now();
+
+          // Only refresh if more than 30 seconds have passed since last refresh
+          if (!lastRefresh || now - parseInt(lastRefresh) >= 30000) {
+            fetchUploadedFiles();
+            localStorage.setItem(STORAGE_KEYS.LAST_REFRESH, now.toString());
+          }
+        }, 30000);
+        setRefreshInterval(interval);
+      }
+    },
+    [refreshInterval]
+  );
+
+  // Enhanced cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+      // Don't clear upload status on unmount to persist across navigation
+    };
+  }, [refreshInterval]);
+
+  // Handle successful upload
   const handleUploadSuccess = async (data) => {
     console.log("Upload successful:", data);
-    showSuccessMessage("File uploaded successfully");
 
-    // Refresh the file list
+    // Update background uploads
+    setBackgroundUploads((prev) =>
+      prev.map((upload) =>
+        upload.files.some((f) => data.some((d) => d.file_name === f.name))
+          ? { ...upload, completed: true }
+          : upload
+      )
+    );
+
+    await fetchUploadedFiles();
+    localStorage.setItem(STORAGE_KEYS.LAST_REFRESH, Date.now().toString());
+  };
+
+  // Handle upload error
+  const handleUploadError = (error, files) => {
+    console.error("Upload error:", error);
+    setError(`Upload failed: ${error.message || "Unknown error"}`);
+
+    // Update background uploads with error status
+    if (files) {
+      setBackgroundUploads((prev) =>
+        prev.map((upload) =>
+          upload.files.some((f) => files.includes(f.name))
+            ? { ...upload, error: error.message }
+            : upload
+        )
+      );
+    }
+  };
+
+  // Handle manual refresh
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
     await fetchUploadedFiles();
   };
 
-  // Handle upload error from FileUploadDropzone
-  const handleUploadError = (error) => {
-    console.error("Upload error:", error);
-    setError(`Upload failed: ${error.message || "Unknown error"}`);
+  // Add upload to background tracking
+  const addBackgroundUpload = (files) => {
+    const newUpload = {
+      id: Date.now(),
+      files: files.map((f) => ({ name: f.name, size: f.size })),
+      startTime: Date.now(),
+      completed: false,
+      error: null,
+    };
+    setBackgroundUploads((prev) => [...prev, newUpload]);
   };
 
   const handleConfirmDelete = (id) => {
@@ -417,14 +533,29 @@ const FileUpload = () => {
       subtitle="Upload and manage your invoice files"
       maxWidth="1200"
       headerAction={
-        <Button
-          variant="contained"
-          startIcon={<UploadIcon />}
-          onClick={() => {}}
-          disabled={true}
-        >
-          Upload
-        </Button>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+          {backgroundUploads.length > 0 &&
+            backgroundUploads.map((upload) => (
+              <Chip
+                key={upload.id}
+                label={`${upload.completed ? "Completed" : "Uploading"}: ${
+                  upload.files.length
+                } files`}
+                color={
+                  upload.error
+                    ? "error"
+                    : upload.completed
+                    ? "success"
+                    : "primary"
+                }
+                onDelete={() =>
+                  setBackgroundUploads((prev) =>
+                    prev.filter((u) => u.id !== upload.id)
+                  )
+                }
+              />
+            ))}
+        </Box>
       }
     >
       {error && (
@@ -433,11 +564,31 @@ const FileUpload = () => {
         </Alert>
       )}
 
-      {/* Use the FileUploadDropzone component */}
       <FileUploadDropzone
         onUploadSuccess={handleUploadSuccess}
         onUploadError={handleUploadError}
+        onUploadStatusChange={handleUploadStatusChange}
+        onUploadStart={addBackgroundUpload}
       />
+
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 2,
+        }}
+      >
+        <Box sx={{ fontSize: "1.2rem", fontWeight: "bold" }}>File List</Box>
+        <Tooltip title="Refresh file list">
+          <IconButton
+            onClick={handleRefresh}
+            disabled={isRefreshing || isLoading}
+          >
+            {isRefreshing ? <CircularProgress size={24} /> : <RefreshIcon />}
+          </IconButton>
+        </Tooltip>
+      </Box>
 
       <FileListTable
         uploadedFiles={uploadedFiles}
@@ -452,6 +603,7 @@ const FileUpload = () => {
         formatFileSize={formatFileSize}
         downloadingFiles={downloadingFiles}
         processingFiles={processingFiles}
+        isLoading={isLoading}
       />
 
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>

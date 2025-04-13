@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Typography,
   Paper,
   IconButton,
-  Slider,
   CircularProgress,
   FormControl,
   InputLabel,
@@ -13,26 +12,90 @@ import {
   Alert,
   Button,
   Tooltip,
-  Divider,
-  Menu,
+  LinearProgress,
+  Slider,
 } from "@mui/material";
 import PivotTableUI from "react-pivottable/PivotTableUI";
 import "react-pivottable/pivottable.css";
 import TableRenderers from "react-pivottable/TableRenderers";
 import Plot from "react-plotly.js";
 import createPlotlyRenderers from "react-pivottable/PlotlyRenderers";
-import ZoomInIcon from "@mui/icons-material/ZoomIn";
-import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import RestartAltIcon from "@mui/icons-material/RestartAlt";
-import SaveIcon from "@mui/icons-material/Save";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import ZoomInIcon from "@mui/icons-material/ZoomIn";
+import ZoomOutIcon from "@mui/icons-material/ZoomOut";
+import RestoreIcon from "@mui/icons-material/Restore";
 import PageLayout from "../../components/PageLayout";
 import fileService from "../../services/fileService";
 import { useTranslation } from "react-i18next";
+import { numberFormat } from "react-pivottable/Utilities";
 
 // Create Plotly renderers
 const PlotlyRenderers = createPlotlyRenderers(Plot);
+
+// Batch size for processing large datasets
+const BATCH_SIZE = 1000;
+
+// Create custom number formatter with French locale
+const customNumberFormat = numberFormat({
+  thousandsSep: " ",
+  decimalSep: ",",
+});
+
+// Create custom aggregator with optimized processing
+const sumOverSum = function (formatter = customNumberFormat) {
+  return function (attributeArray) {
+    return function () {
+      let sum = 0;
+      let count = 0;
+      let lastProcessedTime = Date.now();
+
+      return {
+        push: function (record) {
+          if (!isNaN(record[attributeArray[0]])) {
+            sum += parseFloat(record[attributeArray[0]]);
+            count += 1;
+
+            // Check processing time every 1000 records
+            if (count % 1000 === 0) {
+              const currentTime = Date.now();
+              if (currentTime - lastProcessedTime > 100) {
+                // If processing takes too long, allow UI to update
+                lastProcessedTime = currentTime;
+                return new Promise((resolve) => setTimeout(resolve, 0));
+              }
+            }
+          }
+        },
+        value: function () {
+          return sum;
+        },
+        format: formatter,
+      };
+    };
+  };
+};
+
+// Define aggregators
+const aggregators = {
+  Somme: sumOverSum(),
+};
+
+// Add column name mappings
+const columnMappings = {
+  month: "Mois",
+  invoice_date: "Date de Facture",
+  department: "Dépts",
+  invoice_number: "N° Factures",
+  fiscal_year: "Exercices",
+  client: "Client",
+  amount_pre_tax: "Montant HT",
+  tax_rate: "% TVA",
+  tax_amount: "Montant TVA",
+  total_amount: "Montant TTC",
+  description: "Désignations",
+  period: "Période",
+};
 
 const PivotTable = () => {
   const { t } = useTranslation();
@@ -40,53 +103,171 @@ const PivotTable = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [dataSource, setDataSource] = useState("facturation_manuelle");
+  const [attrValues, setAttrValues] = useState({});
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
-  const [exportAnchorEl, setExportAnchorEl] = useState(null);
+
+  // Format numbers in French style
+  const formatNumber = (value) => {
+    if (typeof value !== "number") return value;
+    return new Intl.NumberFormat("fr-FR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
 
   // Define available data sources
   const dataSources = [
     { value: "facturation_manuelle", label: t("common.facturationManuelle") },
-    { value: "journal_ventes", label: t("common.journalVentes") },
-    { value: "etat_facture", label: t("common.etatFacture") },
-    { value: "parc_corporate", label: t("common.parcCorporate") },
-    { value: "creances_ngbss", label: t("common.creancesNGBSS") },
-    { value: "ca_periodique", label: t("common.caPeriodique") },
-    { value: "ca_non_periodique", label: t("common.caNonPeriodique") },
-    { value: "ca_dnt", label: t("common.caDNT") },
-    { value: "ca_rfd", label: t("common.caRFD") },
-    { value: "ca_cnt", label: t("common.caCNT") },
   ];
 
-  // Initial pivot table configuration based on data source
+  // Process data in batches
+  const processDataInBatches = async (rawData) => {
+    setIsProcessing(true);
+    setProcessingProgress(0);
+
+    const values = {};
+    const totalBatches = Math.ceil(rawData.length / BATCH_SIZE);
+
+    try {
+      for (let i = 0; i < rawData.length; i += BATCH_SIZE) {
+        const batch = rawData.slice(i, i + BATCH_SIZE);
+
+        // Process batch
+        batch.forEach((item) => {
+          Object.keys(item).forEach((key) => {
+            if (!values[key]) {
+              values[key] = new Set();
+            }
+            if (item[key] !== null && item[key] !== undefined) {
+              values[key].add(item[key].toString());
+            }
+          });
+        });
+
+        // Update progress
+        const progress = Math.min(
+          ((i + BATCH_SIZE) / rawData.length) * 100,
+          100
+        );
+        setProcessingProgress(progress);
+
+        // Allow UI to update
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      // Convert Sets to Arrays
+      Object.keys(values).forEach((key) => {
+        values[key] = Array.from(values[key]);
+      });
+
+      return values;
+    } catch (error) {
+      console.error("Error processing data:", error);
+      throw error;
+    } finally {
+      setIsProcessing(false);
+      setProcessingProgress(0);
+    }
+  };
+
+  // Handle zoom change
+  const handleZoomChange = (newZoom) => {
+    setZoomLevel(newZoom);
+    const pivotTable = document.querySelector(".pvtTable");
+    if (pivotTable) {
+      pivotTable.style.transform = `scale(${newZoom / 100})`;
+      pivotTable.style.transformOrigin = "top left";
+    }
+  };
+
+  // Handle zoom in
+  const handleZoomIn = () => {
+    handleZoomChange(Math.min(zoomLevel + 10, 200));
+  };
+
+  // Handle zoom out
+  const handleZoomOut = () => {
+    handleZoomChange(Math.max(zoomLevel - 10, 50));
+  };
+
+  // Handle zoom reset
+  const handleZoomReset = () => {
+    handleZoomChange(100);
+  };
+
+  // Fetch data with error handling and progress tracking
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fileService.getPivotData(dataSource);
+        const rawData = response.data || [];
+
+        // Transform data to use French labels
+        const transformedData = rawData.map((item) => ({
+          Mois: item.month,
+          "Date de Facture": item.invoice_date,
+          Dépts: item.department,
+          "N° Factures": item.invoice_number,
+          Exercices: item.fiscal_year,
+          Client: item.client,
+          "Montant HT": item.amount_pre_tax,
+          "% TVA": item.tax_rate,
+          "Montant TVA": item.tax_amount,
+          "Montant TTC": item.total_amount,
+          Désignations: item.description,
+          Période: item.period,
+        }));
+
+        setData(transformedData);
+        const processedValues = await processDataInBatches(transformedData);
+        setAttrValues(processedValues);
+      } catch (err) {
+        console.error("Error fetching pivot data:", err);
+        setError(t("pivotTable.errorLoadingData"));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [dataSource, t]);
+
+  // Update initial pivot state configurations
   const getInitialPivotState = (source) => {
     switch (source) {
       case "facturation_manuelle":
         return {
-          rows: ["department", "fiscal_year"],
-          cols: ["description"],
-          vals: ["total_amount"],
-          aggregatorName: "Sum",
+          rows: ["Dépts", "Exercices"],
+          cols: ["Désignations"],
+          vals: ["Montant TTC"],
+          aggregatorName: "Somme",
           rendererName: "Table",
           valueFilter: {},
+          aggregators: aggregators,
         };
       case "journal_ventes":
         return {
-          rows: ["client", "date"],
-          cols: ["product"],
-          vals: ["amount"],
-          aggregatorName: "Sum",
+          rows: ["Client", "Date de Facture"],
+          cols: ["Désignations"],
+          vals: ["Montant TTC"],
+          aggregatorName: "Somme",
           rendererName: "Table",
           valueFilter: {},
+          aggregators: aggregators,
         };
-      // Add more configurations for other data sources
       default:
         return {
-          rows: ["department"],
-          cols: ["description"],
-          vals: ["amount"],
-          aggregatorName: "Sum",
+          rows: ["Dépts"],
+          cols: ["Désignations"],
+          vals: ["Montant HT"],
+          aggregatorName: "Somme",
           rendererName: "Table",
           valueFilter: {},
+          aggregators: aggregators,
         };
     }
   };
@@ -102,99 +283,7 @@ const PivotTable = () => {
     setPivotState(getInitialPivotState(newDataSource));
   };
 
-  // Fetch data based on selected data source
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await fileService.getPivotData(dataSource);
-        setData(response.data || []);
-      } catch (err) {
-        console.error("Error fetching pivot data:", err);
-        setError(t("pivotTable.errorLoadingData"));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [dataSource, t]);
-
-  // Translate aggregator names
-  const translateAggregatorName = (name) => {
-    const translations = {
-      Sum: t("pivotTable.sum"),
-      Count: t("pivotTable.count"),
-      "Count Unique Values": t("pivotTable.countUnique"),
-      "List Unique Values": t("pivotTable.listUnique"),
-      Average: t("pivotTable.average"),
-      Median: t("pivotTable.median"),
-      "Sample Variance": t("pivotTable.variance"),
-      "Sample Standard Deviation": t("pivotTable.standardDeviation"),
-      Minimum: t("pivotTable.min"),
-      Maximum: t("pivotTable.max"),
-    };
-    return translations[name] || name;
-  };
-
-  // Translate renderer names
-  const translateRendererName = (name) => {
-    const translations = {
-      Table: t("common.table"),
-      "Table Heatmap": t("pivotTable.tableHeatmap"),
-      Heatmap: t("pivotTable.heatmap"),
-      "Row Heatmap": t("pivotTable.rowHeatmap"),
-      "Col Heatmap": t("pivotTable.colHeatmap"),
-      "Line Chart": t("common.line"),
-      "Bar Chart": t("common.bar"),
-      "Stacked Bar Chart": t("pivotTable.stackedBar"),
-      "Area Chart": t("pivotTable.areaChart"),
-      "Scatter Chart": t("pivotTable.scatterChart"),
-    };
-    return translations[name] || name;
-  };
-
-  const handleZoomIn = () => {
-    setZoomLevel((prev) => Math.min(prev + 10, 200));
-  };
-
-  const handleZoomOut = () => {
-    setZoomLevel((prev) => Math.max(prev - 10, 50));
-  };
-
-  const handleZoomReset = () => {
-    setZoomLevel(100);
-  };
-
-  const handleZoomChange = (event, newValue) => {
-    setZoomLevel(newValue);
-  };
-
-  const handleSaveConfiguration = () => {
-    const config = JSON.stringify(pivotState);
-    localStorage.setItem("pivotTableConfig", config);
-    alert(t("pivotTable.configurationSaved"));
-  };
-
-  const handleLoadConfiguration = () => {
-    const savedConfig = localStorage.getItem("pivotTableConfig");
-    if (savedConfig) {
-      setPivotState(JSON.parse(savedConfig));
-      alert(t("pivotTable.configurationLoaded"));
-    }
-  };
-
-  const handleExportClick = (event) => {
-    setExportAnchorEl(event.currentTarget);
-  };
-
-  const handleExportClose = () => {
-    setExportAnchorEl(null);
-  };
-
-  const handleExportData = (format) => {
-    handleExportClose();
+  const handleExportToExcel = () => {
     const pivotTable = document.querySelector(".pvtTable");
     if (!pivotTable) {
       alert(t("pivotTable.noDataToExport"));
@@ -213,46 +302,16 @@ const PivotTable = () => {
 
     const timestamp = new Date().toISOString().split("T")[0];
 
-    if (format === "csv") {
-      // Export as CSV
-      const csvContent = tableData
-        .map((row) =>
-          row
-            .map((cell) => {
-              if (cell.includes(",")) {
-                return `"${cell}"`;
-              }
-              return cell;
-            })
-            .join(",")
-        )
-        .join("\n");
-
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute(
-        "download",
-        `pivot_table_${dataSource}_${timestamp}.csv`
-      );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } else if (format === "excel") {
-      // Export as Excel
-      import("xlsx").then((XLSX) => {
-        const ws = XLSX.utils.aoa_to_sheet(tableData);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Pivot Table");
-        XLSX.writeFile(wb, `pivot_table_${dataSource}_${timestamp}.xlsx`);
-      });
-    }
+    // Export as Excel
+    import("xlsx").then((XLSX) => {
+      const ws = XLSX.utils.aoa_to_sheet(tableData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Pivot Table");
+      XLSX.writeFile(wb, `pivot_table_${dataSource}_${timestamp}.xlsx`);
+    });
   };
 
   const handleRefreshData = () => {
-    // Trigger a re-fetch of the data
     const fetchData = async () => {
       setLoading(true);
       setError(null);
@@ -287,11 +346,44 @@ const PivotTable = () => {
           ))}
         </Select>
       </FormControl>
-      <Tooltip title={t("pivotTable.refreshData")}>
-        <IconButton onClick={handleRefreshData} color="primary">
-          <RefreshIcon />
-        </IconButton>
-      </Tooltip>
+      <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+        <Tooltip title="Zoom Out">
+          <IconButton onClick={handleZoomOut} disabled={zoomLevel <= 50}>
+            <ZoomOutIcon />
+          </IconButton>
+        </Tooltip>
+        <Box sx={{ width: 100 }}>
+          <Slider
+            value={zoomLevel}
+            min={50}
+            max={200}
+            onChange={(_, value) => handleZoomChange(value)}
+            aria-label="Zoom"
+          />
+        </Box>
+        <Tooltip title="Zoom In">
+          <IconButton onClick={handleZoomIn} disabled={zoomLevel >= 200}>
+            <ZoomInIcon />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Reset Zoom">
+          <IconButton onClick={handleZoomReset} disabled={zoomLevel === 100}>
+            <RestoreIcon />
+          </IconButton>
+        </Tooltip>
+        <Button
+          variant="outlined"
+          startIcon={<FileDownloadIcon />}
+          onClick={handleExportToExcel}
+        >
+          {t("pivotTable.exportAsExcel")}
+        </Button>
+        <Tooltip title={t("pivotTable.refreshData")}>
+          <IconButton onClick={handleRefreshData} color="primary">
+            <RefreshIcon />
+          </IconButton>
+        </Tooltip>
+      </Box>
     </Box>
   );
 
@@ -302,8 +394,18 @@ const PivotTable = () => {
       headerAction={headerAction}
     >
       {loading ? (
-        <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, p: 4 }}>
           <CircularProgress />
+          <Typography variant="body2" color="textSecondary" align="center">
+            {t("pivotTable.loadingData")}
+          </Typography>
+        </Box>
+      ) : isProcessing ? (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, p: 4 }}>
+          <LinearProgress variant="determinate" value={processingProgress} />
+          <Typography variant="body2" color="textSecondary" align="center">
+            {t("pivotTable.processingData")} ({Math.round(processingProgress)}%)
+          </Typography>
         </Box>
       ) : error ? (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -314,118 +416,40 @@ const PivotTable = () => {
           {t("pivotTable.noDataAvailable")}
         </Alert>
       ) : (
-        <Box>
-          <Paper sx={{ p: 2, mb: 2 }}>
-            <Box
-              sx={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                mb: 2,
-              }}
-            >
-              <Typography variant="h6">
-                {t("pivotTable.tableOptions")}
-              </Typography>
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <Tooltip title={t("pivotTable.zoomIn")}>
-                  <IconButton onClick={handleZoomIn}>
-                    <ZoomInIcon />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title={t("pivotTable.zoomOut")}>
-                  <IconButton onClick={handleZoomOut}>
-                    <ZoomOutIcon />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title={t("pivotTable.resetZoom")}>
-                  <IconButton onClick={handleZoomReset}>
-                    <RestartAltIcon />
-                  </IconButton>
-                </Tooltip>
-                <Slider
-                  value={zoomLevel}
-                  onChange={handleZoomChange}
-                  aria-labelledby="zoom-slider"
-                  min={50}
-                  max={200}
-                  sx={{ width: 100, mx: 2 }}
-                />
-                <Typography variant="body2">{zoomLevel}%</Typography>
-              </Box>
-            </Box>
-
-            <Divider sx={{ my: 2 }} />
-
-            <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-              <Button
-                variant="outlined"
-                startIcon={<SaveIcon />}
-                onClick={handleSaveConfiguration}
-              >
-                {t("pivotTable.saveConfiguration")}
-              </Button>
-              <Button variant="outlined" onClick={handleLoadConfiguration}>
-                {t("pivotTable.loadConfiguration")}
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<FileDownloadIcon />}
-                onClick={handleExportClick}
-              >
-                {t("pivotTable.exportTable")}
-              </Button>
-              <Menu
-                anchorEl={exportAnchorEl}
-                open={Boolean(exportAnchorEl)}
-                onClose={handleExportClose}
-              >
-                <MenuItem onClick={() => handleExportData("csv")}>
-                  {t("pivotTable.exportAsCsv")}
-                </MenuItem>
-                <MenuItem onClick={() => handleExportData("excel")}>
-                  {t("pivotTable.exportAsExcel")}
-                </MenuItem>
-              </Menu>
-            </Box>
-          </Paper>
-
-          <Paper
+        <Paper sx={{ p: 2, overflow: "auto" }}>
+          <Box
             sx={{
-              p: 2,
-              overflow: "auto",
               transform: `scale(${zoomLevel / 100})`,
               transformOrigin: "top left",
-              width: `${10000 / zoomLevel}%`,
-              transition: "transform 0.2s",
+              transition: "transform 0.2s ease",
             }}
           >
             <PivotTableUI
               data={data}
-              onChange={(s) => setPivotState(s)}
+              onChange={setPivotState}
               renderers={Object.assign({}, TableRenderers, PlotlyRenderers)}
               {...pivotState}
               unusedOrientationCutoff={Infinity}
-              // Translate UI elements
               rows={pivotState.rows}
               cols={pivotState.cols}
               vals={pivotState.vals}
               aggregatorName={pivotState.aggregatorName}
               rendererName={pivotState.rendererName}
               valueFilter={pivotState.valueFilter}
-              // Localization props
+              attrValues={attrValues}
+              aggregators={aggregators}
               localeStrings={{
                 renderError: t("pivotTable.renderError"),
                 computeError: t("pivotTable.computeError"),
-                rowTotal: t("pivotTable.rowTotal"),
-                colTotal: t("pivotTable.colTotal"),
-                totals: t("pivotTable.totals"),
-                vs: t("pivotTable.vs"),
-                by: t("pivotTable.by"),
+                rowTotal: "Total",
+                colTotal: "Total",
+                totals: "Totaux",
+                vs: "contre",
+                by: "par",
               }}
             />
-          </Paper>
-        </Box>
+          </Box>
+        </Paper>
       )}
     </PageLayout>
   );

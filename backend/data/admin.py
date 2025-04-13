@@ -42,10 +42,10 @@ class ProcessedInvoiceDataAdmin(admin.ModelAdmin):
 
 @admin.register(FacturationManuelle)
 class FacturationManuelleAdmin(admin.ModelAdmin):
-    list_display = ('invoice', 'department', 'fiscal_year',
-                    'amount_pre_tax', 'total_amount', 'description')
-    list_filter = ('invoice__status', 'fiscal_year')
-    search_fields = ('invoice__invoice_number', 'department', 'description')
+    list_display = ('invoice', 'month', 'invoice_date', 'department', 'invoice_number', 'fiscal_year',
+                    'client', 'amount_pre_tax', 'vat_percentage', 'vat_amount', 'total_amount', 'description', 'period')
+    list_filter = ('invoice__status', 'invoice_date', 'fiscal_year')
+    search_fields = ('invoice__invoice_number', 'department', 'client')
     ordering = ('invoice__upload_date',)
 
 
@@ -72,13 +72,79 @@ class EtatFactureAdmin(admin.ModelAdmin):
 
 @admin.register(ParcCorporate)
 class ParcCorporateAdmin(admin.ModelAdmin):
-    list_display = ('invoice', 'actel_code', 'telecom_type', 'offer_type',
-                    'subscriber_status', 'state', 'customer_full_name')
-    list_filter = ('invoice__status', 'telecom_type',
-                   'offer_type', 'subscriber_status', 'state')
-    search_fields = ('invoice__invoice_number',
-                     'actel_code', 'customer_full_name')
-    ordering = ('invoice__upload_date',)
+    list_display = (
+        'invoice',
+        'dot',
+        'dot_code',
+        'actel_code',
+        'customer_l1_code',
+        'customer_l1_desc',
+        'customer_l2_code',
+        'customer_l2_desc',
+        'customer_l3_code',
+        'customer_l3_desc',
+        'telecom_type',
+        'offer_type',
+        'offer_name',
+        'subscriber_status',
+        'creation_date',
+        'state',
+        'customer_full_name',
+    )
+    list_filter = (
+        'invoice__status',
+        'dot',
+        'telecom_type',
+        'offer_type',
+        'subscriber_status',
+        'state',
+        'creation_date',
+    )
+    search_fields = (
+        'invoice__invoice_number',
+        'dot_code',
+        'actel_code',
+        'customer_l1_code',
+        'customer_l1_desc',
+        'customer_l2_code',
+        'customer_l2_desc',
+        'customer_l3_code',
+        'customer_l3_desc',
+        'customer_full_name',
+        'offer_name',
+    )
+    ordering = ('-creation_date',)
+    date_hierarchy = 'creation_date'
+    raw_id_fields = ('invoice', 'dot')
+    readonly_fields = ('created_at', 'updated_at')
+
+    fieldsets = (
+        ('Invoice Information', {
+            'fields': ('invoice', 'dot', 'dot_code', 'state')
+        }),
+        ('Customer Information', {
+            'fields': (
+                'customer_full_name',
+                'actel_code',
+                ('customer_l1_code', 'customer_l1_desc'),
+                ('customer_l2_code', 'customer_l2_desc'),
+                ('customer_l3_code', 'customer_l3_desc'),
+            )
+        }),
+        ('Service Information', {
+            'fields': (
+                'telecom_type',
+                'offer_type',
+                'offer_name',
+                'subscriber_status',
+                'creation_date',
+            )
+        }),
+        ('Metadata', {
+            'classes': ('collapse',),
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
 
 
 @admin.register(CreancesNGBSS)
@@ -137,15 +203,15 @@ class CACNTAdmin(admin.ModelAdmin):
 
 @admin.register(Anomaly)
 class AnomalyAdmin(admin.ModelAdmin):
-    list_display = ['id', 'type', 'description', 'data_source',
+    list_display = ['id', 'type', 'description',
                     'status', 'created_at', 'updated_at']
-    list_filter = ['status', 'type', 'data_source', 'created_at', 'updated_at']
-    search_fields = ['description', 'invoice__invoice_number', 'data_source']
+    list_filter = ['status', 'type', 'created_at', 'updated_at']
+    search_fields = ['description', 'invoice__invoice_number']
     readonly_fields = ['created_at', 'updated_at']
     raw_id_fields = ['invoice', 'resolved_by']
     fieldsets = (
         (None, {
-            'fields': ('invoice', 'type', 'description', 'data', 'data_source')
+            'fields': ('invoice', 'type', 'description', 'data')
         }),
         ('Resolution', {
             'fields': ('status', 'resolved_by', 'resolution_notes')

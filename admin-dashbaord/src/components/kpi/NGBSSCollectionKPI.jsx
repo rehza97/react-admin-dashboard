@@ -66,7 +66,6 @@ TabPanel.propTypes = {
 const NGBSSCollectionKPI = () => {
   const theme = useTheme();
   const [tabValue, setTabValue] = useState(0);
-  const [viewTabValue, setViewTabValue] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [collectionData, setCollectionData] = useState(null);
@@ -143,53 +142,11 @@ const NGBSSCollectionKPI = () => {
         compare_with_objectives: "true",
       };
 
-      console.log("=== NGBSS COLLECTION REQUEST PARAMETERS ===");
-      console.log("Year:", yearFilter);
-      console.log("Month:", monthFilter || "All");
-      console.log("DOT:", dotFilter || "All");
-      console.log("=============================================");
-
       const response = await kpiService.getNGBSSCollectionKPIs(params);
 
       // Handle the response properly - it should include data property from axios
       if (response && response.data) {
-        console.log("=== NGBSS COLLECTION RESPONSE DATA ===");
-        console.log(JSON.stringify(response.data, null, 2));
-
-        // Log specific sections of the data
-        console.log("=== COLLECTION DATA BREAKDOWN ===");
-        console.log("Total Collected:", response.data.total_collected);
-        console.log("Total Invoiced:", response.data.total_invoiced);
-        console.log("Total Open:", response.data.total_open);
-        console.log("Collection Rate:", response.data.collection_rate);
-        console.log(
-          "Achievement Percentage:",
-          response.data.achievement_percentage
-        );
-
-        if (response.data.collection_by_dot) {
-          console.log("=== COLLECTION BY DOT ===");
-          console.log(JSON.stringify(response.data.collection_by_dot, null, 2));
-        }
-
-        if (response.data.monthly_trends) {
-          console.log("=== MONTHLY TRENDS ===");
-          console.log(JSON.stringify(response.data.monthly_trends, null, 2));
-        }
-
-        if (response.data.by_client_category) {
-          console.log("=== COLLECTION BY CLIENT CATEGORY ===");
-          console.log(
-            JSON.stringify(response.data.by_client_category, null, 2)
-          );
-        }
-
-        if (response.data.by_product) {
-          console.log("=== COLLECTION BY PRODUCT ===");
-          console.log(JSON.stringify(response.data.by_product, null, 2));
-        }
-
-        console.log("============================================");
+        console.log("NGBSS Collection data:", response.data);
 
         // Check if we have any meaningful data
         const hasData =
@@ -224,10 +181,6 @@ const NGBSSCollectionKPI = () => {
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
-  };
-
-  const handleViewTabChange = (event, newValue) => {
-    setViewTabValue(newValue);
   };
 
   const handleYearChange = (event) => {
@@ -287,68 +240,6 @@ const NGBSSCollectionKPI = () => {
     );
   };
 
-  // Add a function to log rendered data
-  const logRenderData = () => {
-    if (!collectionData) return;
-
-    console.log("=== NGBSS COLLECTION RENDERING DATA ===");
-    console.log("Current tab:", tabValue);
-    console.log("Current view tab:", viewTabValue);
-    console.log(
-      "Current filters - Year:",
-      yearFilter,
-      "Month:",
-      monthFilter || "All",
-      "DOT:",
-      dotFilter || "All"
-    );
-
-    // Log data being used in current tab
-    switch (tabValue) {
-      case 0: // By DOT
-        console.log(
-          "Rendering DOT tab with data:",
-          collectionData.collection_by_dot || "No DOT data available"
-        );
-        break;
-      case 1: // Monthly Trend
-        console.log(
-          "Rendering Monthly Trend tab with data:",
-          collectionData.monthly_trends || "No monthly trend data available"
-        );
-        break;
-      case 2: // Comparison with Previous Year
-        console.log("Rendering Comparison tab with data:");
-        console.log("Current Year Total:", collectionData.total_collected);
-        console.log("Previous Year Total:", collectionData.total_previous_year);
-        console.log("Change Percentage:", collectionData.change_percentage);
-        break;
-      case 3: // Objective Achievement
-        console.log("Rendering Objective Achievement tab with data:");
-        console.log("Total Collected:", collectionData.total_collected);
-        console.log("Total Objective:", collectionData.total_objective);
-        console.log(
-          "Achievement Percentage:",
-          collectionData.achievement_percentage
-        );
-        break;
-      case 4: // By Client Category (if available)
-        console.log(
-          "Rendering Client Category tab with data:",
-          collectionData.by_client_category ||
-            "No client category data available"
-        );
-        break;
-      case 5: // By Product (if available)
-        console.log(
-          "Rendering Product tab with data:",
-          collectionData.by_product || "No product data available"
-        );
-        break;
-    }
-    console.log("============================================");
-  };
-
   if (loading) {
     return (
       <Box
@@ -375,11 +266,6 @@ const NGBSSCollectionKPI = () => {
   console.log("Rendering with collectionData:", collectionData);
   console.log("Collection data is valid?", !!collectionData);
   console.log("Has meaningful data?", hasMeaningfulData(collectionData));
-
-  // Log data being rendered
-  if (collectionData) {
-    logRenderData();
-  }
 
   return (
     <Box>
@@ -626,16 +512,12 @@ const NGBSSCollectionKPI = () => {
               <Box sx={{ height: 400 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
-                    data={collectionData.collection_by_dot?.map((item) => ({
-                      ...item,
-                      dot_name: item.dot_name || item.dot?.name,
-                      total: item.total || item.total_collected || 0,
-                    }))}
+                    data={collectionData.by_dot}
                     margin={{ top: 20, right: 30, left: 20, bottom: 70 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis
-                      dataKey="dot_name"
+                      dataKey="dot"
                       angle={-45}
                       textAnchor="end"
                       height={70}
@@ -667,23 +549,16 @@ const NGBSSCollectionKPI = () => {
 
             {/* Monthly Trend Tab */}
             <TabPanel value={tabValue} index={1}>
-              {(collectionData.by_month || collectionData.monthly_trends) &&
-              (collectionData.by_month?.length > 0 ||
-                collectionData.monthly_trends?.length > 0) ? (
+              {collectionData.by_month && collectionData.by_month.length > 0 ? (
                 <Box sx={{ height: 400 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
-                      data={(
-                        collectionData.by_month ||
-                        collectionData.monthly_trends ||
-                        []
-                      ).map((item) => ({
+                      data={collectionData.by_month.map((item) => ({
                         ...item,
                         month:
                           monthOptions.find(
                             (m) => m.value === item.month.toString()
                           )?.label || item.month,
-                        total: item.total || item.amount || 0,
                       }))}
                       margin={{ top: 20, right: 30, left: 20, bottom: 10 }}
                     >
@@ -988,8 +863,8 @@ const NGBSSCollectionKPI = () => {
           collectionData.collection_by_dot.length > 0 ? (
             <Box>
               <Tabs
-                value={viewTabValue}
-                onChange={handleViewTabChange}
+                value={tabValue}
+                onChange={handleTabChange}
                 sx={{ mb: 3 }}
                 variant="scrollable"
                 scrollButtons="auto"
@@ -999,7 +874,7 @@ const NGBSSCollectionKPI = () => {
               </Tabs>
 
               {/* Tab Panel content */}
-              {viewTabValue === 0 && (
+              {tabValue === 0 && (
                 <TableContainer component={Paper}>
                   <Table>
                     <TableHead>
@@ -1015,27 +890,17 @@ const NGBSSCollectionKPI = () => {
                     </TableHead>
                     <TableBody>
                       {collectionData.collection_by_dot &&
-                        collectionData.collection_by_dot.map((dot, index) => (
-                          <TableRow
-                            key={dot.dot?.id || dot.dot_id || `dot-${index}`}
-                          >
-                            <TableCell>
-                              {dot.dot_name || dot.dot?.name}
+                        collectionData.collection_by_dot.map((dot) => (
+                          <TableRow key={dot.dot_id || dot.dot_name}>
+                            <TableCell>{dot.dot_name}</TableCell>
+                            <TableCell align="right">
+                              {formatCurrency(dot.invoiced)}
                             </TableCell>
                             <TableCell align="right">
-                              {formatCurrency(
-                                dot.invoiced || dot.total_invoiced
-                              )}
+                              {formatCurrency(dot.collected)}
                             </TableCell>
                             <TableCell align="right">
-                              {formatCurrency(
-                                dot.collected || dot.total_collected
-                              )}
-                            </TableCell>
-                            <TableCell align="right">
-                              {formatCurrency(
-                                dot.open_balance || dot.total_open
-                              )}
+                              {formatCurrency(dot.open_balance)}
                             </TableCell>
                             <TableCell align="right">
                               {dot.collection_rate !== undefined
@@ -1070,7 +935,7 @@ const NGBSSCollectionKPI = () => {
                 </TableContainer>
               )}
 
-              {viewTabValue === 1 && (
+              {tabValue === 1 && (
                 <Box>
                   <ResponsiveContainer width="100%" height={400}>
                     <BarChart
@@ -1088,10 +953,6 @@ const NGBSSCollectionKPI = () => {
                         angle={-45}
                         textAnchor="end"
                         height={70}
-                        tickFormatter={(value, index) => {
-                          const item = collectionData.collection_by_dot[index];
-                          return item.dot_name || item.dot?.name || value;
-                        }}
                       />
                       <YAxis />
                       <Tooltip formatter={(value) => formatCurrency(value)} />

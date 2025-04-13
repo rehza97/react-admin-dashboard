@@ -9,6 +9,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { UploadQueueProvider } from "./context/UploadQueueContext";
 import { LanguageProvider } from "./context/LanguageContext";
+import { ExportNotificationsProvider } from "./components/export";
 import "./i18n"; // Import i18n configuration
 
 ReactDOM.createRoot(document.getElementById("root")).render(
@@ -19,7 +20,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <NotificationProvider>
             <UploadQueueProvider>
               <LanguageProvider>
-                <App />
+                <ExportNotificationsProvider>
+                  <App />
+                </ExportNotificationsProvider>
               </LanguageProvider>
             </UploadQueueProvider>
           </NotificationProvider>

@@ -153,10 +153,22 @@ REST_KNOX = {
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
+
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',
+        'NAME': 'alger',
+        'USER': 'postgres',
+        'PASSWORD': '123456789',
+        'HOST': 'LOCALHOST',
+        'PORT': '5432',
     }
 }
 
@@ -231,6 +243,10 @@ LOGGING = {
             'format': '{levelname} {asctime} {module} {message}',
             'style': '{',
         },
+        'debug_verbose': {
+            'format': '### {levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
     },
     'handlers': {
         'file': {
@@ -241,14 +257,35 @@ LOGGING = {
             'formatter': 'verbose',
         },
         'console': {
-            'level': 'INFO',
+            'level': 'DEBUG',  # Changed from INFO to DEBUG
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+        },
+        'debug_file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': str(LOGS_DIR / 'debug.log'),
+            'formatter': 'debug_verbose',
         },
     },
     'loggers': {
         'users.audit': {
             'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'data': {  # Add a logger for the data app
+            'handlers': ['debug_file', 'console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+        'data.v2': {  # Add a specific logger for data.v2
+            'handlers': ['debug_file', 'console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'django': {
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': True,
         },

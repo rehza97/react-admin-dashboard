@@ -27,6 +27,10 @@ urlpatterns = [
     path('api/auth/', include('knox.urls')),
     path('users/api/password_reset/', include('django_rest_passwordreset.urls', namespace='password_reset')),
     path('data/', include('data.urls')),  # This matches the proxy configuration
+    # V2 API endpoints (new save-first, clean-later approach)
+    # path('api/v2/data/', include('data.v2.urls')),
+    
+    
      # Swagger documentation URLs
     path('swagger<format>/', schema_view.without_ui(cache_timeout=0),
          name='schema-json'),

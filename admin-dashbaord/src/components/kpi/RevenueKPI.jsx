@@ -34,7 +34,6 @@ import {
 } from "recharts";
 import { useTheme } from "@mui/material/styles";
 import kpiService from "../../services/kpiService";
-import dataService from "../../services/dataService";
 
 // Custom tab panel component
 function TabPanel(props) {
@@ -65,17 +64,13 @@ const RevenueKPI = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [revenueData, setRevenueData] = useState(null);
-  const [dots, setDots] = useState([]);
-  const [loadingDots, setLoadingDots] = useState(true);
-
-  // Commented out unused state variables that might be used in future
-  // const [periodicRevenueData, setPeriodicRevenueData] = useState(null);
-  // const [nonPeriodicRevenueData, setNonPeriodicRevenueData] = useState(null);
-  // const [specialRevenueData, setSpecialRevenueData] = useState({
-  //   dnt: null,
-  //   rfd: null,
-  //   cnt: null,
-  // });
+  const [periodicRevenueData, setPeriodicRevenueData] = useState(null);
+  const [nonPeriodicRevenueData, setNonPeriodicRevenueData] = useState(null);
+  const [specialRevenueData, setSpecialRevenueData] = useState({
+    dnt: null,
+    rfd: null,
+    cnt: null,
+  });
 
   // Current year as default
   const currentYear = new Date().getFullYear();
@@ -104,29 +99,14 @@ const RevenueKPI = () => {
     { value: "12", label: "December" },
   ];
 
-  // Fetch DOTs from API
-  useEffect(() => {
-    const fetchDOTs = async () => {
-      setLoadingDots(true);
-      try {
-        const dotsData = await dataService.getDOTs();
-        if (dotsData && Array.isArray(dotsData)) {
-          console.log("Fetched DOTs:", dotsData);
-          setDots(dotsData);
-        } else {
-          console.warn("Invalid DOTs data:", dotsData);
-          setDots([]);
-        }
-      } catch (err) {
-        console.error("Error fetching DOTs:", err);
-        setDots([]);
-      } finally {
-        setLoadingDots(false);
-      }
-    };
-
-    fetchDOTs();
-  }, []);
+  // DOT options (simplified for now)
+  const dotOptions = [
+    { value: "Alger", label: "Alger" },
+    { value: "Oran", label: "Oran" },
+    { value: "Constantine", label: "Constantine" },
+    { value: "Annaba", label: "Annaba" },
+    { value: "Blida", label: "Blida" },
+  ];
 
   useEffect(() => {
     fetchData();
@@ -136,50 +116,12 @@ const RevenueKPI = () => {
     setLoading(true);
     setError(null);
     try {
-      // Log request parameters for debugging
-      console.log("=== REVENUE KPI REQUEST PARAMETERS ===");
-      console.log("Year:", yearFilter);
-      console.log("Month:", monthFilter || "All");
-      console.log("DOT:", dotFilter || "All");
-
       // Fetch revenue KPIs
       const revenueResponse = await kpiService.getRevenueKPIs({
         year: yearFilter,
         month: monthFilter,
         dot: dotFilter,
       });
-
-      // Log the full response data
-      console.log("=== REVENUE KPI RESPONSE DATA ===");
-      console.log(JSON.stringify(revenueResponse, null, 2));
-
-      // Log specific nested fields correctly
-      console.log(
-        "Total Revenue (Current Year):",
-        revenueResponse?.current_year?.total_revenue
-      );
-      console.log(
-        "Total Revenue (Previous Year):",
-        revenueResponse?.previous_year?.total_revenue
-      );
-      console.log(
-        "Evolution Rate:",
-        revenueResponse?.performance_rates?.evolution_rate,
-        "%"
-      );
-      console.log(
-        "Achievement Rate:",
-        revenueResponse?.performance_rates?.achievement_rate,
-        "%"
-      );
-      console.log(
-        "Revenue by Organization:",
-        revenueResponse?.revenue_by_organization
-      );
-      console.log("Revenue by Month:", revenueResponse?.revenue_by_month);
-      console.log("Anomalies:", revenueResponse?.anomalies);
-      console.log("============================================");
-
       setRevenueData(revenueResponse);
       setLoading(false);
     } catch (err) {
@@ -207,34 +149,19 @@ const RevenueKPI = () => {
 
   // Format currency values
   const formatCurrency = (value) => {
-    // Add debugging log
-    console.log("formatCurrency called with value:", value, typeof value);
-
     if (value === undefined || value === null) return "N/A";
-
-    // Make sure value is a number before formatting
-    const numValue = typeof value === "string" ? parseFloat(value) : value;
-
-    if (isNaN(numValue)) return "N/A";
-
     return new Intl.NumberFormat("fr-DZ", {
       style: "currency",
       currency: "DZD",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(numValue);
+    }).format(value);
   };
 
   // Format percentage values
   const formatPercentage = (value) => {
     if (value === undefined || value === null) return "N/A";
-
-    // Make sure value is a number before formatting
-    const numValue = typeof value === "string" ? parseFloat(value) : value;
-
-    if (isNaN(numValue)) return "N/A";
-
-    return `${numValue.toFixed(2)}%`;
+    return `${value.toFixed(2)}%`;
   };
 
   // Get color based on achievement rate
@@ -274,64 +201,6 @@ const RevenueKPI = () => {
           <Tab label="DOT Analysis" />
         </Tabs>
       </Box>
-
-      {/* New Revenue Summary Card */}
-      {!loading && !error && revenueData && (
-        <Box sx={{ p: 2 }}>
-          <Paper elevation={3} sx={{ p: 2, mb: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Revenue Summary
-            </Typography>
-            <Box
-              sx={{
-                display: "flex",
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-                gap: 2,
-              }}
-            >
-              <Box>
-                <Typography variant="subtitle2">
-                  Current Year Revenue
-                </Typography>
-                <Typography variant="h5">
-                  {formatCurrency(revenueData.current_year?.total_revenue)}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="subtitle2">
-                  Previous Year Revenue
-                </Typography>
-                <Typography variant="h5">
-                  {formatCurrency(revenueData.previous_year?.total_revenue)}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="subtitle2">Evolution Rate</Typography>
-                <Typography
-                  variant="h5"
-                  color={
-                    (revenueData.performance_rates?.evolution_rate || 0) >= 0
-                      ? "success.main"
-                      : "error.main"
-                  }
-                >
-                  {revenueData.performance_rates?.evolution_rate
-                    ? `${revenueData.performance_rates.evolution_rate.toFixed(
-                        2
-                      )}%`
-                    : "N/A"}
-                </Typography>
-              </Box>
-            </Box>
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              Data for {yearFilter}
-              {monthFilter ? `, Month ${monthFilter}` : ""}
-              {dotFilter ? `, DOT: ${dotFilter}` : ""}
-            </Typography>
-          </Paper>
-        </Box>
-      )}
 
       {/* Filter controls */}
       <Box
@@ -387,15 +256,11 @@ const RevenueKPI = () => {
             value={dotFilter}
             label="DOT"
             onChange={handleDotChange}
-            disabled={loadingDots}
-            endAdornment={
-              loadingDots && <CircularProgress size={20} sx={{ mr: 2 }} />
-            }
           >
             <MenuItem value="">All DOTs</MenuItem>
-            {dots.map((dot) => (
-              <MenuItem key={dot.id || dot.code} value={dot.id || dot.code}>
-                {dot.name} {dot.code ? `(${dot.code})` : ""}
+            {dotOptions.map((dot) => (
+              <MenuItem key={dot.value} value={dot.value}>
+                {dot.label}
               </MenuItem>
             ))}
           </Select>
@@ -445,7 +310,7 @@ const RevenueKPI = () => {
                       Total Revenue
                     </Typography>
                     <Typography variant="h4" color="primary">
-                      {formatCurrency(revenueData.current_year?.total_revenue)}
+                      {formatCurrency(revenueData.total_revenue)}
                     </Typography>
                     <Box
                       sx={{
@@ -457,20 +322,14 @@ const RevenueKPI = () => {
                       <Typography
                         variant="body2"
                         color={
-                          (revenueData.performance_rates?.evolution_rate ||
-                            0) >= 0
+                          revenueData.growth_percentage >= 0
                             ? "success.main"
                             : "error.main"
                         }
                         sx={{ display: "flex", alignItems: "center" }}
                       >
-                        {(revenueData.performance_rates?.evolution_rate || 0) >=
-                        0
-                          ? "+"
-                          : ""}
-                        {formatPercentage(
-                          revenueData.performance_rates?.evolution_rate
-                        )}
+                        {revenueData.growth_percentage >= 0 ? "+" : ""}
+                        {formatPercentage(revenueData.growth_percentage)}
                       </Typography>
                       <Typography
                         variant="body2"
@@ -497,7 +356,7 @@ const RevenueKPI = () => {
                       Previous Year Revenue
                     </Typography>
                     <Typography variant="h4" color="secondary">
-                      {formatCurrency(revenueData.previous_year?.total_revenue)}
+                      {formatCurrency(revenueData.previous_year_revenue)}
                     </Typography>
                     <Typography
                       variant="body2"
@@ -524,16 +383,14 @@ const RevenueKPI = () => {
                     <Typography variant="h6" gutterBottom>
                       Top DOT
                     </Typography>
-                    {revenueData.revenue_by_organization &&
-                    revenueData.revenue_by_organization.length > 0 ? (
+                    {revenueData.revenue_by_dot &&
+                    revenueData.revenue_by_dot.length > 0 ? (
                       <>
                         <Typography variant="h4" color="info.main">
-                          {revenueData.revenue_by_organization[0].organization}
+                          {revenueData.revenue_by_dot[0].organization}
                         </Typography>
                         <Typography variant="body1" sx={{ mt: 1 }}>
-                          {formatCurrency(
-                            revenueData.revenue_by_organization[0].total
-                          )}
+                          {formatCurrency(revenueData.revenue_by_dot[0].total)}
                         </Typography>
                       </>
                     ) : (
@@ -570,10 +427,7 @@ const RevenueKPI = () => {
                         },
                         {
                           name: "Regular Revenue",
-                          value:
-                            Math.abs(
-                              revenueData.current_year.regular_revenue
-                            ) || 0,
+                          value: revenueData.current_year.regular_revenue || 0,
                           fill: theme.palette.primary.main,
                         },
                         {
@@ -616,7 +470,9 @@ const RevenueKPI = () => {
                       <Legend />
                       <Bar
                         dataKey="value"
-                        fill={theme.palette.success.main}
+                        fill={(entry) =>
+                          entry.fill || theme.palette.success.main
+                        }
                         radius={[4, 4, 0, 0]}
                         maxBarSize={100}
                       >
@@ -629,9 +485,7 @@ const RevenueKPI = () => {
                           {
                             name: "Regular Revenue",
                             value:
-                              Math.abs(
-                                revenueData.current_year.regular_revenue
-                              ) || 0,
+                              revenueData.current_year.regular_revenue || 0,
                             fill: theme.palette.primary.main,
                           },
                           {
@@ -696,8 +550,7 @@ const RevenueKPI = () => {
                     </Typography>
                     <Typography variant="h5" color="primary">
                       {formatCurrency(
-                        Math.abs(revenueData?.current_year?.regular_revenue) ||
-                          0
+                        revenueData?.current_year?.regular_revenue || 0
                       )}
                     </Typography>
                     <Typography
@@ -706,9 +559,7 @@ const RevenueKPI = () => {
                       sx={{ mt: 1 }}
                     >
                       Revenue from current exercise, excluding previous exercise
-                      and advance billing.{" "}
-                      {revenueData?.current_year?.regular_revenue < 0 &&
-                        "(Displayed as absolute value; may be negative when previous exercise and advance billing exceed total revenue)"}
+                      and advance billing
                     </Typography>
                   </Paper>
                 </Grid>
@@ -737,7 +588,7 @@ const RevenueKPI = () => {
                       sx={{ mt: 1 }}
                     >
                       Revenue from previous exercise (account codes ending with
-                      &apos;A&apos; or gl_date from previous years)
+                      'A' or gl_date from previous years)
                     </Typography>
                   </Paper>
                 </Grid>
@@ -1014,7 +865,7 @@ const RevenueKPI = () => {
                               formatter={(value, name) => {
                                 if (name === "achievement")
                                   return [
-                                    formatPercentage(value),
+                                    `${value.toFixed(2)}%`,
                                     "Achievement Rate",
                                   ];
                                 return [formatCurrency(value), "Revenue"];

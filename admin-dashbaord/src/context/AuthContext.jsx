@@ -124,6 +124,9 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem("cachedUser");
       setCurrentUser(null);
       setIsAuthenticated(false);
+
+      // Force a page reload to clear any cached state
+      window.location.href = "/login";
     }
   };
 

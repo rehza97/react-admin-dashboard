@@ -1,5 +1,12 @@
-export { default as RevenuePage } from "./RevenuePage";
-export { default as CollectionPage } from "./CollectionPage";
-export { default as ReceivablesPage } from "./ReceivablesPage";
 export { default as CorporateParkPage } from "./CorporateParkPage";
-export { default as UnfinishedInvoicePage } from "./UnfinishedInvoicePage";
+export { default as RevenueDCISITPage } from "./RevenueDCISITPage";
+export { default as RevenueSiegePage } from "./RevenueSiegePage";
+export { default as RevenueDOTCorporatePage } from "./RevenueDOTCorporatePage";
+export { default as RevenuePeriodicPage } from "./RevenuePeriodicPage";
+export { default as RevenueNonPeriodicPage } from "./RevenueNonPeriodicPage";
+export { default as CollectionsDOTCorporatePage } from "./CollectionsDOTCorporatePage";
+export { default as ReceivablesDCISITPage } from "./ReceivablesDCISITPage";
+export { default as ReceivablesSiegePage } from "./ReceivablesSiegePage";
+export { default as ReceivablesDOTCorporatePage } from "./ReceivablesDOTCorporatePage";
+export { default as ReceivablesPeriodicPage } from "./ReceivablesPeriodicPage";
+export { default as ReceivablesNonPeriodicPage } from "./ReceivablesNonPeriodicPage";

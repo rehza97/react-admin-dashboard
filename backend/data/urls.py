@@ -2,18 +2,28 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 from . import kpi_views
+from . import export_views
+from . import periodic_kpi_views
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 import traceback
 import logging
-from . import export_views
+# from . import export_views
 from .views import (
     DOTSView,
+    AnomalyBulkDeleteView,
+    AnomalySourceDeleteView,
+    AnomalyTypeDeleteView,
+    AnomalyStatisticsView,
+    AnomalyKPIView,
+    AnomalyTableView,
+    AnomalyFiltersView,
+    AnomalyDashboardView,
+    ModelAnomalyScanView,
+
 )
-from .progress_views import ValidationProgressView
-from .validation_views import DataValidationView
 
 from decimal import Decimal
 logger = logging.getLogger(__name__)
@@ -109,8 +119,29 @@ urlpatterns = [
     # Debug upload endpoint
     path('debug/upload/', views.DebugUploadView.as_view(), name='debug-upload'),
 
-    # Export data endpoint
-    path('export/', views.ExportDataView.as_view(), name='export-data'),
+
+
+    # Preview data endpoint
+    path('preview/corporate-park/', views.CorporateParkPreviewView.as_view(),
+         name='preview-corporate-park'),
+
+    # Export endpoints with clear naming
+    path('export/corporate-park/', export_views.CorporateParkExportView.as_view(),
+         name='export-corporate-park'),
+
+    # Add export endpoints for Non-Periodic Revenue
+    path('export/ca-non-periodique/', export_views.CANonPeriodiqueExportView.as_view(),
+         name='export-ca-non-periodique'),
+    path('export/ca-non-periodique/status/', export_views.CANonPeriodiqueExportView.as_view(),
+         name='export-ca-non-periodique-status'),
+
+    # Status endpoint
+    path('export/corporate-park/status/', export_views.CorporateParkExportView.as_view(),
+         name='export-corporate-park-status'),
+
+    # Additional pattern without trailing slash
+    path('export/corporate-park', export_views.CorporateParkExportView.as_view(),
+         name='export-corporate-park-no-slash'),
 
     # Anomalies endpoints
     path('anomalies/', views.AnomalyListView.as_view(), name='anomaly-list'),
@@ -123,9 +154,59 @@ urlpatterns = [
     path('anomalies/scan/', views.TriggerAnomalyScanView.as_view(),
          name='anomaly-scan'),
 
+    # New anomaly scanner endpoints
+    path('anomalies/statistics/',
+         AnomalyStatisticsView.as_view(), name='anomaly-statistics'),
+    path('anomalies/kpis/',
+         AnomalyKPIView.as_view(), name='anomaly-kpis'),
+    path('anomalies/table/',
+         AnomalyTableView.as_view(), name='anomaly-table'),
+    path('anomalies/filters/',
+         AnomalyFiltersView.as_view(), name='anomaly-filters'),
+    path('anomalies/dashboard/',
+         AnomalyDashboardView.as_view(), name='anomaly-dashboard'),
+
+    # Specialized scan endpoints for frontend compatibility
+    path('anomalies/scan/revenue-outliers/', views.ScanRevenueOutliersView.as_view(),
+         name='scan-revenue-outliers'),
+    path('anomalies/scan/collection-outliers/', views.ScanCollectionOutliersView.as_view(),
+         name='scan-collection-outliers'),
+    path('anomalies/scan/temporal-patterns/', views.ScanTemporalPatternsView.as_view(),
+         name='scan-temporal-patterns'),
+    path('anomalies/scan/zero-values/', views.ScanZeroValuesView.as_view(),
+         name='scan-zero-values'),
+    path('anomalies/scan/duplicates/', views.ScanDuplicatesView.as_view(),
+         name='scan-duplicates'),
+    path('anomalies/scan/empty-cells/', views.ScanEmptyCellsView.as_view(),
+         name='scan-empty-cells'),
+    path('anomalies/scan/dot-validity/', views.ScanDOTValidityView.as_view(),
+         name='scan-dot-validity'),
+
+    # NGBSS specialized scan endpoints
+    path('anomalies/scan/creances-ngbss-empty-cells/',
+         views.ScanCreancesNGBSSEmptyCellsView.as_view(), name='scan-creances-ngbss-empty-cells'),
+    path('anomalies/scan/ca-periodique-empty-cells/',
+         views.ScanCAPeriodiqueEmptyCellsView.as_view(), name='scan-ca-periodique-empty-cells'),
+    path('anomalies/scan/ca-non-periodique-empty-cells/',
+         views.ScanCANonPeriodiqueEmptyCellsView.as_view(), name='scan-ca-non-periodique-empty-cells'),
+    path('anomalies/scan/ca-cnt-empty-cells/',
+         views.ScanCACNTEmptyCellsView.as_view(), name='scan-ca-cnt-empty-cells'),
+    path('anomalies/scan/ca-dnt-empty-cells/',
+         views.ScanCADNTEmptyCellsView.as_view(), name='scan-ca-dnt-empty-cells'),
+    path('anomalies/scan/ca-rfd-empty-cells/',
+         views.ScanCARFDEmptyCellsView.as_view(), name='scan-ca-rfd-empty-cells'),
+
+    # Bulk operations endpoints
+    path('anomalies/bulk-delete/',
+         AnomalyBulkDeleteView.as_view(), name='anomaly-bulk-delete'),
+    path('anomalies/delete-by-source/',
+         AnomalySourceDeleteView.as_view(), name='anomaly-source-delete'),
+    path('anomalies/delete-by-type/',
+         AnomalyTypeDeleteView.as_view(), name='anomaly-type-delete'),
+
     # Data validation endpoints
-    path('validation/', DataValidationView.as_view(), name='data-validation'),
-    path('cleaning/', DataValidationView.as_view(), name='data-cleaning'),
+    path('validation/', views.DataValidationView.as_view(), name='data-validation'),
+    path('cleaning/', views.DataValidationView.as_view(), name='data-cleaning'),
 
     # Progress tracking
     path('progress/', views.ProgressTrackerView.as_view(), name='progress-list'),
@@ -133,22 +214,22 @@ urlpatterns = [
          views.ProgressTrackerView.as_view(), name='progress-detail'),
 
     # Validation progress
-    path('validation-progress/', ValidationProgressView.as_view(),
+    path('validation-progress/', views.ValidationProgressView.as_view(),
          name='validation-progress'),
 
     # Comprehensive reports
     path('reports/', views.ComprehensiveReportView.as_view(),
          name='comprehensive-reports'),
-    path('reports/export/revenue_collection/',
-         export_views.RevenueCollectionExportView.as_view(), name='export_revenue_collection'),
-    path('reports/export/corporate_park/',
-         export_views.CorporateParkExportView.as_view(), name='export_corporate_park'),
-    path('reports/export/receivables/',
-         export_views.ReceivablesExportView.as_view(), name='export_receivables'),
-    path('reports/export/<str:report_type>/',
-         views.ComprehensiveReportExportView.as_view(), name='export_report'),
-    path('reports/export/', views.ComprehensiveReportExportView.as_view(),
-         name='export_report_generic'),
+    # path('reports/export/revenue_collection/',
+    #      export_views.RevenueCollectionExportView.as_view(), name='export_revenue_collection'),
+    # path('reports/export/corporate_park/',
+    #      export_views.CorporateParkExportView.as_view(), name='export_corporate_park'),
+    # path('reports/export/receivables/',
+    #      export_views.ReceivablesExportView.as_view(), name='export_receivables'),
+    #     path('reports/export/<str:report_type>/',
+    #          views.ComprehensiveReportExportView.as_view(), name='export_report'),
+    #     path('reports/export/', views.ComprehensiveReportExportView.as_view(),
+    #          name='export_report_generic'),
 
     # Dashboard overview
     path('dashboard/overview/', views.DashboardOverviewView.as_view(),
@@ -171,13 +252,17 @@ urlpatterns = [
          name='kpi-receivables'),
     path('kpi/corporate-park/', kpi_views.CorporateNGBSSParkKPIView.as_view(),
          name='kpi-corporate-park'),
+    path('kpi/corporate-park/years/', kpi_views.CorporateParkYearsView.as_view(),
+         name='corporate-park-years'),
     # path('kpi/anomalies/', kpi_views.AnomaliesKPIView.as_view(), name='kpi-anomalies'),
     # path('kpi/top-flop/', kpi_views.TopFlopKPIView.as_view(), name='kpi-top-flop'),
     # path('kpi/objectives/', kpi_views.ObjectivesKPIView.as_view(), name='kpi-objectives'),
     path('kpi/ngbss-collection/', kpi_views.NGBSSCollectionKPIView.as_view(),
          name='kpi-ngbss-collection'),
-    path('kpi/unfinished-invoice/', kpi_views.UnfinishedInvoiceKPIView.as_view(),
-         name='kpi-unfinished-invoice'),
+
+    # Add endpoint for Periodic Revenue KPI
+    path('kpi/ca-periodique/', periodic_kpi_views.PeriodicRevenueKPIView.as_view(),
+         name='kpi-ca-periodique'),
 
     path('kpi/performance-ranking/', kpi_views.PerformanceRankingView.as_view(),
          name='kpi-performance-ranking'),
@@ -188,6 +273,27 @@ urlpatterns = [
          name='cleanup-progress'),
 
     path('dots/', DOTSView.as_view(), name='dots-list'),
+
+    # Model-specific anomaly scanning
+    path('anomalies/scan-model/', ModelAnomalyScanView.as_view(),
+         name='scan-model-anomalies'),
+
+    path('kpi/receivables/non-periodic/', kpi_views.CANonPeriodiqueKPIView.as_view(),
+         name='receivables-non-periodic-kpi'),
+    path('kpi/ca-non-periodique/', kpi_views.CANonPeriodiqueKPIView.as_view(),
+         name='kpi-ca-non-periodique'),
+
+    # Add endpoint for DCISIT Revenue KPI
+    path('kpi/revenue/dcisit/', kpi_views.DCISITRevenueKPIView.as_view(),
+         name='kpi-revenue-dcisit'),
+
+    # Add endpoint for Siège Revenue KPI
+    path('kpi/revenue/siege/', kpi_views.SiegeRevenueKPIView.as_view(),
+         name='kpi-revenue-siege'),
+    path('kpi/revenue/dot-corporate/', kpi_views.DOTCorporateRevenueKPIView.as_view(),
+         name='kpi-revenue-dot-corporate'),
+    path('kpi/collections/dot-corporate/', kpi_views.DOTCorporateCollectionKPIView.as_view(),
+         name='kpi-collections-dot-corporate'),
 ]
 
 urlpatterns += router.urls

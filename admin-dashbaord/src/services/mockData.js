@@ -30,28 +30,12 @@ const generatePastMonths = (count) => {
 
 // Helper to generate realistic DOT data
 const DOTS = [
-  "Alger",
-  "Oran",
-  "Constantine",
-  "Annaba",
-  "Blida",
-  "Batna",
-  "Djelfa",
-  "Sétif",
-  "Sidi Bel Abbès",
-  "Biskra",
+
 ];
 
 // Helper to generate products
 const PRODUCTS = [
-  "Mobile",
-  "Internet",
-  "Fixed Line",
-  "Enterprise Solutions",
-  "Cloud Services",
-  "IoT",
-  "Security Services",
-  "Content Services",
+
 ];
 
 // Helper to generate dates in YYYY-MM-DD format
@@ -73,163 +57,22 @@ const randomPastDate = (maxDaysAgo = 365) => {
 
 // Dashboard Overview Mock Data
 export const mockDashboardOverview = {
-  total_users: 24,
-  active_users: 18,
-  disabled_users: 6,
-  files_uploaded: 156,
-  database_size: "477 MB",
-  anomalies_detected: 42,
-  anomalies_resolved: 28,
-  system_status: "healthy",
-  last_update: new Date().toISOString(),
-  recent_activity: [
-    {
-      id: 1,
-      type: "file_upload",
-      user: "admin@test.com",
-      timestamp: new Date(Date.now() - 10000).toISOString(),
-      details: "Uploaded facturation_manuelle.xlsx",
-    },
-    {
-      id: 2,
-      type: "anomaly_resolved",
-      user: "admin@test.com",
-      timestamp: new Date(Date.now() - 100000).toISOString(),
-      details: "Resolved duplicate invoice anomaly",
-    },
-  ],
+
 };
 
 // Comprehensive Report Mock Data
 export const mockRevenueCollectionReport = {
-  year: new Date().getFullYear(),
-  month: new Date().getMonth() + 1,
-  kpis: {
-    total_revenue: 24567890.45,
-    total_collection: 19876543.21,
-    collection_rate: 80.9,
-    total_invoiced: 24567890.45,
-  },
-  breakdowns: {
-    revenue_by_dot: Object.fromEntries(
-      DOTS.map((dot) => [dot, randomNumber(1000000, 5000000)])
-    ),
-    collection_by_dot: Object.fromEntries(
-      DOTS.map((dot) => [dot, randomNumber(800000, 4000000)])
-    ),
-    revenue_by_invoice_type: {
-      Periodic: 15678900.45,
-      "Non-Periodic": 5432100.67,
-      DNT: 1345678.9,
-      RFD: 1123432.1,
-      CNT: 987678.33,
-    },
-    collection_by_invoice_type: {
-      Periodic: 12654300.22,
-      "Non-Periodic": 4123456.78,
-      DNT: 1234567.89,
-      RFD: 956432.1,
-      CNT: 876543.22,
-    },
-  },
-  anomalies: [
-    {
-      id: 1,
-      type: "high_revenue_variation",
-      description: "Unusually high revenue increase in Alger region",
-      severity: "medium",
-      status: "open",
-    },
-    {
-      id: 2,
-      type: "low_collection_rate",
-      description: "Collection rate below target for Oran region",
-      severity: "high",
-      status: "in_progress",
-    },
-  ],
-  trends: generatePastMonths(6).map((month) => ({
-    month: month.month,
-    year: month.year,
-    revenue: randomNumber(18000000, 25000000),
-    collection: randomNumber(15000000, 20000000),
-  })),
+ 
 };
 
 // Corporate Park Report Mock Data
 export const mockCorporateParkReport = {
-  year: new Date().getFullYear(),
-  month: new Date().getMonth() + 1,
-  kpis: {
-    total_vehicles: 3456,
-  },
-  breakdowns: {
-    vehicles_by_dot: Object.fromEntries(
-      DOTS.map((dot) => [dot, randomNumber(200, 600)])
-    ),
-    vehicles_by_state: {
-      Active: 2890,
-      Maintenance: 234,
-      Inactive: 332,
-    },
-    vehicles_by_type: {
-      Small: 1234,
-      Medium: 1543,
-      Heavy: 456,
-      Special: 223,
-    },
-  },
-  anomalies: [
-    {
-      id: 3,
-      type: "unusual_vehicle_count",
-      description: "Unexpected decrease in vehicle count for Blida",
-      severity: "low",
-      status: "open",
-    },
-  ],
-  trends: generatePastMonths(6).map((month) => ({
-    month: month.month,
-    year: month.year,
-    total_vehicles: randomNumber(3300, 3600),
-    active_vehicles: randomNumber(2800, 3000),
-  })),
+ 
 };
 
 // Receivables Report Mock Data
 export const mockReceivablesReport = {
-  year: new Date().getFullYear(),
-  month: new Date().getMonth() + 1,
-  kpis: {
-    total_receivables: 9876543.21,
-  },
-  breakdowns: {
-    receivables_by_dot: Object.fromEntries(
-      DOTS.map((dot) => [dot, randomNumber(500000, 1500000)])
-    ),
-    receivables_by_age: {
-      "0-30": 3456789.1,
-      "31-60": 2345678.9,
-      "61-90": 1567890.45,
-      "91+": 2506184.76,
-    },
-  },
-  anomalies: [
-    {
-      id: 4,
-      type: "high_aged_receivables",
-      description: "Significant increase in receivables over 90 days",
-      severity: "high",
-      status: "open",
-    },
-  ],
-  trends: generatePastMonths(6).map((month) => ({
-    month: month.month,
-    year: month.year,
-    total_receivables: randomNumber(8000000, 10000000),
-    current_receivables: randomNumber(3000000, 4000000),
-    aged_receivables: randomNumber(5000000, 6000000),
-  })),
+
 };
 
 // KPI Data

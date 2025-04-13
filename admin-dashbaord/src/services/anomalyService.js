@@ -1,245 +1,28 @@
 import api from "./api";
 
-// Check if we're in development mode
-const isDevelopment = () => {
-  return (
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-  );
-};
-
-// Update the mockAnomalyStats to include model-specific data
-const mockAnomalyStats = {
-  total_anomalies: 42,
-  by_status: {
-    open: 15,
-    in_progress: 8,
-    resolved: 16,
-    ignored: 3,
-  },
-  by_type: [
-    { type: "missing_data", type_display: "Missing Data", count: 12 },
-    { type: "duplicate_data", type_display: "Duplicate Data", count: 8 },
-    { type: "invalid_data", type_display: "Invalid Data", count: 10 },
-    { type: "outlier", type_display: "Outlier", count: 5 },
-    { type: "inconsistent_data", type_display: "Inconsistent Data", count: 7 },
-  ],
-  by_data_source: [
-    { data_source: "journal_ventes", count: 15 },
-    { data_source: "etat_facture", count: 10 },
-    { data_source: "ca_periodique", count: 8 },
-    { data_source: "creances_ngbss", count: 5 },
-    { data_source: "ca_dnt", count: 4 },
-  ],
-  by_field: [
-    { field: "invoice_date", count: 8 },
-    { field: "amount", count: 12 },
-    { field: "client_name", count: 6 },
-    { field: "product_code", count: 9 },
-    { field: "tax_amount", count: 7 },
-  ],
-  time_series: [
-    { date: "2023-01-01", count: 2 },
-    { date: "2023-01-02", count: 3 },
-    { date: "2023-01-03", count: 5 },
-    { date: "2023-01-04", count: 8 },
-    { date: "2023-01-05", count: 6 },
-    { date: "2023-01-06", count: 12 },
-    { date: "2023-01-07", count: 6 },
-  ],
-  top_invoices: [
-    { invoice_id: 1, invoice_number: "INV-2023-001", anomaly_count: 5 },
-    { invoice_id: 2, invoice_number: "INV-2023-002", anomaly_count: 4 },
-    { invoice_id: 3, invoice_number: "INV-2023-003", anomaly_count: 3 },
-  ],
-  recent_anomalies: [
-    {
-      id: 1,
-      type: "missing_data",
-      type_display: "Missing Data",
-      description:
-        "Empty important fields in JournalVentes: invoice_date, client",
-      status: "open",
-      status_display: "Open",
-      invoice_number: "INV-2023-001",
-    },
-    {
-      id: 2,
-      type: "duplicate_data",
-      type_display: "Duplicate Data",
-      description: "Duplicate invoice number INV-2023-002 in Journal Ventes",
-      status: "in_progress",
-      status_display: "In Progress",
-      invoice_number: "INV-2023-002",
-    },
-    {
-      id: 3,
-      type: "outlier",
-      type_display: "Outlier",
-      description: "Unusually high revenue amount for invoice INV-2023-003",
-      status: "resolved",
-      status_display: "Resolved",
-      invoice_number: "INV-2023-003",
-    },
-  ],
-};
-
-// Model-specific mock stats
-const mockModelStats = {
-  journal_ventes: {
-    total_anomalies: 15,
-    by_status: {
-      open: 7,
-      in_progress: 3,
-      resolved: 4,
-      ignored: 1,
-    },
-    by_type: [
-      { type: "missing_data", type_display: "Missing Data", count: 5 },
-      { type: "duplicate_data", type_display: "Duplicate Data", count: 6 },
-      { type: "outlier", type_display: "Outlier", count: 4 },
-    ],
-    by_field: [
-      { field: "invoice_date", count: 4 },
-      { field: "client_name", count: 3 },
-      { field: "amount", count: 8 },
-    ],
-    time_series: [
-      { date: "2023-01-01", count: 1 },
-      { date: "2023-01-02", count: 2 },
-      { date: "2023-01-03", count: 3 },
-      { date: "2023-01-04", count: 5 },
-      { date: "2023-01-05", count: 2 },
-      { date: "2023-01-06", count: 1 },
-      { date: "2023-01-07", count: 1 },
-    ],
-  },
-  etat_facture: {
-    total_anomalies: 10,
-    by_status: {
-      open: 4,
-      in_progress: 2,
-      resolved: 3,
-      ignored: 1,
-    },
-    by_type: [
-      { type: "missing_data", type_display: "Missing Data", count: 3 },
-      { type: "invalid_data", type_display: "Invalid Data", count: 4 },
-      {
-        type: "inconsistent_data",
-        type_display: "Inconsistent Data",
-        count: 3,
-      },
-    ],
-    by_field: [
-      { field: "invoice_status", count: 5 },
-      { field: "payment_date", count: 3 },
-      { field: "amount_paid", count: 2 },
-    ],
-    time_series: [
-      { date: "2023-01-01", count: 1 },
-      { date: "2023-01-03", count: 2 },
-      { date: "2023-01-04", count: 3 },
-      { date: "2023-01-05", count: 1 },
-      { date: "2023-01-07", count: 3 },
-    ],
-  },
-  ca_periodique: {
-    total_anomalies: 8,
-    by_status: {
-      open: 2,
-      in_progress: 1,
-      resolved: 5,
-      ignored: 0,
-    },
-    by_type: [
-      { type: "outlier", type_display: "Outlier", count: 4 },
-      { type: "invalid_data", type_display: "Invalid Data", count: 2 },
-      {
-        type: "inconsistent_data",
-        type_display: "Inconsistent Data",
-        count: 2,
-      },
-    ],
-    time_series: [
-      { date: "2023-01-02", count: 1 },
-      { date: "2023-01-03", count: 2 },
-      { date: "2023-01-05", count: 3 },
-      { date: "2023-01-06", count: 2 },
-    ],
-  },
-  creances_ngbss: {
-    total_anomalies: 5,
-    by_status: {
-      open: 1,
-      in_progress: 1,
-      resolved: 2,
-      ignored: 1,
-    },
-    by_type: [
-      { type: "missing_data", type_display: "Missing Data", count: 2 },
-      { type: "invalid_data", type_display: "Invalid Data", count: 3 },
-    ],
-  },
-  ca_dnt: {
-    total_anomalies: 4,
-    by_status: {
-      open: 1,
-      in_progress: 1,
-      resolved: 2,
-      ignored: 0,
-    },
-    by_type: [
-      { type: "outlier", type_display: "Outlier", count: 1 },
-      { type: "invalid_data", type_display: "Invalid Data", count: 1 },
-      {
-        type: "inconsistent_data",
-        type_display: "Inconsistent Data",
-        count: 2,
-      },
-    ],
-  },
-};
-
 /**
  * Generic error handler for API requests
- * @param {Error} error - The error object
+ * @param {Error & { response?: { data?: any, status?: number } }} error - The error object
  * @param {string} serviceName - The name of the service for logging
- * @param {Object} mockData - Mock data to return in development mode
- * @returns {Object} - Mock data or throws the error
+ * @returns {never} - Always throws an error with a descriptive message
  */
-const handleApiError = (error, serviceName, mockData) => {
+const handleApiError = (error, serviceName) => {
   console.error(`Error in ${serviceName}:`, error);
 
   // Check if we have a specific error message from the backend
   let errorMessage = `Failed to fetch ${serviceName} data`;
 
-  // Safely check for error response properties - handle both axios errors and regular errors
-  const errorResponse =
-    error && typeof error === "object" && "response" in error
-      ? error.response || {}
-      : {};
-  const errorData =
-    errorResponse &&
-    typeof errorResponse === "object" &&
-    "data" in errorResponse
-      ? errorResponse.data || {}
-      : {};
-  const statusCode =
-    errorResponse &&
-    typeof errorResponse === "object" &&
-    "status" in errorResponse
-      ? errorResponse.status
-      : null;
+  // Safely check for error response properties
+  const errorResponse = error?.response || {};
+  const errorData = errorResponse?.data || {};
+  const statusCode = errorResponse?.status;
 
   // Handle specific HTTP status codes
   if (statusCode) {
     switch (statusCode) {
       case 400:
         errorMessage = `Invalid request for ${serviceName}: ${
-          errorData && typeof errorData === "object" && "error" in errorData
-            ? String(errorData.error)
-            : "Bad request"
+          errorData?.error || "Bad request"
         }`;
         break;
       case 401:
@@ -258,156 +41,58 @@ const handleApiError = (error, serviceName, mockData) => {
         errorMessage = `Server error while fetching ${serviceName} data`;
         break;
       default:
-        errorMessage =
-          errorData && typeof errorData === "object" && "error" in errorData
-            ? String(errorData.error)
-            : `Error (${statusCode}) in ${serviceName}`;
+        errorMessage = errorData?.error
+          ? String(errorData.error)
+          : `Error (${statusCode}) in ${serviceName}`;
     }
   }
 
-  if (errorData && typeof errorData === "object" && "error" in errorData) {
-    console.error("Backend error:", errorData.error);
-
-    if (errorData && typeof errorData === "object" && "details" in errorData) {
-      console.error("Error details:", errorData.details);
-    }
-  }
-
-  // Only use mock data in development mode AND when the server is unreachable
-  // (network error) or returns a server error (500+)
-  const isServerError = typeof statusCode === "number" && statusCode >= 500;
-  const isNetworkError =
-    !statusCode &&
-    error &&
-    typeof error === "object" &&
-    "message" in error &&
-    typeof error.message === "string" &&
-    (error.message.includes("Network Error") ||
-      error.message.includes("Failed to fetch") ||
-      error.message.includes("connect ECONNREFUSED"));
-
-  if (isDevelopment() && (isServerError || isNetworkError)) {
-    console.warn(`Using mock ${serviceName} data due to server unavailability`);
-    return mockData;
-  }
-
-  // In all other cases, throw the error with a descriptive message
   throw new Error(errorMessage);
 };
 
-// Mock data for development and testing
-const mockAnomalies = {
-  results: [
-    {
-      id: 1,
-      type: "high_value_transaction",
-      severity: "high",
-      description: "Transaction amount exceeds threshold by 200%",
-      status: "open",
-      created_at: "2023-01-15T10:30:00Z",
-      data_source: "journal_ventes",
-      record_id: 123,
-      details: {
-        amount: 500000,
-        threshold: 150000,
-        percentage: 233.33,
-      },
-    },
-    {
-      id: 2,
-      type: "missing_data",
-      severity: "medium",
-      description: "Multiple required fields are empty",
-      status: "open",
-      created_at: "2023-01-16T14:20:00Z",
-      data_source: "etat_facture",
-      record_id: 456,
-      details: {
-        missing_fields: ["client", "invoice_date", "department"],
-      },
-    },
-    {
-      id: 3,
-      type: "duplicate_invoice",
-      severity: "low",
-      description: "Potential duplicate invoice detected",
-      status: "resolved",
-      created_at: "2023-01-17T09:15:00Z",
-      data_source: "facturation_manuelle",
-      record_id: 789,
-      details: {
-        duplicate_of: 788,
-        similarity_score: 0.95,
-      },
-      resolution: {
-        resolved_at: "2023-01-17T11:30:00Z",
-        resolved_by: "admin@example.com",
-        resolution_note: "Confirmed as legitimate separate invoice",
-      },
-    },
-  ],
-  count: 3,
-};
-
-// Anomaly service functions
 const anomalyService = {
   /**
    * Get a list of anomalies with optional filtering
-   * @param {Object} filters - Filter parameters
-   * @returns {Promise} - Promise with anomaly data
    */
   getAnomalies: async (filters = {}) => {
     try {
       const params = new URLSearchParams();
-
-      // Add filters to params
-      if (filters.invoice) params.append("invoice", filters.invoice);
-      if (filters.type) params.append("type", filters.type);
-      if (filters.status) params.append("status", filters.status);
-      if (filters.startDate) params.append("start_date", filters.startDate);
-      if (filters.endDate) params.append("end_date", filters.endDate);
-
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.append(key, value);
+      });
       const response = await api.get(`/data/anomalies/?${params.toString()}`);
       return response.data;
     } catch (error) {
-      return handleApiError(error, "anomalies", mockAnomalies);
+      throw handleApiError(error, "anomalies");
     }
   },
 
   /**
    * Get details for a specific anomaly
-   * @param {number} id - Anomaly ID
-   * @returns {Promise} - Promise with anomaly details
    */
   getAnomalyDetails: async (id) => {
     try {
       const response = await api.get(`/data/anomalies/${id}/`);
       return response.data;
     } catch (error) {
-      return handleApiError(error, `anomaly ${id}`, null);
+      throw handleApiError(error, `anomaly ${id}`);
     }
   },
 
   /**
    * Update an anomaly (e.g., change status)
-   * @param {number} id - Anomaly ID
-   * @param {Object} data - Data to update
-   * @returns {Promise} - Promise with updated anomaly
    */
   updateAnomaly: async (id, data) => {
     try {
       const response = await api.patch(`/data/anomalies/${id}/`, data);
       return response.data;
     } catch (error) {
-      throw new Error(`Failed to update anomaly: ${error.message}`);
+      throw handleApiError(error, `update anomaly ${id}`);
     }
   },
 
   /**
    * Resolve an anomaly
-   * @param {number} id - Anomaly ID
-   * @param {string} notes - Resolution notes
-   * @returns {Promise} - Promise with resolved anomaly
    */
   resolveAnomaly: async (id, notes) => {
     try {
@@ -416,103 +101,325 @@ const anomalyService = {
       });
       return response.data;
     } catch (error) {
-      throw new Error(`Failed to resolve anomaly: ${error.message}`);
+      throw handleApiError(error, `resolve anomaly ${id}`);
     }
   },
 
   /**
    * Get anomaly statistics
-   * @param {Object} options - Options for filtering statistics
-   * @param {string} options.dataSource - Filter statistics by data source
-   * @returns {Promise} - Promise with anomaly statistics
    */
-  getAnomalyStats: async (options = {}) => {
+  getAnomalyStats: async () => {
     try {
-      let url = "/data/anomalies/stats/";
-      const params = new URLSearchParams();
+      const response = await api.get("/data/anomalies/statistics/");
 
-      if (options.dataSource) {
-        params.append("data_source", options.dataSource);
+      // Check if the data matches the expected format
+      if (response.data?.statistics) {
+        return response.data.statistics;
+      } else if (response.data?.data?.statistics) {
+        return response.data.data.statistics;
+      } else if (response.data?.data) {
+        return response.data.data;
+      } else {
+        // If none of the expected formats are found, return the raw data
+        return response.data;
       }
-
-      if (params.toString()) {
-        url += `?${params.toString()}`;
-      }
-
-      const response = await api.get(url);
-      return response.data;
     } catch (error) {
-      // In development, return model-specific mock data if dataSource is provided
-      if (
-        isDevelopment() &&
-        options.dataSource &&
-        mockModelStats[options.dataSource]
-      ) {
-        return mockModelStats[options.dataSource];
-      }
-
-      return handleApiError(error, "anomaly statistics", mockAnomalyStats);
-    }
-  },
-
-  /**
-   * Trigger an anomaly scan
-   * @param {Object} [options] - Scan options
-   * @param {number} [options.invoice_id] - Optional invoice ID to scan
-   * @param {Array} [options.scan_types] - Optional specific scan types to run
-   * @param {string} [options.data_source] - Optional data source to scan
-   * @param {number} [options.threshold_multiplier] - Optional threshold multiplier for outlier detection
-   * @returns {Promise} - Promise with scan results
-   */
-  triggerAnomalyScan: async (options = {}) => {
-    try {
-      const payload = {};
-
-      if (options.invoice_id) {
-        payload.invoice_id = options.invoice_id;
-      }
-
-      if (options.scan_types && options.scan_types.length > 0) {
-        payload.scan_types = options.scan_types;
-      }
-
-      if (options.data_source) {
-        payload.data_source = options.data_source;
-      }
-
-      if (options.threshold_multiplier) {
-        payload.threshold_multiplier = options.threshold_multiplier;
-      }
-
-      const response = await api.post("/data/anomalies/scan/", payload);
-      return response.data;
-    } catch (error) {
-      throw new Error(`Failed to trigger anomaly scan: ${error.message}`);
+      throw handleApiError(error, "anomaly statistics");
     }
   },
 
   /**
    * Get anomaly types
-   * @returns {Promise} - Promise with anomaly types
    */
   getAnomalyTypes: async () => {
     try {
       const response = await api.get("/data/anomalies/types/");
       return response.data;
     } catch (error) {
-      console.error("Error in anomaly types:", error);
-      // Provide fallback types if the API call fails
-      return {
-        types: [
-          { id: "missing_data", name: "Missing Data" },
-          { id: "duplicate_data", name: "Duplicate Data" },
-          { id: "invalid_data", name: "Invalid Data" },
-          { id: "outlier", name: "Outlier" },
-          { id: "inconsistent_data", name: "Inconsistent Data" },
-          { id: "other", name: "Other" },
-        ],
-      };
+      throw handleApiError(error, "anomaly types");
     }
+  },
+
+  // Scanning methods
+  scanRevenueOutliers: async () => {
+    try {
+      const response = await api.post("/data/anomalies/scan/revenue-outliers/");
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "revenue outliers scan");
+    }
+  },
+
+  scanCollectionOutliers: async () => {
+    try {
+      const response = await api.post(
+        "/data/anomalies/scan/collection-outliers/"
+      );
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "collection outliers scan");
+    }
+  },
+
+  scanTemporalPatterns: async () => {
+    try {
+      const response = await api.post(
+        "/data/anomalies/scan/temporal-patterns/"
+      );
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "temporal patterns scan");
+    }
+  },
+
+  scanZeroValues: async () => {
+    try {
+      const response = await api.post("/data/anomalies/scan/zero-values/");
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "zero values scan");
+    }
+  },
+
+  scanDuplicates: async () => {
+    try {
+      const response = await api.post("/data/anomalies/scan/duplicates/");
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "duplicates scan");
+    }
+  },
+
+  scanEmptyCells: async () => {
+    try {
+      const response = await api.post("/data/anomalies/scan/empty-cells/");
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "empty cells scan");
+    }
+  },
+
+  scanDOTValidity: async () => {
+    try {
+      const response = await api.post("/data/anomalies/scan/dot-validity/");
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "DOT validity scan");
+    }
+  },
+
+  // NGBSS specialized scan methods
+  scanCreancesNGBSSEmptyCells: async () => {
+    try {
+      const response = await api.post(
+        "/data/anomalies/scan/creances-ngbss-empty-cells/"
+      );
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "Créances NGBSS empty cells scan");
+    }
+  },
+
+  scanCAPeriodiqueEmptyCells: async () => {
+    try {
+      const response = await api.post(
+        "/data/anomalies/scan/ca-periodique-empty-cells/"
+      );
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "CA Périodique empty cells scan");
+    }
+  },
+
+  scanCANonPeriodiqueEmptyCells: async () => {
+    try {
+      const response = await api.post(
+        "/data/anomalies/scan/ca-non-periodique-empty-cells/"
+      );
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "CA Non Périodique empty cells scan");
+    }
+  },
+
+  scanCACNTEmptyCells: async () => {
+    try {
+      const response = await api.post(
+        "/data/anomalies/scan/ca-cnt-empty-cells/"
+      );
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "CA CNT empty cells scan");
+    }
+  },
+
+  scanCADNTEmptyCells: async () => {
+    try {
+      const response = await api.post(
+        "/data/anomalies/scan/ca-dnt-empty-cells/"
+      );
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "CA DNT empty cells scan");
+    }
+  },
+
+  scanCARFDEmptyCells: async () => {
+    try {
+      const response = await api.post(
+        "/data/anomalies/scan/ca-rfd-empty-cells/"
+      );
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "CA RFD empty cells scan");
+    }
+  },
+
+  // Deletion methods
+  bulkDeleteAnomalies: async () => {
+    try {
+      const response = await api.post("/data/anomalies/bulk-delete/");
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "bulk delete anomalies");
+    }
+  },
+
+  deleteAnomaliesBySource: async (sources) => {
+    try {
+      const response = await api.post("/data/anomalies/delete-by-source/", {
+        sources,
+      });
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "delete anomalies by source");
+    }
+  },
+
+  deleteAnomaliesByType: async (types) => {
+    try {
+      const response = await api.post("/data/anomalies/delete-by-type/", {
+        types,
+      });
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "delete anomalies by type");
+    }
+  },
+
+  // Enhanced statistics method
+  getDetailedStatistics: async () => {
+    try {
+      const response = await api.get("/data/anomalies/statistics/");
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "detailed statistics");
+    }
+  },
+
+  // Get anomaly KPIs
+  getAnomalyKPIs: async () => {
+    try {
+      const response = await api.get("/data/anomalies/kpis/");
+      return response.data.kpis;
+    } catch (error) {
+      throw handleApiError(error, "anomaly KPIs");
+    }
+  },
+
+  // Get combined dashboard data
+  getAnomalyDashboard: async () => {
+    try {
+      const response = await api.get("/data/anomalies/dashboard/");
+      return response.data.dashboard_data;
+    } catch (error) {
+      throw handleApiError(error, "anomaly dashboard");
+    }
+  },
+
+  // Get paginated anomaly table data
+  getAnomalyTable: async (
+    page = 1,
+    pageSize = 10,
+    filters = {},
+    sortBy = null
+  ) => {
+    try {
+      const params = new URLSearchParams();
+      params.append("page", page);
+      params.append("page_size", pageSize);
+
+      if (sortBy) params.append("sort_by", sortBy);
+
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.append(key, value);
+      });
+
+      const response = await api.get(
+        `/data/anomalies/table/?${params.toString()}`
+      );
+      return response.data.data;
+    } catch (error) {
+      throw handleApiError(error, "anomaly table data");
+    }
+  },
+
+  // Get available filter options
+  getAnomalyFilters: async () => {
+    try {
+      const response = await api.get("/data/anomalies/filters/");
+      return response.data.filters;
+    } catch (error) {
+      throw handleApiError(error, "anomaly filters");
+    }
+  },
+
+  // Utility method to run all scans
+  runFullScan: async () => {
+    try {
+      const response = await api.post("/data/anomalies/scan/");
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, "full scan");
+    }
+  },
+
+  // Model-specific anomaly scanning
+  scanModelAnomalies: async (modelName) => {
+    try {
+      const response = await api.post("/data/anomalies/scan-model/", {
+        model_name: modelName,
+      });
+      return response.data;
+    } catch (error) {
+      throw handleApiError(error, `${modelName} anomaly scan`);
+    }
+  },
+
+  // Get available models for scanning
+  getAvailableModels: () => {
+    return [
+      {
+        id: "journal_ventes",
+        name: "Journal des Ventes",
+        description: "Invoice journal data with revenue information",
+      },
+      {
+        id: "etat_facture",
+        name: "État de Facture",
+        description: "Invoice status tracking information",
+      },
+      {
+        id: "parc_corporate",
+        name: "Parc Corporate",
+        description: "Corporate park subscriber data",
+      },
+      {
+        id: "ngbss",
+        name: "NGBSS Models",
+        description: "All NGBSS-related models (Créances, CA Périodique, etc.)",
+      },
+    ];
   },
 };
 

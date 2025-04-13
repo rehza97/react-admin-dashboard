@@ -64,13 +64,13 @@ export default function Row1() {
         setLoading(false);
       } catch (err) {
         console.error("Error fetching overview data:", err);
-        setError("Failed to load dashboard data");
+        setError(t("dashboard.errorLoading"));
         setLoading(false);
       }
     };
 
     fetchOverviewData();
-  }, []);
+  }, [t]);
 
   if (loading) {
     return (
@@ -101,15 +101,27 @@ export default function Row1() {
 
   // Create pie data for users (active vs disabled)
   const userPieData = [
-    { name: "Active", value: overviewData.users.active, color: "#00C49F" },
-    { name: "Disabled", value: overviewData.users.disabled, color: "#FF8042" },
+    {
+      name: t("users.active"),
+      value: overviewData.users.active,
+      color: "#00C49F",
+    },
+    {
+      name: t("users.inactive"),
+      value: overviewData.users.disabled,
+      color: "#FF8042",
+    },
   ];
 
   // Create pie data for anomalies (open vs resolved)
   const anomalyPieData = [
-    { name: "Open", value: overviewData.anomalies.open, color: "#FF8042" },
     {
-      name: "Resolved",
+      name: t("anomalyScan.openAnomalies"),
+      value: overviewData.anomalies.open,
+      color: "#FF8042",
+    },
+    {
+      name: t("anomalyScan.resolvedAnomalies"),
       value: overviewData.anomalies.total - overviewData.anomalies.open,
       color: "#00C49F",
     },
@@ -120,6 +132,8 @@ export default function Row1() {
     overviewData.dots.count > 0
       ? [{ name: "DOTs", value: overviewData.dots.count, color: "#0088FE" }]
       : [];
+
+  const formatter = new Intl.NumberFormat("fr-FR");
 
   return (
     <Grid
@@ -134,35 +148,41 @@ export default function Row1() {
     >
       <Grid item xs={12} sm={6} lg={3}>
         <Tooltip
-          title={`Active: ${overviewData.users.active}, Disabled: ${overviewData.users.disabled}`}
+          title={`${t("users.active")}: ${formatter.format(
+            overviewData.users.active
+          )}, ${t("users.inactive")}: ${formatter.format(
+            overviewData.users.disabled
+          )}`}
         >
           <div style={{ width: "100%", height: "100%" }}>
             <CardComponent
               title={t("dashboard.totalUsers")}
-              subtitle="Total Users"
+              subtitle={t("dashboard.userAccounts")}
               icon={<Person />}
               data={userPieData}
-              value={overviewData.users.total.toString()}
+              value={formatter.format(overviewData.users.total)}
               change={0}
               percentageChange={0}
-              changeLabel="User accounts"
+              changeLabel={t("dashboard.userAccounts")}
               color="#00C49F"
             />
           </div>
         </Tooltip>
       </Grid>
       <Grid item xs={12} sm={6} lg={3}>
-        <Tooltip title={`Database Size: ${overviewData.files.size}`}>
+        <Tooltip
+          title={`${t("dashboard.databaseSize")}: ${overviewData.files.size}`}
+        >
           <div style={{ width: "100%", height: "100%" }}>
             <CardComponent
               title={t("dashboard.totalFiles")}
-              subtitle="Total Uploaded"
+              subtitle={t("dashboard.totalUploaded")}
               icon={<CloudUpload />}
               data={[]}
-              value={overviewData.files.total.toString()}
+              value={formatter.format(overviewData.files.total)}
               change={0}
               percentageChange={0}
-              changeLabel="Files uploaded"
+              changeLabel={t("dashboard.filesUploaded")}
               color="#0088FE"
             />
           </div>
@@ -170,35 +190,43 @@ export default function Row1() {
       </Grid>
       <Grid item xs={12} sm={6} lg={3}>
         <Tooltip
-          title={`Open: ${overviewData.anomalies.open}, Total: ${overviewData.anomalies.total}`}
+          title={`${t("anomalyScan.openAnomalies")}: ${formatter.format(
+            overviewData.anomalies.open
+          )}, ${t("anomalyScan.totalAnomalies")}: ${formatter.format(
+            overviewData.anomalies.total
+          )}`}
         >
           <div style={{ width: "100%", height: "100%" }}>
             <CardComponent
               title={t("dashboard.anomalies")}
-              subtitle="Issues Detected"
+              subtitle={t("dashboard.issuesDetected")}
               icon={<Warning />}
               data={anomalyPieData}
-              value={overviewData.anomalies.total.toString()}
+              value={formatter.format(overviewData.anomalies.total)}
               change={overviewData.anomalies.open}
               percentageChange={0}
-              changeLabel="Open anomalies"
+              changeLabel={t("anomalyScan.openAnomalies")}
               color="#FF8042"
             />
           </div>
         </Tooltip>
       </Grid>
       <Grid item xs={12} sm={6} lg={3}>
-        <Tooltip title={`Total DOTs: ${overviewData.dots.count}`}>
+        <Tooltip
+          title={`${t("dots.totalDOTs")}: ${formatter.format(
+            overviewData.dots.count
+          )}`}
+        >
           <div style={{ width: "100%", height: "100%" }}>
             <CardComponent
               title="DOTs"
-              subtitle="Business Units"
+              subtitle={t("dots.businessUnits")}
               icon={<Business />}
               data={dotPieData}
-              value={overviewData.dots.count.toString()}
+              value={formatter.format(overviewData.dots.count)}
               change={0}
               percentageChange={0}
-              changeLabel="Business units"
+              changeLabel={t("dots.businessUnits")}
               color="#FFBB28"
             />
           </div>

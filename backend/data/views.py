@@ -1,3 +1,5 @@
+from django.http import JsonResponse
+from openpyxl import Workbook
 from rest_framework import generics, status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
@@ -78,6 +80,13 @@ from .cleanup_methods import (
     clean_journal_ventes, clean_etat_facture
 )
 from threading import Thread
+from .anomaly_scanner import DatabaseAnomalyScanner
+from django.utils.dateparse import parse_datetime
+from .utils import clean_dot_value
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import landscape
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
 
 
 logger = logging.getLogger(__name__)
@@ -325,6 +334,21 @@ class InvoiceListView(generics.ListAPIView):
             queryset = queryset.filter(
                 upload_date__range=[start_date, end_date])
 
+        # Filter out invoices with missing files if requested
+        exclude_missing = self.request.query_params.get(
+            'exclude_missing_files', 'false').lower() == 'true'
+        if exclude_missing:
+            # Get all invoices and filter out those with missing files
+            valid_invoices = []
+            for invoice in queryset:
+                if invoice.file and os.path.exists(invoice.file.path):
+                    valid_invoices.append(invoice.id)
+
+            if valid_invoices:
+                queryset = queryset.filter(id__in=valid_invoices)
+            else:
+                queryset = Invoice.objects.none()  # Return empty queryset if no valid files found
+
         return queryset.order_by('-upload_date')
 
 
@@ -517,7 +541,8 @@ class InvoiceProcessView(APIView):
 
             # Return the processed data
             return Response({
-                "preview_data": preview_data,  # Return all processed data
+                # Return all processed data
+                "preview_data": preview_data[0:100],
                 "summary_data": summary_data,
                 "file_name": file_name,
                 "file_type": invoice.file_type,
@@ -1105,6 +1130,7 @@ class InvoiceSaveView(APIView):
 
     def _save_parc_corporate(self, invoice, data):
         """Save data to ParcCorporate model"""
+        from .utils import clean_dot_value
         saved_count = 0
         filtered_out_count = 0
 
@@ -1176,6 +1202,12 @@ class InvoiceSaveView(APIView):
             # Customer full name field mappings
             'CUSTOMER_FULL_NAME': 'customer_full_name',
             'CUSTOMER FULL NAME': 'customer_full_name',
+
+            # DOT field mappings
+            'DOT': 'dot_code',
+            'DOT_CODE': 'dot_code',
+            'DO': 'dot_code',
+            'DOT CODE': 'dot_code'
         }
 
         for row in data:
@@ -1185,7 +1217,6 @@ class InvoiceSaveView(APIView):
                     row, field_mappings, "ParcCorporate")
 
                 # Apply client's filtering requirements
-
                 # 1. Filter out records with customer_l3_code = 5 or 57
                 customer_l3_code = mapped_data.get('customer_l3_code', '')
                 if customer_l3_code in ['5', '57']:
@@ -1204,17 +1235,12 @@ class InvoiceSaveView(APIView):
                     filtered_out_count += 1
                     continue
 
-                # Handle DOT - store in state field if needed
-                dot_code = row.get('DO', '') or row.get(
-                    'DOT', '') or row.get('DOT_CODE', '')
-
                 # Parse creation_date if it exists and make it timezone-aware
                 if 'creation_date' in mapped_data and mapped_data['creation_date']:
                     try:
                         # Parse the datetime
                         naive_datetime = self._parse_datetime(
                             mapped_data['creation_date'])
-
                         # Make it timezone-aware by adding the current timezone
                         if naive_datetime and timezone.is_naive(naive_datetime):
                             mapped_data['creation_date'] = timezone.make_aware(
@@ -1226,11 +1252,10 @@ class InvoiceSaveView(APIView):
                             f"Error parsing creation_date: {str(e)}")
                         mapped_data['creation_date'] = None
 
-                # Get state value, append DOT code if available
-                state = mapped_data.get('state', '')
-                if dot_code and dot_code not in state:
-                    state = f"{state} (DOT: {dot_code})" if state else f"DOT: {dot_code}"
-                mapped_data['state'] = state
+                # Clean DOT code
+                if 'dot_code' in mapped_data:
+                    mapped_data['dot_code'] = clean_dot_value(
+                        mapped_data['dot_code'])
 
                 # Create the model instance
                 model_data = {'invoice': invoice}
@@ -1251,7 +1276,7 @@ class InvoiceSaveView(APIView):
 
         logger.info(f"Saved {saved_count} records to ParcCorporate")
         logger.info(
-            f"Filtered out {filtered_out_count} records based on client requirements")
+            f"Filtered out {filtered_out_count} records based on rules")
         return saved_count
 
     def _save_creances_ngbss(self, invoice, data):
@@ -1365,6 +1390,52 @@ class InvoiceSaveView(APIView):
                     row, field_mappings, "CreancesNGBSS")
                 model_data.update(mapped_data)
 
+                # Handle DOT instance if dot_code is available
+                dot_instance = None
+                if 'dot_code' in model_data and model_data['dot_code']:
+                    try:
+                        # Clean the DOT code
+                        original_code = model_data['dot_code']
+                        clean_code = clean_dot_value(original_code)
+
+                        # ALWAYS update the model's dot_code to the clean version
+                        model_data['dot_code'] = clean_code
+
+                        # Check if the original code has underscores and is different from clean code
+                        if '_' in original_code and original_code != clean_code:
+                            # Check if a DOT with the original code (with underscores) exists
+                            try:
+                                old_dot = DOT.objects.get(code=original_code)
+                                # Delete the DOT with underscores
+                                logger.info(
+                                    f"Deleting DOT with underscores: {original_code}")
+                                old_dot.delete()
+                            except DOT.DoesNotExist:
+                                # No DOT with underscore exists, nothing to delete
+                                pass
+
+                        # Try to find DOT with clean code
+                        try:
+                            dot_instance = DOT.objects.get(code=clean_code)
+                            logger.debug(
+                                f"Found DOT with clean code: {clean_code}")
+                        except DOT.DoesNotExist:
+                            # Create new DOT with clean code
+                            dot_instance = DOT.objects.create(
+                                code=clean_code,
+                                name=clean_code  # Use same value for name
+                            )
+                            logger.info(
+                                f"Created new DOT with clean code: {clean_code}")
+
+                        # Set the DOT instance on the model data
+                        model_data['dot'] = dot_instance
+
+                    except Exception as e:
+                        logger.error(
+                            f"Error processing DOT with code {model_data.get('dot_code')}: {str(e)}")
+                        logger.error(traceback.format_exc())
+
                 # Parse decimal values safely
                 decimal_fields = [
                     'invoice_amount', 'open_amount', 'tax_amount', 'invoice_amount_ht',
@@ -1410,21 +1481,21 @@ class InvoiceSaveView(APIView):
         """Save data to CAPeriodique model"""
         saved_count = 0
         for row in data:
-            dot_code = row.get('DO', '')
-
-            # Get or create DOT instance
-            dot_instance = None
-            if dot_code:
-                try:
-                    dot_instance, _ = DOT.objects.get_or_create(
-                        code=dot_code,
-                        defaults={'name': dot_code}
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Error getting/creating DOT with code {dot_code}: {str(e)}")
-
             try:
+                dot_code = clean_dot_value(row.get('DO', ''))
+
+                # Get or create DOT instance
+                dot_instance = None
+                if dot_code:
+                    try:
+                        dot_instance, _ = DOT.objects.get_or_create(
+                            code=dot_code,
+                            defaults={'name': dot_code}
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Error getting/creating DOT with code {dot_code}: {str(e)}")
+
                 CAPeriodique.objects.create(
                     invoice=invoice,
                     dot=dot_instance,
@@ -1446,27 +1517,39 @@ class InvoiceSaveView(APIView):
     def _save_ca_non_periodique(self, invoice, data):
         """Save data to CANonPeriodique model"""
         saved_count = 0
+        logger.info("Starting to save CA Non Periodique data")
+        logger.info(f"Total records to process: {len(data)}")
+
         for row in data:
-            dot_code = row.get('DO', '')
-
-            # Get or create DOT instance
-            dot_instance = None
-            if dot_code:
-                try:
-                    dot_instance, _ = DOT.objects.get_or_create(
-                        code=dot_code,
-                        defaults={'name': dot_code}
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Error getting/creating DOT with code {dot_code}: {str(e)}")
-
             try:
+                # Get DO and PRODUIT values
+                do_value = str(row.get('DO', '')).strip()
+                produit_value = str(row.get('PRODUIT', '')).strip()
+
+                # Check if either condition is met
+                if not ('Siege' in do_value or 'Specialized Line' in produit_value):
+                    continue
+
+                dot_code = clean_dot_value(row.get('DO', ''))
+
+                # Get or create DOT instance
+                dot_instance = None
+                if dot_code:
+                    try:
+                        dot_instance, _ = DOT.objects.get_or_create(
+                            code=dot_code,
+                            defaults={'name': dot_code}
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Error getting/creating DOT with code {dot_code}: {str(e)}")
+
+                # Create record only if it meets the filtering criteria
                 CANonPeriodique.objects.create(
                     invoice=invoice,
                     dot=dot_instance,
                     dot_code=dot_code,  # Store the original code as backup
-                    product=row.get('PRODUIT', ''),
+                    product=produit_value,
                     amount_pre_tax=row.get('HT', 0),
                     tax_amount=row.get('TAX', 0),
                     total_amount=row.get('TTC', 0),
@@ -1474,32 +1557,38 @@ class InvoiceSaveView(APIView):
                     channel=row.get('CHANNEL', '')
                 )
                 saved_count += 1
+
+                if saved_count % 100 == 0:
+                    logger.info(f"Processed {saved_count} records so far")
+
             except Exception as e:
                 logger.error(f"Error saving CANonPeriodique record: {str(e)}")
+                logger.error(f"Problematic row data: {row}")
                 # Continue with next record
 
-        logger.info(f"Saved {saved_count} records to CANonPeriodique")
+        logger.info(
+            f"Completed saving CA Non Periodique data. Saved {saved_count} records out of {len(data)}")
         return saved_count
 
     def _save_ca_dnt(self, invoice, data):
         """Save data to CADNT model"""
         saved_count = 0
         for row in data:
-            dot_code = row.get('DO', '')
-
-            # Get or create DOT instance
-            dot_instance = None
-            if dot_code:
-                try:
-                    dot_instance, _ = DOT.objects.get_or_create(
-                        code=dot_code,
-                        defaults={'name': dot_code}
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Error getting/creating DOT with code {dot_code}: {str(e)}")
-
             try:
+                dot_code = clean_dot_value(row.get('DO', ''))
+
+                # Get or create DOT instance
+                dot_instance = None
+                if dot_code:
+                    try:
+                        dot_instance, _ = DOT.objects.get_or_create(
+                            code=dot_code,
+                            defaults={'name': dot_code}
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Error getting/creating DOT with code {dot_code}: {str(e)}")
+
                 # Parse date if available
                 entry_date = None
                 if 'ENTRY_DATE' in row and row['ENTRY_DATE']:
@@ -1541,21 +1630,21 @@ class InvoiceSaveView(APIView):
         """Save data to CARFD model"""
         saved_count = 0
         for row in data:
-            dot_code = row.get('DO', '')
-
-            # Get or create DOT instance
-            dot_instance = None
-            if dot_code:
-                try:
-                    dot_instance, _ = DOT.objects.get_or_create(
-                        code=dot_code,
-                        defaults={'name': dot_code}
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Error getting/creating DOT with code {dot_code}: {str(e)}")
-
             try:
+                dot_code = clean_dot_value(row.get('DO', ''))
+
+                # Get or create DOT instance
+                dot_instance = None
+                if dot_code:
+                    try:
+                        dot_instance, _ = DOT.objects.get_or_create(
+                            code=dot_code,
+                            defaults={'name': dot_code}
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Error getting/creating DOT with code {dot_code}: {str(e)}")
+
                 # Parse date if available
                 entry_date = None
                 if 'ENTRY_DATE' in row and row['ENTRY_DATE']:
@@ -1596,21 +1685,21 @@ class InvoiceSaveView(APIView):
         """Save data to CACNT model"""
         saved_count = 0
         for row in data:
-            dot_code = row.get('DO', '')
-
-            # Get or create DOT instance
-            dot_instance = None
-            if dot_code:
-                try:
-                    dot_instance, _ = DOT.objects.get_or_create(
-                        code=dot_code,
-                        defaults={'name': dot_code}
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Error getting/creating DOT with code {dot_code}: {str(e)}")
-
             try:
+                dot_code = clean_dot_value(row.get('DO', ''))
+
+                # Get or create DOT instance
+                dot_instance = None
+                if dot_code:
+                    try:
+                        dot_instance, _ = DOT.objects.get_or_create(
+                            code=dot_code,
+                            defaults={'name': dot_code}
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Error getting/creating DOT with code {dot_code}: {str(e)}")
+
                 # Parse date if available
                 entry_date = None
                 if 'ENTRY_DATE' in row and row['ENTRY_DATE']:
@@ -2335,272 +2424,6 @@ class InvoiceSummaryView(APIView):
             )
 
 
-class ExportDataView(APIView):
-    """
-    API view for exporting data in various formats
-    """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, format=None):
-        try:
-            # Get query parameters
-            data_type = request.query_params.get('data_type', 'revenue')
-            export_format = request.query_params.get('format', 'excel')
-            year = request.query_params.get('year', datetime.now().year)
-            month = request.query_params.get('month', None)
-            dot = request.query_params.get('dot', None)
-
-            # Get data based on data_type
-            if data_type == 'revenue':
-                data = self._get_revenue_data(year, month, dot)
-            elif data_type == 'collection':
-                data = self._get_collection_data(year, month, dot)
-            elif data_type == 'receivables':
-                data = self._get_receivables_data(year, month, dot)
-            elif data_type == 'corporate_park':
-                data = self._get_corporate_park_data(year, month, dot)
-            else:
-                return Response(
-                    {'error': f"Invalid data_type: {data_type}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Export data in the requested format
-            if export_format == 'excel':
-                return self._export_excel(data, data_type)
-            elif export_format == 'csv':
-                return self._export_csv(data, data_type)
-            elif export_format == 'pdf':
-                return self._export_pdf(data, data_type)
-            else:
-                return Response(
-                    {'error': f"Invalid format: {export_format}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-        except Exception as e:
-            logger.error(f"Error exporting data: {str(e)}")
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    def _get_revenue_data(self, year, month, dot):
-        # Query JournalVentes for revenue data
-        query = JournalVentes.objects.all()
-        if year:
-            query = query.filter(invoice_date__year=year)
-        if month:
-            query = query.filter(invoice_date__month=month)
-        if dot:
-            query = query.filter(organization__icontains=dot)
-
-        # Serialize the data
-        serializer = JournalVentesSerializer(query, many=True)
-        return serializer.data
-
-    def _get_collection_data(self, year, month, dot):
-        """
-        Get collection data for export
-
-        Args:
-            year: The year to filter by
-            month: The month to filter by
-            dot: The DOT to filter by
-
-        Returns:
-            Serialized collection data
-        """
-        # Query EtatFacture for collection data
-        query = EtatFacture.objects.all()
-        if year:
-            query = query.filter(invoice_date__year=year)
-        if month:
-            query = query.filter(invoice_date__month=month)
-        if dot:
-            query = query.filter(organization__icontains=dot)
-
-        # Serialize the data
-        serializer = EtatFactureSerializer(query, many=True)
-        return serializer.data
-
-    def _get_receivables_data(self, year, month, dot):
-        """
-        Get receivables data for export
-
-        Args:
-            year: The year to filter by
-            month: The month to filter by
-            dot: The DOT to filter by
-
-        Returns:
-            Serialized receivables data
-        """
-        # Query CreancesNGBSS for receivables data
-        query = CreancesNGBSS.objects.all()
-        if year:
-            query = query.filter(year=year)
-        if month:
-            query = query.filter(month=month)
-        if dot:
-            query = query.filter(dot__icontains=dot)
-
-        # Serialize the data
-        serializer = CreancesNGBSSSerializer(query, many=True)
-        return serializer.data
-
-    def _get_corporate_park_data(self, year, month, dot):
-        """
-        Get corporate park data for export
-
-        Args:
-            year: The year to filter by
-            month: The month to filter by
-            dot: The DOT to filter by
-
-        Returns:
-            Serialized corporate park data
-        """
-        # Query ParcCorporate for corporate park data
-        query = ParcCorporate.objects.all()
-        if year and month:
-            # Filter by creation_date year and month
-            query = query.filter(
-                creation_date__year=year,
-                creation_date__month=month
-            )
-        if dot:
-            query = query.filter(state__icontains=dot)
-
-        # Serialize the data
-        serializer = ParcCorporateSerializer(query, many=True)
-        return serializer.data
-
-    def _export_excel(self, data, data_type):
-        # Create an in-memory output file
-        output = io.BytesIO()
-
-        # Create a workbook and add a worksheet
-        workbook = xlsxwriter.Workbook(output)
-        worksheet = workbook.add_worksheet(data_type.capitalize())
-
-        # Add headers
-        headers = list(data[0].keys()) if data else []
-        for col, header in enumerate(headers):
-            worksheet.write(0, col, header)
-
-        # Add data
-        for row, item in enumerate(data, 1):
-            for col, header in enumerate(headers):
-                worksheet.write(row, col, item.get(header, ''))
-
-        # Close the workbook
-        workbook.close()
-
-        # Prepare response
-        output.seek(0)
-        response = HttpResponse(
-            output.read(),
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        response['Content-Disposition'] = f'attachment; filename="{data_type}_{datetime.now().strftime("%Y%m%d")}.xlsx"'
-
-        return response
-
-    def _export_csv(self, data, data_type):
-        """
-        Export data as CSV file
-
-        Args:
-            data: The data to export
-            data_type: The type of data being exported (used for filename)
-
-        Returns:
-            HttpResponse with CSV content
-        """
-        # Create CSV response
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="{data_type}_{datetime.now().strftime("%Y%m%d")}.csv"'
-
-        # Create CSV writer
-        writer = csv.writer(response)
-
-        # Write headers
-        if data:
-            headers = data[0].keys()
-            writer.writerow(headers)
-
-            # Write data rows
-            for item in data:
-                writer.writerow([item.get(header, '') for header in headers])
-
-        return response
-
-    def _export_pdf(self, data, data_type):
-        """
-        Export data as PDF file
-
-        Args:
-            data: The data to export
-            data_type: The type of data being exported (used for filename and title)
-
-        Returns:
-            HttpResponse with PDF content
-        """
-        # Create PDF response
-        response = HttpResponse(content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="{data_type}_{datetime.now().strftime("%Y%m%d")}.pdf"'
-
-        # Create PDF document
-        buffer = io.BytesIO()
-        p = canvas.Canvas(buffer, pagesize=letter)
-
-        # Add title
-        p.setFont("Helvetica-Bold", 16)
-        p.drawString(30, 750, f"{data_type.capitalize()} Report")
-        p.setFont("Helvetica", 12)
-
-        # Add date
-        p.drawString(
-            30, 730, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
-        # Add data
-        y = 700
-        if data:
-            headers = list(data[0].keys())
-
-            # Draw headers
-            x = 30
-            p.setFont("Helvetica-Bold", 10)
-            for header in headers[:5]:  # Limit to 5 columns for readability
-                p.drawString(x, y, header)
-                x += 100
-
-            # Draw data rows
-            p.setFont("Helvetica", 10)
-            y -= 20
-            for item in data[:30]:  # Limit to 30 rows for simplicity
-                x = 30
-                for header in headers[:5]:
-                    value = str(item.get(header, ''))
-                    if len(value) > 15:
-                        value = value[:12] + '...'
-                    p.drawString(x, y, value)
-                    x += 100
-                y -= 20
-                if y < 50:
-                    p.showPage()
-                    p.setFont("Helvetica", 10)
-                    y = 750
-
-        p.save()
-        pdf = buffer.getvalue()
-        buffer.close()
-        response.write(pdf)
-
-        return response
-
-
 class AnomalyListView(generics.ListAPIView):
     """API view for listing anomalies"""
     permission_classes = [IsAuthenticated]
@@ -2893,656 +2716,25 @@ class AnomalyTypesView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class DatabaseAnomalyScanner:
-    """
-    Class for scanning the database to detect anomalies across records
-    and between different data models.
-    """
-
-    def __init__(self):
-        self.anomalies = []
-        self.invoice = None  # Initialize invoice attribute
-
-    def scan_all(self, invoice=None):
-        """
-        Run all anomaly detection scans
-
-        Args:
-            invoice: Optional Invoice object to limit the scan to a specific invoice
-
-        Returns:
-            List of detected anomalies
-        """
-        scan_methods = [
-            self.scan_journal_ventes_duplicates,
-            self.scan_etat_facture_duplicates,
-            self.scan_revenue_outliers,
-            self.scan_collection_outliers,
-            self.scan_journal_etat_mismatches,
-            self.scan_zero_values,
-            self.scan_temporal_patterns,
-            self.scan_empty_cells,
-            self.scan_dot_field_validity  # Add the new scan method
-        ]
-
-        self.anomalies = []  # Reset anomalies list
-        self.invoice = invoice  # Store invoice for filtering
-
-        for scan_method in scan_methods:
-            try:
-                logger.info(f"Running scan: {scan_method.__name__}")
-                scan_method()
-            except Exception as e:
-                logger.error(f"Error in {scan_method.__name__}: {str(e)}")
-                logger.error(traceback.format_exc())
-                # Continue with next scan method instead of failing completely
-
-        return self.anomalies
-
-    def scan_empty_cells(self):
-        """
-        Scan for empty cells in important fields across all data models
-        """
-        logger.info("Scanning for empty cells in important fields")
-
-        # Define important fields for each model
-        model_fields = {
-            JournalVentes: ['invoice_number', 'invoice_date', 'client', 'revenue_amount'],
-            EtatFacture: ['invoice_number', 'invoice_date', 'client', 'total_amount'],
-            ParcCorporate: ['actel_code', 'customer_l1_code', 'customer_full_name'],
-            CreancesNGBSS: ['dot', 'actel', 'invoice_amount', 'open_amount'],
-            CAPeriodique: ['dot', 'product', 'amount_pre_tax', 'total_amount'],
-            CANonPeriodique: ['dot', 'product', 'amount_pre_tax', 'total_amount'],
-            CADNT: ['transaction_id', 'customer_code', 'full_name', 'total_amount'],
-            CARFD: ['transaction_id', 'full_name', 'total_amount'],
-            CACNT: ['transaction_id', 'customer_code',
-                    'full_name', 'total_amount']
-        }
-
-        # Scan each model for empty important fields
-        for model, fields in model_fields.items():
-            queryset = model.objects.all()
-
-            # Filter by invoice if specified
-            if self.invoice:
-                queryset = queryset.filter(invoice=self.invoice)
-
-            # Limit to a reasonable number of records for performance
-            queryset = queryset[:1000]
-
-            for record in queryset:
-                empty_fields = []
-
-                for field in fields:
-                    value = getattr(record, field, None)
-                    # Check for None, empty string, or empty collections
-                    if value is None or value == '' or (hasattr(value, '__len__') and len(value) == 0):
-                        empty_fields.append(field)
-
-                if empty_fields:
-                    # Create an anomaly for this record with empty fields
-                    self._create_anomaly(
-                        invoice=record.invoice,
-                        anomaly_type='missing_data',
-                        description=f"Empty important fields in {model.__name__}: {', '.join(empty_fields)}",
-                        data={
-                            'model': model.__name__,
-                            'record_id': record.id,
-                            'empty_fields': empty_fields
-                        }
-                    )
-
-    def scan_journal_ventes_duplicates(self):
-        """Detect duplicate invoice numbers in Journal Ventes"""
-        # Find records with the same invoice_number but different data
-        duplicates = JournalVentes.objects.values('invoice_number', 'organization') \
-            .annotate(count=Count('id')) \
-            .filter(count__gt=1)
-
-        for dup in duplicates:
-            records = JournalVentes.objects.filter(
-                invoice_number=dup['invoice_number'],
-                organization=dup['organization']
-            )
-
-            # Check if these are true duplicates (different data)
-            if self._has_different_values(records, ['revenue_amount', 'client']):
-                self._create_anomaly(
-                    records[0].invoice,
-                    'duplicate_data',
-                    f"Duplicate invoice number {dup['invoice_number']} in {dup['organization']} with different values",
-                    {
-                        'invoice_number': dup['invoice_number'],
-                        'organization': dup['organization'],
-                        'record_count': dup['count'],
-                        'record_ids': list(records.values_list('id', flat=True))
-                    }
-                )
-
-    def scan_revenue_outliers(self):
-        """Detect statistical outliers in revenue amounts"""
-        # For each organization, find revenue outliers
-        orgs = JournalVentes.objects.values_list(
-            'organization', flat=True).distinct()
-
-        for org in orgs:
-            # Get revenue statistics for this organization
-            revenues = JournalVentes.objects.filter(organization=org) \
-                .values_list('revenue_amount', flat=True)
-
-            if len(revenues) < 5:  # Need enough data for meaningful statistics
-                continue
-
-            # Convert all values to float for calculations
-            float_revenues = [float(x) for x in revenues]
-
-            # Calculate mean and standard deviation
-            mean = sum(float_revenues) / len(float_revenues)
-            std_dev = (sum((x - mean) ** 2 for x in float_revenues) /
-                       len(float_revenues)) ** 0.5
-
-            # Find outliers (more than 3 standard deviations from mean)
-            threshold = 3 * std_dev
-            # Convert mean + threshold back to Decimal for database query
-            threshold_value = mean + threshold
-
-            outliers = JournalVentes.objects.filter(
-                organization=org,
-                revenue_amount__gt=threshold_value
-            )
-
-            for outlier in outliers:
-                self._create_anomaly(
-                    outlier.invoice,
-                    'outlier',
-                    f"Revenue outlier detected: {outlier.revenue_amount} (org mean: {mean:.2f})",
-                    {
-                        'record_id': outlier.id,
-                        'invoice_number': outlier.invoice_number,
-                        'organization': outlier.organization,
-                        'revenue_amount': float(outlier.revenue_amount),
-                        'mean_revenue': mean,
-                        'std_dev': std_dev,
-                        'z_score': float((float(outlier.revenue_amount) - mean) / std_dev)
-                    }
-                )
-
-    def scan_journal_etat_mismatches(self):
-        """Detect mismatches between Journal Ventes and Etat Facture"""
-        # Find invoice numbers that exist in both tables
-        journal_invoices = set(JournalVentes.objects.values_list(
-            'invoice_number', 'organization'))
-        etat_invoices = set(EtatFacture.objects.values_list(
-            'invoice_number', 'organization'))
-
-        # Find common invoice numbers
-        common_invoices = journal_invoices.intersection(etat_invoices)
-
-        for invoice_num, org in common_invoices:
-            journal = JournalVentes.objects.filter(
-                invoice_number=invoice_num, organization=org).first()
-            etat = EtatFacture.objects.filter(
-                invoice_number=invoice_num, organization=org).first()
-
-            # Check for significant revenue discrepancies
-            if journal and etat and abs(journal.revenue_amount - etat.revenue_amount) > 0.01:
-                self._create_anomaly(
-                    journal.invoice,
-                    'inconsistent_data',
-                    f"Revenue mismatch between Journal Ventes and Etat Facture for invoice {invoice_num}",
-                    {
-                        'invoice_number': invoice_num,
-                        'organization': org,
-                        'journal_revenue': float(journal.revenue_amount),
-                        'etat_revenue': float(etat.revenue_amount),
-                        'difference': float(journal.revenue_amount - etat.revenue_amount),
-                        'journal_id': journal.id,
-                        'etat_id': etat.id
-                    }
-                )
-
-    def scan_zero_values(self):
-        """Detect zero values in important financial fields"""
-        # Check for zero revenue in Journal Ventes
-        zero_revenue = JournalVentes.objects.filter(revenue_amount=0)
-
-        for record in zero_revenue:
-            self._create_anomaly(
-                record.invoice,
-                'invalid_data',
-                f"Zero revenue amount for invoice {record.invoice_number} in {record.organization}",
-                {
-                    'record_id': record.id,
-                    'invoice_number': record.invoice_number,
-                    'organization': record.organization
-                }
-            )
-
-        # Check for zero collection in Etat Facture
-        zero_collection = EtatFacture.objects.filter(
-            collection_amount=0,
-            total_amount__gt=0  # Only flag if there was an amount to collect
-        )
-
-        for record in zero_collection:
-            self._create_anomaly(
-                record.invoice,
-                'missing_data',
-                f"Zero collection amount for invoice {record.invoice_number} with total {record.total_amount}",
-                {
-                    'record_id': record.id,
-                    'invoice_number': record.invoice_number,
-                    'organization': record.organization,
-                    'total_amount': float(record.total_amount)
-                }
-            )
-
-    def scan_temporal_patterns(self):
-        """Detect unusual temporal patterns in data"""
-        # Group by month and check for unusual drops or spikes
-        current_year = datetime.now().year
-
-        # Analyze monthly revenue patterns
-        monthly_revenue = JournalVentes.objects.filter(
-            invoice_date__year=current_year
-        ).values('invoice_date__month').annotate(
-            total=Sum('revenue_amount')
-        ).order_by('invoice_date__month')
-
-        if len(monthly_revenue) < 3:  # Need at least 3 months for trend analysis
-            return
-
-        # Convert to list for easier analysis
-        revenues = [item['total'] for item in monthly_revenue]
-        months = [item['invoice_date__month'] for item in monthly_revenue]
-
-        # Check for significant drops (more than 50% from previous month)
-        for i in range(1, len(revenues)):
-            if revenues[i] < revenues[i-1] * 0.5:
-                self._create_anomaly(
-                    None,  # This is a system-level anomaly, not tied to a specific invoice
-                    'outlier',
-                    f"Significant revenue drop detected in month {months[i]}",
-                    {
-                        'month': months[i],
-                        'current_revenue': float(revenues[i]),
-                        'previous_revenue': float(revenues[i-1]),
-                        'drop_percentage': float((revenues[i-1] - revenues[i]) / revenues[i-1] * 100)
-                    }
-                )
-
-    def scan_collection_outliers(self):
-        """Detect statistical outliers in collection amounts"""
-        # For each organization, find collection outliers
-        orgs = EtatFacture.objects.values_list(
-            'organization', flat=True).distinct()
-
-        for org in orgs:
-            # Get collection statistics for this organization
-            collections = EtatFacture.objects.filter(organization=org) \
-                .values_list('collection_amount', flat=True)
-
-            if len(collections) < 5:  # Need enough data for meaningful statistics
-                continue
-
-            # Calculate mean and standard deviation
-            mean = sum(collections) / len(collections)
-            # Convert Decimal to float before performing power operations
-            std_dev = (sum((float(x) - float(mean)) ** 2 for x in collections) /
-                       len(collections)) ** 0.5
-
-            # Find outliers (more than 3 standard deviations from mean)
-            threshold = 3 * std_dev
-            outliers = EtatFacture.objects.filter(
-                organization=org,
-                collection_amount__gt=mean + threshold
-            )
-
-            for outlier in outliers:
-                self._create_anomaly(
-                    outlier.invoice,
-                    'outlier',
-                    f"Collection outlier detected: {outlier.collection_amount} (org mean: {mean:.2f})",
-                    {
-                        'record_id': outlier.id,
-                        'invoice_number': outlier.invoice_number,
-                        'organization': outlier.organization,
-                        'collection_amount': float(outlier.collection_amount),
-                        'mean_collection': float(mean),
-                        'std_dev': float(std_dev),
-                        'z_score': float((outlier.collection_amount - mean) / std_dev)
-                    }
-                )
-
-    def scan_etat_facture_duplicates(self):
-        """Detect duplicate invoice numbers in Etat Facture"""
-        # Find records with the same invoice_number but different data
-        duplicates = EtatFacture.objects.values('invoice_number', 'organization') \
-            .annotate(count=Count('id')) \
-            .filter(count__gt=1)
-
-        for dup in duplicates:
-            records = EtatFacture.objects.filter(
-                invoice_number=dup['invoice_number'],
-                organization=dup['organization']
-            )
-
-            # Check if these are true duplicates (different data)
-            if self._has_different_values(records, ['total_amount', 'client']):
-                self._create_anomaly(
-                    records[0].invoice,
-                    'duplicate_data',
-                    f"Duplicate invoice number {dup['invoice_number']} in {dup['organization']} with different values",
-                    {
-                        'invoice_number': dup['invoice_number'],
-                        'organization': dup['organization'],
-                        'record_count': dup['count'],
-                        'record_ids': list(records.values_list('id', flat=True))
-                    }
-                )
-
-    def _has_different_values(self, queryset, fields):
-        """Check if records have different values for specified fields"""
-        values = set()
-        for record in queryset:
-            value_tuple = tuple(getattr(record, field) for field in fields)
-            values.add(value_tuple)
-        return len(values) > 1
-
-    def _create_anomaly(self, invoice, anomaly_type, description, data):
-        """Create an anomaly record"""
-        # For system-level anomalies without a specific invoice, use the most recent
-        if invoice is None:
-            invoice = Invoice.objects.order_by('-upload_date').first()
-            if invoice is None:
-                return  # No invoices in system, can't create anomaly
-
-        # Create the anomaly
-        anomaly = Anomaly.objects.create(
-            invoice=invoice,
-            type=anomaly_type,
-            description=description,
-            data=data,
-            status='open'
-        )
-
-        self.anomalies.append(anomaly)
-        return anomaly
-
-    def _detect_journal_ventes_anomalies(self, data):
-        """
-        Detect anomalies in Journal des ventes data:
-        - Identify cells starting with "@" in Obj Fact
-        - Identify cells with dates ending with previous year in "Période de facturation"
-        - Identify records with zero revenue
-        - Identify records with missing important fields
-
-        Args:
-            data: List of JournalVentes records
-
-        Returns:
-            List of detected anomalies
-        """
-        anomalies = []
-        current_year = datetime.now().year
-        previous_year = current_year - 1
-
-        for record in data:
-            # Check for cells starting with "@" in Obj Fact
-            obj_fact = record.invoice_object if hasattr(
-                record, 'invoice_object') else record.get('invoice_object', '')
-            if obj_fact and isinstance(obj_fact, str) and obj_fact.startswith('@'):
-                anomalies.append({
-                    'type': 'invalid_data',
-                    'description': f"Invoice object starts with '@' (previous year invoice): {obj_fact}",
-                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
-                    'invoice_number': record.invoice_number if hasattr(record, 'invoice_number') else record.get('invoice_number', '')
-                })
-
-            # Check for dates ending with previous year in "Période de facturation"
-            billing_period = record.billing_period if hasattr(
-                record, 'billing_period') else record.get('billing_period', '')
-            if billing_period and isinstance(billing_period, str) and str(previous_year) in billing_period:
-                anomalies.append({
-                    'type': 'invalid_data',
-                    'description': f"Billing period contains previous year: {billing_period}",
-                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
-                    'invoice_number': record.invoice_number if hasattr(record, 'invoice_number') else record.get('invoice_number', '')
-                })
-
-            # Check for zero revenue
-            revenue_amount = record.revenue_amount if hasattr(
-                record, 'revenue_amount') else record.get('revenue_amount', 0)
-            if revenue_amount == 0:
-                anomalies.append({
-                    'type': 'zero_value',
-                    'description': f"Zero revenue amount for invoice {record.invoice_number if hasattr(record, 'invoice_number') else record.get('invoice_number', '')}",
-                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
-                    'invoice_number': record.invoice_number if hasattr(record, 'invoice_number') else record.get('invoice_number', '')
-                })
-
-            # Check for missing important fields
-            important_fields = ['invoice_number',
-                                'invoice_date', 'client', 'revenue_amount']
-            missing_fields = []
-
-            for field in important_fields:
-                value = getattr(record, field, None) if hasattr(
-                    record, field) else record.get(field)
-                if value is None or value == '' or (hasattr(value, '__len__') and len(value) == 0):
-                    missing_fields.append(field)
-
-            if missing_fields:
-                anomalies.append({
-                    'type': 'missing_data',
-                    'description': f"Missing important fields: {', '.join(missing_fields)}",
-                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
-                    'invoice_number': record.invoice_number if hasattr(record, 'invoice_number') else record.get('invoice_number', ''),
-                    'missing_fields': missing_fields
-                })
-
-        return anomalies
-
-    def _detect_etat_facture_anomalies(self, data):
-        """
-        Detect anomalies in Etat de facture data:
-        - Identify duplicate invoices (partial collection)
-        - Identify records with zero collection amount but non-zero total amount
-        - Identify records with missing important fields
-
-        Args:
-            data: List of EtatFacture records
-
-        Returns:
-            List of detected anomalies
-        """
-        anomalies = []
-
-        # Track duplicates
-        invoice_counts = {}
-
-        for record in data:
-            # Create a key for duplicate detection
-            org = record.organization if hasattr(
-                record, 'organization') else record.get('organization', '')
-            invoice_num = record.invoice_number if hasattr(
-                record, 'invoice_number') else record.get('invoice_number', '')
-            invoice_type = record.invoice_type if hasattr(
-                record, 'invoice_type') else record.get('invoice_type', '')
-
-            key = f"{org}_{invoice_num}_{invoice_type}"
-
-            # Count occurrences
-            invoice_counts[key] = invoice_counts.get(key, 0) + 1
-
-            # Check for zero collection with non-zero total
-            total_amount = record.total_amount if hasattr(
-                record, 'total_amount') else record.get('total_amount', 0)
-            collection_amount = record.collection_amount if hasattr(
-                record, 'collection_amount') else record.get('collection_amount', 0)
-
-            if total_amount > 0 and collection_amount == 0:
-                anomalies.append({
-                    'type': 'zero_value',
-                    'description': f"Zero collection amount for invoice {invoice_num} with total {total_amount}",
-                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
-                    'invoice_number': invoice_num,
-                    'total_amount': float(total_amount)
-                })
-
-            # Check for missing important fields
-            important_fields = ['invoice_number',
-                                'invoice_date', 'client', 'total_amount']
-            missing_fields = []
-
-            for field in important_fields:
-                value = getattr(record, field, None) if hasattr(
-                    record, field) else record.get(field)
-                if value is None or value == '' or (hasattr(value, '__len__') and len(value) == 0):
-                    missing_fields.append(field)
-
-            if missing_fields:
-                anomalies.append({
-                    'type': 'missing_data',
-                    'description': f"Missing important fields: {', '.join(missing_fields)}",
-                    'record_id': record.id if hasattr(record, 'id') else record.get('id'),
-                    'invoice_number': invoice_num,
-                    'missing_fields': missing_fields
-                })
-
-        # Add duplicate anomalies
-        for key, count in invoice_counts.items():
-            if count > 1:
-                org, invoice_num, invoice_type = key.split('_')
-                anomalies.append({
-                    'type': 'duplicate_data',
-                    'description': f"Duplicate invoice {invoice_num} in {org} (partial collection)",
-                    'invoice_number': invoice_num,
-                    'organization': org,
-                    'invoice_type': invoice_type,
-                    'count': count
-                })
-
-        return anomalies
-
-    def scan_dot_field_validity(self):
-        """Scan for DOT field validity issues across models with DOT fields"""
-        dot_field_models = [CreancesNGBSS, CAPeriodique,
-                            CANonPeriodique, CADNT, CARFD, CACNT]
-        batch_size = 1000
-
-        for model in dot_field_models:
-            # Get base queryset
-            queryset = model.objects.all()
-
-            # Filter by invoice if specified
-            if self.invoice:
-                queryset = queryset.filter(invoice=self.invoice)
-
-            # Process in batches for better performance
-            total_processed = 0
-            total_records = queryset.count()
-            offset = 0
-
-            while offset < total_records:
-                batch = queryset[offset:offset+batch_size]
-
-                for record in batch:
-                    # Check both the FK and legacy field
-                    dot_fk = getattr(record, 'dot', None)
-                    dot_code = getattr(record, 'dot_code', '')
-
-                    # Check for mismatches between FK and legacy field
-                    if dot_fk and dot_code and dot_fk.code != dot_code:
-                        self._create_anomaly(
-                            invoice=record.invoice,
-                            anomaly_type='inconsistent_data',
-                            description=f"DOT field mismatch in {model.__name__}: FK={dot_fk.code}, legacy={dot_code}",
-                            data={
-                                'model': model.__name__,
-                                'record_id': record.id,
-                                'dot_fk': str(dot_fk),
-                                'dot_code': dot_code
-                            }
-                        )
-
-                offset += batch_size
-                total_processed += len(batch)
-                logger.info(
-                    f"Processed {total_processed}/{total_records} records from {model.__name__}")
-
-
 class TriggerAnomalyScanView(APIView):
     """API view for triggering a database anomaly scan"""
     permission_classes = [IsAdminUser]  # Restrict to admins
 
     def post(self, request):
-        """
-        Trigger a full database scan for anomalies
-        This is a potentially resource-intensive operation
-        """
         try:
-            # Get optional parameters
-            scan_types = request.data.get('scan_types', None)
-            invoice_id = request.data.get('invoice_id', None)
-
-            # Create scanner instance
             scanner = DatabaseAnomalyScanner()
+            anomalies = scanner.scan_all()
 
-            # Track start time for performance monitoring
-            start_time = timezone.now()
-
-            # Get specific invoice if ID provided
-            invoice = None
-            if invoice_id:
-                try:
-                    invoice = Invoice.objects.get(id=invoice_id)
-                except Invoice.DoesNotExist:
-                    return Response(
-                        {"error": f"Invoice with ID {invoice_id} not found"},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-
-            # Set the invoice attribute regardless of scan type
-            scanner.invoice = invoice
-
-            # Run specific scans or all scans
-            if scan_types:
-                anomalies = []
-                for scan_type in scan_types:
-                    scan_method = getattr(scanner, f"scan_{scan_type}", None)
-                    if scan_method and callable(scan_method):
-                        scan_method()
-                anomalies = scanner.anomalies
-            else:
-                # Run all scans
-                anomalies = scanner.scan_all(invoice=invoice)
-
-            # Calculate execution time
-            execution_time = (timezone.now() - start_time).total_seconds()
-
-            # Log the scan results
-            logger.info(
-                f"Database anomaly scan completed by {request.user.email}. "
-                f"Found {len(anomalies)} anomalies in {execution_time:.2f} seconds."
-            )
-
-            # Return detailed response
             return Response({
-                'message': f'Scan completed. Detected {len(anomalies)} anomalies.',
-                'anomaly_count': len(anomalies),
-                'execution_time_seconds': execution_time,
-                'scan_date': timezone.now(),
-                'triggered_by': request.user.email,
-                'anomalies': AnomalySerializer(anomalies, many=True).data
+                'status': 'success',
+                'message': f'Anomaly scan completed. Found {len(anomalies)} anomalies.',
+                'anomaly_count': len(anomalies)
             })
-
         except Exception as e:
-            logger.error(f"Error during anomaly scan: {str(e)}")
-            logger.error(traceback.format_exc())
             return Response({
-                'error': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                'status': 'error',
+                'message': str(e)
+            }, status=500)
 
 
 class ComprehensiveReportView(APIView):
@@ -4305,49 +3497,6 @@ class ComprehensiveReportView(APIView):
         return anomalies
 
 
-class ComprehensiveReportExportView(APIView):
-    """
-    API view for exporting comprehensive reports in various formats
-    """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, report_type=None):
-        try:
-            # Get query parameters
-            year = request.query_params.get('year', datetime.now().year)
-            month = request.query_params.get('month', None)
-            dot = request.query_params.get('dot', None)
-            export_format = request.query_params.get('format', 'excel')
-
-            # If report_type is not provided in the URL path, get it from query parameters
-            if report_type is None:
-                report_type = request.query_params.get(
-                    'type', 'revenue_collection')
-
-            # Import the export views here to avoid circular imports
-            from .export_views import RevenueCollectionExportView, CorporateParkExportView, ReceivablesExportView
-
-            # For specific report types, delegate to the specialized export views
-            if report_type == 'revenue_collection':
-                return RevenueCollectionExportView().get(request)
-            elif report_type == 'corporate_park':
-                return CorporateParkExportView().get(request)
-            elif report_type == 'receivables':
-                return ReceivablesExportView().get(request)
-            else:
-                return Response(
-                    {'error': f'Invalid report type: {report_type}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-        except Exception as e:
-            logger.error(f"Error exporting report: {str(e)}")
-            logger.error(traceback.format_exc())
-            return Response({
-                'error': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
 class DashboardOverviewView(APIView):
     """
     API view for retrieving overview statistics for the admin dashboard
@@ -4815,51 +3964,6 @@ class DashboardEnhancedView(APIView):
             'total_collection': float(total_collection),
             'total_receivables': float(total_receivables)
         }
-
-
-class BaseExportView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, format=None):
-        # Get parameters
-        year = request.query_params.get('year')
-        month = request.query_params.get('month')
-        dot = request.query_params.get('dot')
-
-        # Generate Excel file
-        output = BytesIO()
-        workbook = xlsxwriter.Workbook(output)
-
-        # Add data to workbook
-
-        workbook.close()
-
-        # Prepare response
-        output.seek(0)
-        response = HttpResponse(
-            output.read(),
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        response['Content-Disposition'] = f'attachment; filename=export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
-        return response
-
-
-class RevenueCollectionExportView(BaseExportView):
-    def get(self, request, format=None):
-        # Implement revenue collection export logic
-        pass
-
-
-class CorporateParkExportView(BaseExportView):
-    def get(self, request, format=None):
-        # Implement corporate park export logic
-        pass
-
-
-class ReceivablesExportView(BaseExportView):
-    def get(self, request, format=None):
-        # Implement receivables export logic
-        pass
 
 
 class DataValidationView(APIView):
@@ -6959,139 +6063,6 @@ class DataCleanupView(APIView):
                 logger.error(
                     f"Failed to update progress tracker: {str(inner_e)}")
 
-    def _backup_data_before_cleanup(self, data_type):
-        """Create a JSON backup of data before cleanup operations"""
-        from django.core.serializers import serialize
-        import os
-        from datetime import datetime
-        from django.conf import settings
-
-        models_map = {
-            'parc_corporate': ParcCorporate,
-            'creances_ngbss': CreancesNGBSS,
-            'ca_non_periodique': CANonPeriodique,
-            'ca_periodique': CAPeriodique,
-            'ca_cnt': CACNT,
-            'ca_dnt': CADNT,
-            'ca_rfd': CARFD,
-            'journal_ventes': JournalVentes,
-            'etat_facture': EtatFacture
-        }
-
-        if data_type not in models_map and data_type != 'all':
-            logger.warning(f"Invalid data type for backup: {data_type}")
-            return False
-
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_dir = os.path.join(settings.MEDIA_ROOT, 'backups')
-        os.makedirs(backup_dir, exist_ok=True)
-
-        logger.info(f"Creating backup before cleaning {data_type}")
-
-        if data_type == 'all':
-            for model_name, model in models_map.items():
-                filename = os.path.join(
-                    backup_dir, f"{model_name}_{timestamp}.json")
-                with open(filename, 'w') as f:
-                    # Limit to 10,000 records to avoid memory issues
-                    data = serialize('json', model.objects.all()[:10000])
-                    f.write(data)
-                logger.info(f"Backed up {model_name} to {filename}")
-        else:
-            model = models_map[data_type]
-            filename = os.path.join(
-                backup_dir, f"{data_type}_{timestamp}.json")
-            with open(filename, 'w') as f:
-                data = serialize('json', model.objects.all()[:10000])
-                f.write(data)
-            logger.info(f"Backed up {data_type} to {filename}")
-
-        return True
-
-    def _run_cleanup_process(self, request, data_type, task_id):
-        """Run the cleanup process in a background thread"""
-        try:
-            # Initialize progress tracker
-            self._update_cleanup_progress(task_id, 0, 'Starting cleanup process...',
-                                          time.time())
-
-            results = {}
-
-            # Determine which models to clean based on data_type
-            models_to_clean = []
-            if data_type == 'all':
-                models_to_clean = [
-                    ('parc_corporate', clean_parc_corporate),
-                    ('creances_ngbss', clean_creances_ngbss),
-                    ('ca_non_periodique', clean_ca_non_periodique),
-                    ('ca_periodique', clean_ca_periodique),
-                    ('ca_cnt', clean_ca_cnt),
-                    ('ca_dnt', clean_ca_dnt),
-                    ('ca_rfd', clean_ca_rfd),
-                    ('journal_ventes', clean_journal_ventes),
-                    ('etat_facture', clean_etat_facture)
-                ]
-            else:
-                # Map data_type to its corresponding cleanup function
-                cleanup_map = {
-                    'parc_corporate': clean_parc_corporate,
-                    'creances_ngbss': clean_creances_ngbss,
-                    'ca_non_periodique': clean_ca_non_periodique,
-                    'ca_periodique': clean_ca_periodique,
-                    'ca_cnt': clean_ca_cnt,
-                    'ca_dnt': clean_ca_dnt,
-                    'ca_rfd': clean_ca_rfd,
-                    'journal_ventes': clean_journal_ventes,
-                    'etat_facture': clean_etat_facture
-                }
-                if data_type in cleanup_map:
-                    models_to_clean = [(data_type, cleanup_map[data_type])]
-                else:
-                    raise ValueError(f"Invalid data type: {data_type}")
-
-            # Clean each model and track progress
-            total_models = len(models_to_clean)
-            for i, (model_name, cleanup_func) in enumerate(models_to_clean):
-                progress = int((i / total_models) * 100)
-                self._update_cleanup_progress(
-                    task_id, progress, f"Cleaning {model_name} data...", time.time())
-
-                # Call the cleanup function and store results
-                result = cleanup_func()
-                results[model_name] = result
-
-                # Update progress
-                progress = int(((i + 1) / total_models) * 100)
-                self._update_cleanup_progress(
-                    task_id, progress,
-                    f"Completed cleaning {model_name} data", time.time())
-
-            # Finalize progress
-            self._update_cleanup_progress(
-                task_id, 100, "Data cleanup completed", time.time(), is_complete=True)
-
-            # Store the final results in the progress tracker
-            progress_tracker = CleanupProgressView.objects.get(task_id=task_id)
-            progress_tracker.result = results
-            progress_tracker.save()
-
-        except Exception as e:
-            logger.error(f"Error in data cleanup process: {str(e)}")
-            logger.error(traceback.format_exc())
-            self._update_cleanup_progress(
-                task_id, 0, f"Error: {str(e)}", time.time(), is_complete=True)
-
-            # Store the error in the progress tracker
-            try:
-                progress_tracker = CleanupProgressView.objects.get(
-                    task_id=task_id)
-                progress_tracker.error = str(e)
-                progress_tracker.status = 'failed'
-                progress_tracker.save()
-            except Exception as inner_e:
-                logger.error(
-                    f"Failed to update progress tracker: {str(inner_e)}")
-
 
 class CleanupProgressView(APIView):
     """
@@ -7165,3 +6136,874 @@ class DOTSView(APIView):
                 'status': 'error',
                 'message': str(e)
             }, status=500)
+
+
+class ScanRevenueOutliersView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        scanner = DatabaseAnomalyScanner()
+        try:
+            anomalies = scanner.scan_revenue_outliers()
+            return Response({
+                'status': 'success',
+                'message': f'Found {len(anomalies)} revenue outliers',
+                'anomalies': anomalies
+            })
+        except Exception as e:
+            logger.error(f"Error scanning revenue outliers: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanCollectionOutliersView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        scanner = DatabaseAnomalyScanner()
+        try:
+            anomalies = scanner.scan_collection_outliers()
+            return Response({
+                'status': 'success',
+                'message': f'Found {len(anomalies)} collection outliers',
+                'anomalies': anomalies
+            })
+        except Exception as e:
+            logger.error(f"Error scanning collection outliers: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanTemporalPatternsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        scanner = DatabaseAnomalyScanner()
+        try:
+            anomalies = scanner.scan_temporal_patterns()
+            return Response({
+                'status': 'success',
+                'message': f'Found {len(anomalies)} temporal pattern anomalies',
+                'anomalies': anomalies
+            })
+        except Exception as e:
+            logger.error(f"Error scanning temporal patterns: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanZeroValuesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        scanner = DatabaseAnomalyScanner()
+        try:
+            anomalies = scanner.scan_zero_values()
+            return Response({
+                'status': 'success',
+                'message': f'Found {len(anomalies)} zero value anomalies',
+                'anomalies': anomalies
+            })
+        except Exception as e:
+            logger.error(f"Error scanning zero values: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanDuplicatesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        scanner = DatabaseAnomalyScanner()
+        try:
+            journal_anomalies = scanner.scan_journal_ventes_duplicates()
+            etat_anomalies = scanner.scan_etat_facture_duplicates()
+            return Response({
+                'status': 'success',
+                'message': f'Found {len(journal_anomalies) + len(etat_anomalies)} duplicate anomalies',
+                'journal_ventes_duplicates': journal_anomalies,
+                'etat_facture_duplicates': etat_anomalies
+            })
+        except Exception as e:
+            logger.error(f"Error scanning duplicates: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanEmptyCellsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        scanner = DatabaseAnomalyScanner()
+        try:
+            anomalies = scanner.scan_empty_cells()
+            return Response({
+                'status': 'success',
+                'message': f'Found {len(anomalies)} empty cell anomalies',
+                'anomalies': anomalies
+            })
+        except Exception as e:
+            logger.error(f"Error scanning empty cells: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanDOTValidityView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        scanner = DatabaseAnomalyScanner()
+        try:
+            anomalies = scanner.scan_dot_field_validity()
+            return Response({
+                'status': 'success',
+                'message': f'Found {len(anomalies)} DOT validity anomalies',
+                'anomalies': anomalies
+            })
+        except Exception as e:
+            logger.error(f"Error scanning DOT validity: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanCreancesNGBSSEmptyCellsView(APIView):
+    """Specialized scan view for empty cells in Créances NGBSS"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # Instantiate scanner
+            scanner = DatabaseAnomalyScanner()
+
+            # Run only Créances NGBSS empty cells scan
+            scanner.scan_creances_ngbss_empty_cells()
+
+            # Return success response
+            return Response({
+                'success': True,
+                'message': 'Créances NGBSS empty cells scan completed successfully',
+                'anomalies_found': len(scanner.anomalies)
+            })
+        except Exception as e:
+            logger.error(f"Error in Créances NGBSS empty cells scan: {str(e)}")
+            return Response({
+                'success': False,
+                'message': f'Error during Créances NGBSS empty cells scan: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanCAPeriodiqueEmptyCellsView(APIView):
+    """Specialized scan view for empty cells in CA Périodique"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # Instantiate scanner
+            scanner = DatabaseAnomalyScanner()
+
+            # Run only CA Périodique empty cells scan
+            scanner.scan_ca_periodique_empty_cells()
+
+            # Return success response
+            return Response({
+                'success': True,
+                'message': 'CA Périodique empty cells scan completed successfully',
+                'anomalies_found': len(scanner.anomalies)
+            })
+        except Exception as e:
+            logger.error(f"Error in CA Périodique empty cells scan: {str(e)}")
+            return Response({
+                'success': False,
+                'message': f'Error during CA Périodique empty cells scan: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanCANonPeriodiqueEmptyCellsView(APIView):
+    """Specialized scan view for empty cells in CA Non Périodique"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # Instantiate scanner
+            scanner = DatabaseAnomalyScanner()
+
+            # Run only CA Non Périodique empty cells scan
+            scanner.scan_ca_non_periodique_empty_cells()
+
+            # Return success response
+            return Response({
+                'success': True,
+                'message': 'CA Non Périodique empty cells scan completed successfully',
+                'anomalies_found': len(scanner.anomalies)
+            })
+        except Exception as e:
+            logger.error(
+                f"Error in CA Non Périodique empty cells scan: {str(e)}")
+            return Response({
+                'success': False,
+                'message': f'Error during CA Non Périodique empty cells scan: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanCACNTEmptyCellsView(APIView):
+    """Specialized scan view for empty cells in CA CNT (Annulation)"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # Instantiate scanner
+            scanner = DatabaseAnomalyScanner()
+
+            # Run only CA CNT empty cells scan
+            scanner.scan_ca_cnt_empty_cells()
+
+            # Return success response
+            return Response({
+                'success': True,
+                'message': 'CA CNT empty cells scan completed successfully',
+                'anomalies_found': len(scanner.anomalies)
+            })
+        except Exception as e:
+            logger.error(f"Error in CA CNT empty cells scan: {str(e)}")
+            return Response({
+                'success': False,
+                'message': f'Error during CA CNT empty cells scan: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanCADNTEmptyCellsView(APIView):
+    """Specialized scan view for empty cells in CA DNT (Ajustement)"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # Instantiate scanner
+            scanner = DatabaseAnomalyScanner()
+
+            # Run only CA DNT empty cells scan
+            scanner.scan_ca_dnt_empty_cells()
+
+            # Return success response
+            return Response({
+                'success': True,
+                'message': 'CA DNT empty cells scan completed successfully',
+                'anomalies_found': len(scanner.anomalies)
+            })
+        except Exception as e:
+            logger.error(f"Error in CA DNT empty cells scan: {str(e)}")
+            return Response({
+                'success': False,
+                'message': f'Error during CA DNT empty cells scan: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ScanCARFDEmptyCellsView(APIView):
+    """Specialized scan view for empty cells (as outliers) in CA RFD (Remboursement)"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # Instantiate scanner
+            scanner = DatabaseAnomalyScanner()
+
+            # Run only CA RFD empty cells scan (as outliers)
+            scanner.scan_ca_rfd_empty_cells()
+
+            # Return success response
+            return Response({
+                'success': True,
+                'message': 'CA RFD empty cells scan (as outliers) completed successfully',
+                'anomalies_found': len(scanner.anomalies)
+            })
+        except Exception as e:
+            logger.error(f"Error in CA RFD empty cells scan: {str(e)}")
+            return Response({
+                'success': False,
+                'message': f'Error during CA RFD empty cells scan: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AnomalyBulkDeleteView(APIView):
+    @transaction.atomic
+    def post(self, request):
+        scanner = DatabaseAnomalyScanner()
+        try:
+            deleted_count = scanner.wipe_all_anomalies()
+            return Response({
+                'status': 'success',
+                'message': f'Successfully deleted {deleted_count} anomalies',
+                'deleted_count': deleted_count
+            })
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AnomalySourceDeleteView(APIView):
+    @transaction.atomic
+    def post(self, request):
+        sources = request.data.get('sources', [])
+        if not sources:
+            return Response({
+                'status': 'error',
+                'message': 'No sources provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        scanner = DatabaseAnomalyScanner()
+        try:
+            deleted_count = scanner.delete_anomalies_by_sources(sources)
+            return Response({
+                'status': 'success',
+                'message': f'Successfully deleted {deleted_count} anomalies from specified sources',
+                'deleted_count': deleted_count,
+                'sources': sources
+            })
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AnomalyTypeDeleteView(APIView):
+    @transaction.atomic
+    def post(self, request):
+        types = request.data.get('types', [])
+        if not types:
+            return Response({
+                'status': 'error',
+                'message': 'No anomaly types provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        scanner = DatabaseAnomalyScanner()
+        try:
+            deleted_count = scanner.delete_anomalies_by_types(types)
+            return Response({
+                'status': 'success',
+                'message': f'Successfully deleted {deleted_count} anomalies of specified types',
+                'deleted_count': deleted_count,
+                'types': types
+            })
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AnomalyStatisticsView(APIView):
+    """API endpoint for getting comprehensive anomaly statistics"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            scanner = DatabaseAnomalyScanner()
+            statistics = scanner.get_statistics()
+            return Response({
+                'status': 'success',
+                'statistics': statistics
+            })
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AnomalyKPIView(APIView):
+    """API endpoint for getting anomaly detection KPIs"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            scanner = DatabaseAnomalyScanner()
+            kpis = scanner.get_kpis()
+            return Response({
+                'status': 'success',
+                'kpis': kpis
+            })
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AnomalyTableView(APIView):
+    """API endpoint for getting paginated and filtered anomaly table"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            # Get query parameters
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 10))
+            sort_by = request.query_params.get('sort_by')
+
+            # Build filters from query parameters
+            filters = {}
+            if 'type' in request.query_params:
+                filters['type'] = request.query_params['type']
+            if 'status' in request.query_params:
+                filters['status'] = request.query_params['status']
+            if 'data_source' in request.query_params:
+                filters['data_source'] = request.query_params['data_source']
+            if 'organization' in request.query_params:
+                filters['organization'] = request.query_params['organization']
+            if 'severity' in request.query_params:
+                filters['severity'] = request.query_params['severity']
+            if 'date_from' in request.query_params:
+                filters['date_from'] = parse_datetime(
+                    request.query_params['date_from'])
+            if 'date_to' in request.query_params:
+                filters['date_to'] = parse_datetime(
+                    request.query_params['date_to'])
+
+            scanner = DatabaseAnomalyScanner()
+            table_data = scanner.get_anomalies_table(
+                page=page,
+                page_size=page_size,
+                filters=filters,
+                sort_by=sort_by
+            )
+
+            return Response({
+                'status': 'success',
+                'data': table_data
+            })
+        except ValueError as e:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid parameter value: ' + str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AnomalyFiltersView(APIView):
+    """API endpoint for getting available anomaly filter options"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            scanner = DatabaseAnomalyScanner()
+            filters = scanner.get_available_filters()
+            return Response({
+                'status': 'success',
+                'filters': filters
+            })
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AnomalyDashboardView(APIView):
+    """API endpoint for getting combined dashboard data"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            scanner = DatabaseAnomalyScanner()
+
+            # Get all relevant data for the dashboard
+            statistics = scanner.get_statistics()
+            kpis = scanner.get_kpis()
+            deletion_stats = scanner.get_deletion_stats()
+
+            return Response({
+                'status': 'success',
+                'dashboard_data': {
+                    'statistics': statistics,
+                    'kpis': kpis,
+                    'deletion_stats': deletion_stats
+                }
+            })
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ModelAnomalyScanView(APIView):
+    """API view for scanning anomalies for a specific model"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            model_name = request.data.get('model_name')
+            if not model_name:
+                return Response(
+                    {'error': 'model_name is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Validate model name
+            valid_models = ['journal_ventes',
+                            'etat_facture', 'parc_corporate', 'ngbss']
+            if model_name not in valid_models:
+                return Response(
+                    {'error': f'Invalid model name. Must be one of: {", ".join(valid_models)}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            logger.info(f"Starting anomaly scan for model: {model_name}")
+
+            # Initialize scanner and scan specified model
+            scanner = DatabaseAnomalyScanner()
+            try:
+                anomalies = scanner.get_model_anomalies(model_name)
+                logger.info(
+                    f"Completed anomaly scan for {model_name}, found {len(anomalies)} anomalies")
+            except Exception as e:
+                logger.error(
+                    f"Error during scanner.get_model_anomalies for {model_name}: {str(e)}")
+                return Response(
+                    {'error': f'Error scanning model {model_name}: {str(e)}'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+            # Prepare response data, ensuring all fields are valid
+            anomaly_data = []
+            try:
+                for anomaly in anomalies:
+                    # Convert any None values to appropriate defaults and ensure no empty ID strings
+                    data_dict = {
+                        'type': anomaly.type or '',
+                        'description': anomaly.description or '',
+                        'data': anomaly.data or {},
+                        'severity': anomaly.status or 'unknown',
+                        'status': anomaly.status or 'open',
+                        'created_at': anomaly.created_at,
+                        'data_source': anomaly.data_source or ''
+                    }
+
+                    # Ensure record_id is not an empty string in data
+                    if data_dict['data'] and 'record_id' in data_dict['data'] and data_dict['data']['record_id'] == '':
+                        data_dict['data']['record_id'] = None
+
+                    anomaly_data.append(data_dict)
+            except Exception as e:
+                logger.error(
+                    f"Error preparing anomaly data response: {str(e)}")
+                # Continue with whatever data we managed to process
+
+            return Response({
+                'status': 'success',
+                'message': f'Successfully scanned {model_name}',
+                'anomalies_found': len(anomalies),
+                'anomalies': anomaly_data
+            })
+
+        except Exception as e:
+            logger.error(f"Error in model anomaly scan: {str(e)}")
+            return Response(
+                {'error': f'Failed to scan anomalies: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CorporateParkPreviewView(APIView):
+    """
+    API view for previewing corporate park data with all filters applied
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_filtered_queryset(self, request):
+        # Get filter parameters
+        year = request.query_params.get('year')
+        month = request.query_params.get('month')
+        dot = request.query_params.getlist('dot')
+        state = request.query_params.getlist('state')
+        telecom_type = request.query_params.getlist('telecom_type')
+        offer_name = request.query_params.getlist('offer_name')
+        customer_l2 = request.query_params.getlist('customer_l2')
+        customer_l3 = request.query_params.getlist('customer_l3')
+        subscriber_status = request.query_params.getlist('subscriber_status')
+        actel_code = request.query_params.getlist('actel_code')
+        # Base query with required filters
+        query = ParcCorporate.objects.filter(
+            ~Q(customer_l3_code__in=['5', '57']),
+            ~Q(offer_name__icontains='Moohtarif'),
+            ~Q(offer_name__icontains='Solutions Hebergements'),
+            ~Q(subscriber_status='Predeactivated')
+        )
+
+        # Apply optional filters
+        if dot:
+            query = query.filter(dot_code__in=dot)
+
+        if state:
+            query = query.filter(state__in=state)
+
+        if telecom_type:
+            query = query.filter(telecom_type__in=telecom_type)
+
+        if offer_name:
+            query = query.filter(offer_name__in=offer_name)
+
+        if customer_l2:
+            query = query.filter(customer_l2_code__in=customer_l2)
+
+        if customer_l3:
+            query = query.filter(customer_l3_code__in=customer_l3)
+
+        if subscriber_status:
+            query = query.filter(subscriber_status__in=subscriber_status)
+
+        if actel_code:
+            query = query.filter(actel_code__in=actel_code)
+
+        # Apply year/month filter if provided
+        if year or month:
+            try:
+                year = int(year)
+                month = int(month)
+                query = query.filter(
+                    creation_date__year=year,
+                    creation_date__month=month
+                )
+            except (ValueError, TypeError):
+                pass
+
+        return query
+
+    def get(self, request, format=None):
+        # Check if this is an export request by looking for an export parameter
+        if request.query_params.get('export', 'false').lower() == 'true':
+            return self.export(request, format)
+
+        # Original preview functionality
+        try:
+            # Get pagination parameters
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 50))
+
+            # Get filtered queryset
+            query = self.get_filtered_queryset(request)
+
+            # Calculate total count for pagination
+            total_count = query.count()
+            total_pages = (total_count + page_size - 1) // page_size
+
+            # Apply pagination
+            start = (page - 1) * page_size
+            end = page * page_size
+            paginated_query = query[start:end]
+
+            # Serialize the data
+            serializer = ParcCorporateSerializer(paginated_query, many=True)
+
+            # Return paginated response
+            return Response({
+                'results': serializer.data,
+                'pagination': {
+                    'total_count': total_count,
+                    'total_pages': total_pages,
+                    'page': page,
+                    'page_size': page_size,
+                    'has_next': page < total_pages,
+                    'has_previous': page > 1
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"Error previewing corporate park data: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def export(self, request, format=None):
+        """
+        Export the filtered data in the requested format
+        """
+        try:
+            # Get filtered queryset
+            query = self.get_filtered_queryset(request)
+
+            # Get export format
+            export_format = request.query_params.get('format', 'excel').lower()
+
+            # Prepare the data for export
+            data = ParcCorporateSerializer(query, many=True).data
+
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'corporate_park_export_{timestamp}'
+
+            if export_format == 'excel':
+                # Create Excel workbook
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Corporate Park Data"
+
+                # Write headers
+                headers = [
+                    'DOT', 'State', 'Actel Code', 'Customer L1 Code', 'Customer L1 Description',
+                    'Customer L2 Code', 'Customer L2 Description', 'Customer L3 Code',
+                    'Customer L3 Description', 'Customer Full Name', 'Telecom Type',
+                    'Offer Type', 'Offer Name', 'Status', 'Creation Date'
+                ]
+                ws.append(headers)
+
+                # Write data
+                for row in data:
+                    ws.append([
+                        row.get('dot_code', ''),
+                        row.get('state', ''),
+                        row.get('actel_code', ''),
+                        row.get('customer_l1_code', ''),
+                        row.get('customer_l1_desc', ''),
+                        row.get('customer_l2_code', ''),
+                        row.get('customer_l2_desc', ''),
+                        row.get('customer_l3_code', ''),
+                        row.get('customer_l3_desc', ''),
+                        row.get('customer_full_name', ''),
+                        row.get('telecom_type', ''),
+                        row.get('offer_type', ''),
+                        row.get('offer_name', ''),
+                        row.get('subscriber_status', ''),
+                        row.get('creation_date', '')
+                    ])
+
+                # Create response
+                response = HttpResponse(
+                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+                response['Content-Disposition'] = f'attachment; filename={filename}.xlsx'
+                wb.save(response)
+                return response
+
+            elif export_format == 'csv':
+                response = HttpResponse(content_type='text/csv')
+                response['Content-Disposition'] = f'attachment; filename={filename}.csv'
+
+                writer = csv.writer(response)
+                # Write headers
+                writer.writerow([
+                    'DOT', 'State', 'Actel Code', 'Customer L1 Code', 'Customer L1 Description',
+                    'Customer L2 Code', 'Customer L2 Description', 'Customer L3 Code',
+                    'Customer L3 Description', 'Customer Full Name', 'Telecom Type',
+                    'Offer Type', 'Offer Name', 'Status', 'Creation Date'
+                ])
+
+                # Write data
+                for row in data:
+                    writer.writerow([
+                        row.get('dot_code', ''),
+                        row.get('state', ''),
+                        row.get('actel_code', ''),
+                        row.get('customer_l1_code', ''),
+                        row.get('customer_l1_desc', ''),
+                        row.get('customer_l2_code', ''),
+                        row.get('customer_l2_desc', ''),
+                        row.get('customer_l3_code', ''),
+                        row.get('customer_l3_desc', ''),
+                        row.get('customer_full_name', ''),
+                        row.get('telecom_type', ''),
+                        row.get('offer_type', ''),
+                        row.get('offer_name', ''),
+                        row.get('subscriber_status', ''),
+                        row.get('creation_date', '')
+                    ])
+                return response
+
+            elif export_format == 'pdf':
+                # Create PDF using reportlab
+                response = HttpResponse(content_type='application/pdf')
+                response['Content-Disposition'] = f'attachment; filename={filename}.pdf'
+
+                # Create the PDF object
+                doc = SimpleDocTemplate(
+                    response,
+                    pagesize=landscape(A4),
+                    rightMargin=30,
+                    leftMargin=30,
+                    topMargin=30,
+                    bottomMargin=30
+                )
+
+                # Container for the 'Flowable' objects
+                elements = []
+
+                # Define table style
+                style = TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 8),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                    ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ])
+
+                # Create table data
+                table_data = [
+                    ['DOT', 'State', 'Actel Code', 'Customer L2', 'Customer L3', 'Telecom Type',
+                     'Offer Name', 'Status', 'Creation Date']
+                ]
+
+                # Add data rows
+                for row in data:
+                    table_data.append([
+                        row.get('dot_code', ''),
+                        row.get('state', ''),
+                        row.get('actel_code', ''),
+                        f"{row.get('customer_l2_code', '')} - {row.get('customer_l2_desc', '')}",
+                        f"{row.get('customer_l3_code', '')} - {row.get('customer_l3_desc', '')}",
+                        row.get('telecom_type', ''),
+                        row.get('offer_name', ''),
+                        row.get('subscriber_status', ''),
+                        row.get('creation_date', '')
+                    ])
+
+                # Create table
+                table = Table(table_data)
+                table.setStyle(style)
+                elements.append(table)
+
+                # Build PDF
+                doc.build(elements)
+                return response
+
+            else:
+                return Response(
+                    {'error': 'Invalid export format'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        except Exception as e:
+            logger.error(f"Error exporting corporate park data: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

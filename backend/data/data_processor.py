@@ -415,94 +415,129 @@ class DataProcessor:
             return raw_data, [], {"error": str(e)}
 
     def process_ca_non_periodique(self, raw_data):
-        """Process CA Non Periodique data with filtering and anomaly detection"""
+        """
+        Process raw data for CA non periodique.
+        Filtering rules:
+        - Keep rows where either:
+          1. DO contains "Siège" OR
+          2. PRODUIT contains "Specialized Line"
+        - Convert numeric fields (HT, TAX, TTC) to Decimal
+        - Check for negative amounts
+        - Identify empty cells as anomalies
+        """
         try:
-            # Apply initial filtering based on business rules
-            filtered_data = []
-            anomalies = []
+            logger.info("Starting CA non periodique processing...")
 
-            for record in raw_data:
-                # Convert record to match model fields
-                processed_record = {
-                    'dot': record.get('DO', ''),
-                    'product': record.get('PRODUIT', ''),
-                    'amount_pre_tax': self._parse_decimal(record.get('HT', 0)),
-                    'tax_amount': self._parse_decimal(record.get('TAX', 0)),
-                    'total_amount': self._parse_decimal(record.get('TTC', 0)),
-                    'sale_type': record.get('TYPE_VENTE', ''),
-                    'channel': record.get('CHANNEL', '')
+            # Convert raw data to DataFrame for easier processing
+            df = pd.DataFrame(raw_data)
+
+            # Check if data is empty
+            if df.empty:
+                logger.warning(
+                    "Empty data received for CA non periodique processing")
+                return [], [], {}
+
+            # Store original count
+            original_count = len(df)
+            logger.info(f"Original record count: {original_count}")
+
+            # Standardize column names to lowercase and strip whitespace
+            df.columns = df.columns.str.lower().str.strip()
+
+            # Log original columns
+            logger.info(f"Columns in data: {list(df.columns)}")
+
+            # Ensure required columns exist
+            required_columns = ['do', 'produit']
+            missing_columns = [
+                col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                error_msg = f"Missing required columns: {missing_columns}"
+                logger.error(error_msg)
+                return [], [], {'error': error_msg}
+
+            # Clean DO and PRODUIT columns
+            df['do'] = df['do'].fillna('').astype(str).str.strip()
+            df['produit'] = df['produit'].fillna('').astype(str).str.strip()
+
+            # Log unique values before filtering
+            logger.info(
+                f"Unique DO values before filtering: {sorted(df['do'].unique())}")
+            logger.info(
+                f"Unique PRODUIT values before filtering: {sorted(df['produit'].unique())}")
+
+            # Create masks for each condition
+            siege_mask = df['do'].str.contains('Siège', case=False, na=False)
+            specialized_line_mask = df['produit'].str.contains(
+                'Specialized Line', case=False, na=False)
+
+            # Log matches before filtering
+            siege_matches = siege_mask.sum()
+            specialized_matches = specialized_line_mask.sum()
+            logger.info(f"Found {siege_matches} records with 'Siège' in DO")
+            logger.info(
+                f"Found {specialized_matches} records with 'Specialized Line' in PRODUIT")
+
+            # Apply the filter
+            df_filtered = df[siege_mask | specialized_line_mask].copy()
+
+            # Log filtering results
+            filtered_count = len(df_filtered)
+            logger.info(f"Records kept after filtering: {filtered_count}")
+            logger.info(
+                f"Records filtered out: {original_count - filtered_count}")
+
+            if filtered_count == 0:
+                logger.warning("No records matched the filtering criteria!")
+                return [], [], {
+                    'error': 'No records matched the filtering criteria',
+                    'original_count': original_count,
+                    'siege_matches': siege_matches,
+                    'specialized_line_matches': specialized_matches
                 }
 
-                # Check if record meets filtering criteria (only Siège)
-                if processed_record['dot'] == CANonPeriodique.VALID_DOT:
-                    filtered_data.append(processed_record)
-                else:
-                    # Record anomaly for filtered out record
-                    anomalies.append({
-                        'record': processed_record,
-                        'type': 'invalid_dot',
-                        'value': processed_record['dot'],
-                        'description': f"Invalid DOT: {processed_record['dot']}. Must be: {CANonPeriodique.VALID_DOT}"
-                    })
+            # Convert numeric fields
+            numeric_fields = ['ht', 'tax', 'ttc']
+            for field in numeric_fields:
+                if field in df_filtered.columns:
+                    df_filtered[field] = df_filtered[field].apply(
+                        self._parse_decimal)
+                    negative_mask = df_filtered[field] < 0
+                    if negative_mask.any():
+                        logger.warning(
+                            f"Found {negative_mask.sum()} negative values in {field} field")
 
-                # Check for empty fields
-                empty_fields = []
-                for field, value in processed_record.items():
-                    if value is None or (isinstance(value, str) and not value.strip()):
-                        empty_fields.append(field)
-
-                if empty_fields:
-                    anomalies.append({
-                        'record': processed_record,
-                        'type': 'empty_fields',
-                        'fields': empty_fields,
-                        'description': f"Empty values in fields: {', '.join(empty_fields)}"
-                    })
-
-                # Check for negative amounts
-                amount_fields = [
-                    ('amount_pre_tax', processed_record['amount_pre_tax']),
-                    ('tax_amount', processed_record['tax_amount']),
-                    ('total_amount', processed_record['total_amount'])
-                ]
-
-                negative_amounts = []
-                for field_name, value in amount_fields:
-                    if value is not None and value < 0:
-                        negative_amounts.append((field_name, value))
-
-                if negative_amounts:
-                    anomalies.append({
-                        'record': processed_record,
-                        'type': 'negative_amounts',
-                        'fields': negative_amounts,
-                        'description': f"Negative amounts found: {', '.join(f'{field}: {value}' for field, value in negative_amounts)}"
-                    })
-
-            # Prepare summary data
+            # Calculate summary statistics
             summary = {
-                'total_records': len(raw_data),
-                'filtered_records': len(filtered_data),
-                'filtered_out_records': len(raw_data) - len(filtered_data),
-                'anomalies_count': len(anomalies),
-                'anomalies': anomalies,
-                'filtering_criteria': {
-                    'valid_dot': CANonPeriodique.VALID_DOT
-                },
-                'distributions': {
-                    'by_dot': self._get_distribution(filtered_data, 'dot'),
-                    'by_product': self._get_distribution(filtered_data, 'product'),
-                    'by_channel': self._get_distribution(filtered_data, 'channel'),
-                    'by_sale_type': self._get_distribution(filtered_data, 'sale_type')
-                }
+                'original_count': original_count,
+                'processed_count': filtered_count,
+                'filtered_out_count': original_count - filtered_count,
+                'siege_count': siege_matches,
+                'specialized_line_count': specialized_matches,
+                'do_distribution': self._get_distribution(df_filtered, 'do'),
+                'product_distribution': self._get_distribution(df_filtered, 'produit'),
+                'channel_distribution': self._get_distribution(df_filtered, 'channel') if 'channel' in df_filtered.columns else {}
             }
 
-            return filtered_data, summary
+            # Convert DataFrame back to list of dictionaries
+            processed_data = df_filtered.to_dict('records')
+
+            # Detect anomalies
+            anomalies = self._detect_ca_non_periodique_anomalies(
+                processed_data)
+
+            # Log final results
+            logger.info("CA non periodique processing completed successfully")
+            logger.info(f"Final record count: {len(processed_data)}")
+            logger.info(f"Anomalies detected: {len(anomalies)}")
+
+            return processed_data, anomalies, summary
 
         except Exception as e:
-            logger.error(f"Error processing CA Non Periodique data: {str(e)}")
+            error_msg = f"Error processing CA non periodique data: {str(e)}"
+            logger.error(error_msg)
             logger.error(traceback.format_exc())
-            return [], {"error": str(e)}
+            return [], [], {'error': error_msg}
 
     def _get_distribution(self, data, field):
         """Helper method to get distribution of values for a field"""

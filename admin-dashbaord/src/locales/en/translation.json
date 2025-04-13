@@ -16,6 +16,9 @@
     "processing": "Processing",
     "permissions": "Permissions",
     "anomalyScan": "Anomaly Scan",
+    "anomalyScanDescription": "Detect and analyze anomalies in your data",
+    "dataCleanup": "Data Cleanup Tool",
+    "dataCleanupDescription": "Clean and standardize your data",
     "reports": "Reports",
     "search": "Search",
     "notifications": "Notifications",
@@ -81,7 +84,35 @@
     "caRFD": "RFD Revenue",
     "caCNT": "CNT Revenue",
     "dataSource": "Data Source",
-    "rowsPerPage": "Rows per page"
+    "rowsPerPage": "Rows per page",
+    "recentDownloads": "Recent Downloads",
+    "clearAll": "Clear All",
+    "downloadHistory": "Download History",
+    "fileSize": "File Size",
+    "downloadDate": "Download Date",
+    "downloadStatus": "Status",
+    "downloadFailed": "Download Failed",
+    "downloadCompleted": "Download Completed",
+    "downloadProcessing": "Processing",
+    "downloadCancelled": "Cancelled",
+    "unknownFile": "Unknown File",
+    "unknownSize": "Unknown Size",
+    "deleteDownload": "Delete Download",
+    "deleteDownloadConfirm": "Are you sure you want to delete this download?",
+    "noNotifications": "No notifications",
+    "markAllAsRead": "Mark all as read",
+    "clearAll": "Clear all",
+    "justNow": "Just now",
+    "minutesAgo": "{{minutes}}m ago",
+    "hoursAgo": "{{hours}}h ago",
+    "yesterday": "Yesterday",
+    "daysAgo": "{{days}}d ago",
+    "remaining": "remaining",
+    "successNotification": "Success Notification",
+    "errorNotification": "Error Notification",
+    "warningNotification": "Warning Notification",
+    "infoNotification": "Info Notification",
+    "notification": "Notification"
   },
   "dashboard": {
     "overview": "Overview",
@@ -96,17 +127,7 @@
     "collectionsAnalysis": "Collections Analysis",
     "receivablesAnalysis": "Receivables Analysis",
     "corporatePark": "Corporate Park",
-    "unfinishedInvoices": "Unfinished Invoices",
-    "summary": {
-      "title": "Dashboard Summary",
-      "totalRevenue": "Total Revenue",
-      "totalCollection": "Total Collection",
-      "totalReceivables": "Total Receivables",
-      "totalSubscribers": "Total Subscribers",
-      "anomaliesDetected": "Anomalies Detected",
-      "emptyFieldsReceivables": "empty fields in receivables",
-      "emptyFieldsPark": "empty fields in corporate park"
-    }
+    "unfinishedInvoices": "Unfinished Invoices"
   },
   "users": {
     "manageUsers": "Manage Users",
@@ -260,10 +281,16 @@
     "quarterly": "Quarterly",
     "yearly": "Yearly",
     "custom": "Custom",
-    "exportDefault": "Export Report",
-    "exportSuccess": "Report exported successfully",
-    "exportError": "Failed to export report",
-    "errorLoadingData": "Failed to load report data. Please try again later."
+    "pdf": "PDF",
+    "excel": "Excel",
+    "csv": "CSV",
+    "html": "HTML",
+    "userActivityReport": "User Activity Report",
+    "fileUploadReport": "File Upload Report",
+    "anomalyReport": "Anomaly Report",
+    "systemPerformanceReport": "System Performance Report",
+    "customReport": "Custom Report",
+    "errorLoadingData": "Error loading report data"
   },
   "profile": {
     "profileSettings": "Profile Settings",
@@ -589,24 +616,56 @@
     "nameRequired": "Name is required",
     "errorLoading": "Failed to load DOTs. Please try again later."
   },
-  "app": {
-    "title": "Algérie Télécom",
-    "subtitle": "Leader in telecommunications in Algeria",
-    "organization": "Division Corporate and IT Solutions Integration (DCISIT)",
-    "description": "Commercial Performance Monitoring via a Commercial Dashboard"
-  },
-  "login": {
-    "welcomeBack": "Welcome Back",
-    "enterCredentials": "Enter your credentials to access your account",
-    "emailAddress": "Email Address",
-    "password": "Password",
-    "rememberMe": "Remember me",
-    "forgotPassword": "Forgot password?",
-    "signIn": "Sign In",
-    "emailRequired": "Email is required",
-    "emailInvalid": "Email is invalid",
-    "passwordRequired": "Password is required",
-    "passwordLength": "Password must be at least 6 characters",
-    "invalidCredentials": "Invalid credentials. Please try again."
+  "dataCleanup": {
+    "title": "Data Cleanup Tool",
+    "description": "Clean and standardize your data",
+    "selectData": "Select Data Source",
+    "cleanupOptions": "Cleanup Options",
+    "startCleanup": "Start Cleanup",
+    "stopCleanup": "Stop Cleanup",
+    "cleanupInProgress": "Cleanup in Progress",
+    "cleanupComplete": "Cleanup Complete",
+    "cleanupFailed": "Cleanup Failed",
+    "options": {
+      "removeDuplicates": "Remove Duplicates",
+      "standardizeFormat": "Standardize Format",
+      "fixMissingValues": "Fix Missing Values",
+      "normalizeData": "Normalize Data",
+      "validateData": "Validate Data",
+      "trimWhitespace": "Trim Whitespace",
+      "convertCase": "Convert Case",
+      "removeInvalid": "Remove Invalid Entries"
+    },
+    "status": {
+      "analyzing": "Analyzing Data",
+      "cleaning": "Cleaning Data",
+      "validating": "Validating Results",
+      "completed": "Process Completed",
+      "failed": "Process Failed"
+    },
+    "results": {
+      "title": "Cleanup Results",
+      "rowsProcessed": "Rows Processed",
+      "duplicatesRemoved": "Duplicates Removed",
+      "valuesFixed": "Values Fixed",
+      "invalidRemoved": "Invalid Entries Removed",
+      "downloadReport": "Download Report",
+      "saveChanges": "Save Changes",
+      "discardChanges": "Discard Changes"
+    },
+    "confirmation": {
+      "startTitle": "Start Cleanup Process?",
+      "startMessage": "This process will modify your data. Make sure you have a backup.",
+      "stopTitle": "Stop Cleanup Process?",
+      "stopMessage": "Stopping the process may leave your data in an inconsistent state.",
+      "confirm": "Confirm",
+      "cancel": "Cancel"
+    },
+    "errors": {
+      "noDataSelected": "No data source selected",
+      "invalidFormat": "Invalid data format",
+      "processFailed": "Cleanup process failed",
+      "saveFailed": "Failed to save changes"
+    }
   }
 }

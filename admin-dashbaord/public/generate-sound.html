@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notification Sound Generator</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      h1 {
+        color: #1976d2;
+      }
+      .card {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 20px 0;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      button {
+        background-color: #1976d2;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        margin-top: 20px;
+      }
+      button:hover {
+        background-color: #1565c0;
+      }
+      .instructions {
+        margin-top: 20px;
+        font-size: 14px;
+        color: #666;
+      }
+      code {
+        background-color: #f5f5f5;
+        padding: 2px 4px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Notification Sound Generator</h1>
+
+    <div class="card">
+      <h2>Generate Notification Sound</h2>
+      <p>
+        Click the button below to generate and download a notification sound for
+        the admin dashboard. This sound will be played when exports are
+        complete.
+      </p>
+      <button id="generateButton">Generate Notification Sound</button>
+      <div id="downloadLink"></div>
+    </div>
+
+    <div class="card instructions">
+      <h2>Instructions</h2>
+      <ol>
+        <li>Click the "Generate Notification Sound" button above</li>
+        <li>The sound will play and download automatically</li>
+        <li>
+          Rename the file to <code>notification-sound.mp3</code> if needed
+        </li>
+        <li>
+          Move the file to the <code>admin-dashbaord/public/</code> directory
+        </li>
+      </ol>
+      <p>
+        The sound will now be played when an export is completed in the
+        dashboard.
+      </p>
+    </div>
+
+    <script src="notification-sound.js"></script>
+  </body>
+</html>

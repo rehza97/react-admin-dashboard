@@ -15,7 +15,10 @@
     "fileUpload": "Téléchargement de fichiers",
     "processing": "Traitement",
     "permissions": "Autorisations",
-    "anomalyScan": "Analyse d'anomalies",
+    "anomalyScan": "Analyse d'Anomalies",
+    "anomalyScanDescription": "Détecter et analyser les anomalies dans vos données",
+    "dataCleanup": "Outil de Nettoyage des Données",
+    "dataCleanupDescription": "Nettoyer et standardiser vos données",
     "reports": "Rapports",
     "search": "Rechercher",
     "notifications": "Notifications",
@@ -81,7 +84,20 @@
     "caRFD": "CA RFD",
     "caCNT": "CA CNT",
     "dataSource": "Source de Données",
-    "rowsPerPage": "Lignes par page"
+    "rowsPerPage": "Lignes par page",
+    "increase": "d'augmentation",
+    "decrease": "de diminution",
+    "clearAll": "Tout effacer",
+    "format": "Format",
+    "filters": "Filtres",
+    "rows": "Lignes",
+    "progress": "Progression",
+    "remaining": "restant",
+    "justNow": "À l'instant",
+    "minutesAgo": "m il y a",
+    "hoursAgo": "h il y a",
+    "daysAgo": "j il y a",
+    "yesterday": "Hier"
   },
   "dashboard": {
     "overview": "Aperçu",
@@ -97,16 +113,16 @@
     "receivablesAnalysis": "Analyse des créances",
     "corporatePark": "Parc Corporate",
     "unfinishedInvoices": "Factures non terminées",
-    "summary": {
-      "title": "Résumé du tableau de bord",
-      "totalRevenue": "Revenu total",
-      "totalCollection": "Encaissement total",
-      "totalReceivables": "Créances totales",
-      "totalSubscribers": "Abonnés totaux",
-      "anomaliesDetected": "Anomalies détectées",
-      "emptyFieldsReceivables": "Champs vides dans les créances",
-      "emptyFieldsPark": "Champs vides dans le parc"
-    }
+    "subscribers": "Abonnés",
+    "corporateParkDistribution": "Distribution du Parc Corporate",
+    "moreComingSoon": "Plus de fonctionnalités à venir bientôt",
+    "errorLoading": "Échec du chargement des données du tableau de bord",
+    "userAccounts": "Comptes utilisateurs",
+    "databaseSize": "Taille de la base de données",
+    "totalUploaded": "Total téléversé",
+    "filesUploaded": "Fichiers téléversés",
+    "issuesDetected": "Problèmes détectés",
+    "records": "Enregistrements"
   },
   "users": {
     "manageUsers": "Gérer les utilisateurs",
@@ -197,7 +213,10 @@
     "processingFiles": "Traitement des fichiers",
     "fileValidation": "Validation des fichiers",
     "filePreview": "Aperçu du fichier",
-    "fileDetails": "Détails du fichier"
+    "fileDetails": "Détails du fichier",
+    "invoiceNumber": "Numéro de facture",
+    "uploadedBy": "Téléversé par",
+    "noRecentUploads": "Aucun téléchargement récent"
   },
   "permissions": {
     "dotPermissions": "Autorisations DOT",
@@ -267,10 +286,7 @@
     "anomalyReport": "Rapport d'anomalies",
     "systemPerformanceReport": "Rapport de performance du système",
     "customReport": "Rapport personnalisé",
-    "errorLoadingData": "Erreur lors du chargement des données du rapport",
-    "exportDefault": "Exporter le rapport",
-    "exportSuccess": "Rapport exporté avec succès",
-    "exportError": "Échec de l'exportation du rapport"
+    "errorLoadingData": "Erreur lors du chargement des données du rapport"
   },
   "profile": {
     "profileSettings": "Paramètres du profil",
@@ -389,7 +405,9 @@
     "eventDeleted": "Événement supprimé avec succès"
   },
   "anomalyScan": {
+    "title": "Détection d'Anomalies",
     "scanData": "Analyser les données",
+    "analyticsTitle": "Tableau de bord d'Analyses",
     "scanResults": "Résultats de l'analyse",
     "scanHistory": "Historique des analyses",
     "startScan": "Démarrer l'analyse",
@@ -449,7 +467,34 @@
     "lastScanDate": "Dernière analyse: {{date}}",
     "scheduledScans": "Analyses programmées",
     "scheduleNewScan": "Programmer une nouvelle analyse",
-    "scanNow": "Analyser maintenant"
+    "scanNow": "Analyser maintenant",
+    "tabs": {
+      "overview": "Vue d'ensemble",
+      "dataModels": "Modèles de données"
+    },
+    "totalAnomalies": "Anomalies totales",
+    "openAnomalies": "Anomalies ouvertes",
+    "dataTypes": {
+      "journalVentes": "Journal des Ventes",
+      "journalVentesDescription": "Données du journal avec informations sur les revenus",
+      "etatFacture": "État de Facture",
+      "etatFactureDescription": "Informations de suivi de l'état des factures",
+      "parcCorporate": "Parc Corporate",
+      "parcCorporateDescription": "Données des abonnés du parc corporate",
+      "creancesNGBSS": "Créances NGBSS",
+      "creancesNGBSSDescription": "Informations sur les créances NGBSS",
+      "caPeriodique": "CA Périodique",
+      "caPeriodiqueDescription": "Données des revenus périodiques",
+      "caNonPeriodique": "CA Non Périodique",
+      "caNonPeriodiqueDescription": "Données des revenus non périodiques",
+      "caDNT": "CA DNT",
+      "caDNTDescription": "Données des revenus DNT",
+      "caRFD": "CA RFD",
+      "caRFDDescription": "Données des revenus RFD",
+      "caCNT": "CA CNT",
+      "caCNTDescription": "Données des revenus CNT"
+    },
+    "resolvedAnomalies": "Anomalies résolues"
   },
   "pivotTable": {
     "pivotTableTitle": "Tableau croisé dynamique",
@@ -559,6 +604,59 @@
     "french": "Français",
     "changeLanguage": "Changer de langue"
   },
+  "notifications": {
+    "noNotifications": "Aucune notification",
+    "markAllAsRead": "Marquer tout comme lu",
+    "viewAll": "Voir tout",
+    "downloadWhenComplete": "Le téléchargement sera disponible une fois terminé"
+  },
+  "revenueNonPeriodic": {
+    "title": "C.A Non Périodique",
+    "subtitle": "Analyser les données des revenus non périodiques selon différentes dimensions",
+    "filters": {
+      "product": "Produit",
+      "saleType": "Type de Vente",
+      "channel": "Canal",
+      "applyFilters": "Appliquer les Filtres",
+      "resetFilters": "Réinitialiser les Filtres"
+    },
+    "export": {
+      "exportExcel": "Exporter Excel",
+      "exportCSV": "Exporter CSV",
+      "exportPDF": "Exporter PDF",
+      "startingExport": "Démarrage de l'exportation, veuillez patienter...",
+      "exportSuccess": "La demande d'exportation a été traitée avec succès. Le téléchargement commencera lorsqu'il sera prêt.",
+      "exportFailed": "Échec de l'exportation : "
+    },
+    "tabs": {
+      "overview": "Vue d'ensemble",
+      "productPerformance": "Performance des Produits",
+      "channelPerformance": "Performance des Canaux",
+      "detailedEntityKPIs": "KPIs Détaillés par Entité"
+    },
+    "overview": {
+      "caHT": "C.A HT",
+      "tva": "TVA",
+      "caTTC": "C.A TTC",
+      "objective": "Objectif",
+      "distributionByProduct": "Répartition par Produit",
+      "distributionByChannel": "Répartition par Canal"
+    },
+    "tables": {
+      "product": "Produit",
+      "channel": "Canal",
+      "caHT": "C.A HT",
+      "tva": "TVA",
+      "caTTC": "C.A TTC",
+      "percentageOfCaHT": "Pourcentage/C.A HT",
+      "entity": "Entité",
+      "type": "Type",
+      "noProductData": "Aucune donnée produit disponible",
+      "noChannelData": "Aucune donnée canal disponible",
+      "noDetailedData": "Aucune donnée détaillée disponible"
+    },
+    "noData": "Aucune donnée disponible. Appliquez des filtres et réessayez."
+  },
   "dots": {
     "manageDOTs": "Gérer les DOTs",
     "manageDOTsSubtitle": "Ajouter, modifier et gérer les DOTs (Directions Opérationnelles Territoriales)",
@@ -589,26 +687,89 @@
     "errorDeactivating": "Échec de la désactivation du DOT",
     "codeRequired": "Le code est requis",
     "nameRequired": "Le nom est requis",
-    "errorLoading": "Échec du chargement des DOTs. Veuillez réessayer plus tard."
+    "errorLoading": "Échec du chargement des DOTs. Veuillez réessayer plus tard.",
+    "totalDOTs": "Total des DOTs",
+    "businessUnits": "Unités commerciales"
   },
-  "app": {
-    "title": "Algérie Télécom",
-    "subtitle": "Leader des télécommunications en Algérie",
-    "organization": "Division Corporate et Intégration de Solutions IT (DCISIT)",
-    "description": "Suivi de la performance commerciale via un tableau de bord commercial"
+  "dataCleanup": {
+    "title": "Outil de Nettoyage des Données",
+    "description": "Nettoyer et standardiser vos données",
+    "selectData": "Sélectionner la Source de Données",
+    "cleanupOptions": "Options de Nettoyage",
+    "startCleanup": "Démarrer le Nettoyage",
+    "stopCleanup": "Arrêter le Nettoyage",
+    "cleanupInProgress": "Nettoyage en Cours",
+    "cleanupComplete": "Nettoyage Terminé",
+    "cleanupFailed": "Échec du Nettoyage",
+    "options": {
+      "removeDuplicates": "Supprimer les Doublons",
+      "standardizeFormat": "Standardiser le Format",
+      "fixMissingValues": "Corriger les Valeurs Manquantes",
+      "normalizeData": "Normaliser les Données",
+      "validateData": "Valider les Données",
+      "trimWhitespace": "Supprimer les Espaces",
+      "convertCase": "Convertir la Casse",
+      "removeInvalid": "Supprimer les Entrées Invalides"
+    },
+    "status": {
+      "analyzing": "Analyse des Données",
+      "cleaning": "Nettoyage des Données",
+      "validating": "Validation des Résultats",
+      "completed": "Processus Terminé",
+      "failed": "Échec du Processus"
+    },
+    "results": {
+      "title": "Résultats du Nettoyage",
+      "rowsProcessed": "Lignes Traitées",
+      "duplicatesRemoved": "Doublons Supprimés",
+      "valuesFixed": "Valeurs Corrigées",
+      "invalidRemoved": "Entrées Invalides Supprimées",
+      "downloadReport": "Télécharger le Rapport",
+      "saveChanges": "Enregistrer les Modifications",
+      "discardChanges": "Annuler les Modifications"
+    },
+    "confirmation": {
+      "startTitle": "Démarrer le Processus de Nettoyage ?",
+      "startMessage": "Ce processus modifiera vos données. Assurez-vous d'avoir une sauvegarde.",
+      "stopTitle": "Arrêter le Processus de Nettoyage ?",
+      "stopMessage": "L'arrêt du processus peut laisser vos données dans un état incohérent.",
+      "confirm": "Confirmer",
+      "cancel": "Annuler"
+    },
+    "errors": {
+      "noDataSelected": "Aucune source de données sélectionnée",
+      "invalidFormat": "Format de données invalide",
+      "processFailed": "Échec du processus de nettoyage",
+      "saveFailed": "Échec de l'enregistrement des modifications"
+    }
   },
-  "login": {
-    "welcomeBack": "Bienvenue",
-    "enterCredentials": "Entrez vos identifiants pour accéder à votre compte",
-    "emailAddress": "Adresse e-mail",
-    "password": "Mot de passe",
-    "rememberMe": "Se souvenir de moi",
-    "forgotPassword": "Mot de passe oublié?",
-    "signIn": "Se connecter",
-    "emailRequired": "L'email est requis",
-    "emailInvalid": "L'email est invalide",
-    "passwordRequired": "Le mot de passe est requis",
-    "passwordLength": "Le mot de passe doit comporter au moins 6 caractères",
-    "invalidCredentials": "Identifiants invalides. Veuillez réessayer."
+  "corporatePark": {
+    "subtitle": "Surveiller et analyser la performance du parc corporate"
+  },
+  "revenue": {
+    "title": "Analyse des Revenus",
+    "subtitle": "Surveiller et analyser la performance des revenus"
+  },
+  "receivables": {
+    "title": "Analyse des Créances",
+    "subtitle": "Surveiller et analyser la performance des créances"
+  },
+  "collections": {
+    "title": "Analyse des Recouvrements",
+    "subtitle": "Surveiller et analyser la performance des recouvrements"
+  },
+  "kpi": {
+    "analysis": "Analyse KPI",
+    "revenueDCISIT": "Revenus DCISIT",
+    "revenueSiege": "Revenus Siège",
+    "revenueDOTCorporate": "Revenus DOT Corporate",
+    "revenuePeriodic": "Revenus Périodiques",
+    "revenueNonPeriodic": "Revenus Non-Périodiques",
+    "collectionsDOTCorporate": "Recouvrements DOT Corporate",
+    "receivablesDCISIT": "Créances DCISIT",
+    "receivablesSiege": "Créances Siège",
+    "receivablesDOTCorporate": "Créances DOT Corporate",
+    "receivablesPeriodic": "Créances Périodiques",
+    "receivablesNonPeriodic": "Créances Non-Périodiques"
   }
 }

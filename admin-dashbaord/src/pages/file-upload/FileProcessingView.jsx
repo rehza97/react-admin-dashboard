@@ -2392,6 +2392,44 @@ const FileProcessingView = () => {
               <DeleteIcon />
             </IconButton>
           </Tooltip>
+
+          <Tooltip title="Process File">
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<PlayArrowIcon />}
+              onClick={handleProcess}
+              disabled={isProcessing}
+              sx={{ mr: 1 }}
+            >
+              {isProcessing ? (
+                <>
+                  Processing...
+                  <CircularProgress size={24} sx={{ ml: 1, color: "white" }} />
+                </>
+              ) : (
+                "Process"
+              )}
+            </Button>
+          </Tooltip>
+          <Tooltip title="Save to Database">
+            <Button
+              variant="contained"
+              color="success"
+              startIcon={<SaveIcon />}
+              onClick={handleSave}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <>
+                  Saving...
+                  <CircularProgress size={24} sx={{ ml: 1, color: "white" }} />
+                </>
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </Tooltip>
         </Toolbar>
         <Tabs value={activeTab} onChange={handleTabChange} centered>
           <Tab

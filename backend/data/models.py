@@ -7,11 +7,14 @@ import re
 from datetime import datetime
 from django.db.models.signals import pre_save
 from django.dispatch import receiver
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DOT(models.Model):
     """Model for storing DOT (Direction Opérationnelle Territoriale) information"""
-    code = models.CharField(max_length=10, unique=True)
+    code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
@@ -430,6 +433,18 @@ class ParcCorporate(models.Model):
     invoice = models.ForeignKey(
         Invoice, on_delete=models.CASCADE, related_name='parc_corporate_data')
 
+    # DOT relationship fields
+    dot = models.ForeignKey(
+        DOT,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='parc_corporate_data',
+        verbose_name="DOT"
+    )
+    # Legacy field for backward compatibility
+    dot_code = models.CharField(max_length=50, blank=True, null=True)
+
     # Specific fields for Parc Corporate
     actel_code = models.CharField(
         max_length=100, blank=True, null=True)  # ACTEL_CODE
@@ -471,10 +486,94 @@ class ParcCorporate(models.Model):
             models.Index(fields=['offer_type']),
             models.Index(fields=['state']),
             models.Index(fields=['subscriber_status']),
+            models.Index(fields=['dot']),
+            models.Index(fields=['dot_code']),
+            models.Index(fields=['creation_date']),
         ]
 
     def __str__(self):
         return f"Parc Corporate {self.customer_full_name} - {self.telecom_type}"
+
+    @classmethod
+    def get_filtered_queryset(cls, queryset=None, exclude_siege=False, exclude_dots=None):
+        """
+        Get filtered queryset based on standard filtering rules and DOT exclusions
+
+        Args:
+            queryset: Initial queryset to filter (optional)
+            exclude_siege: Whether to exclude siege DOTs (optional)
+            exclude_dots: List of DOT codes to exclude (optional)
+
+        Returns:
+            Filtered queryset
+        """
+        logger.debug(
+            f"Starting get_filtered_queryset with params: exclude_siege={exclude_siege}, exclude_dots={exclude_dots}")
+
+        if queryset is None:
+            queryset = cls.objects.all()
+            logger.debug("Using default queryset (all records)")
+
+        initial_count = queryset.count()
+        logger.debug(f"Initial queryset count: {initial_count}")
+
+        # Apply standard filters
+        queryset = queryset.filter(
+            ~Q(customer_l3_code__in=['5', '57']),
+            ~Q(offer_name__icontains='Moohtarif'),
+            ~Q(offer_name__icontains='Solutions Hebergements'),
+            ~Q(subscriber_status='Predeactivated')
+        )
+        after_standard_filters_count = queryset.count()
+        logger.debug(
+            f"Count after standard filters: {after_standard_filters_count}")
+
+        # Exclude siege DOTs if requested
+        if exclude_siege:
+            logger.debug("Excluding siege DOTs")
+            siege_query = (
+                # Exact match for foreign key name
+                Q(dot__name__exact='Siege') |
+                Q(dot_code__exact='Siege')      # Exact match for legacy code
+            )
+            queryset = queryset.exclude(siege_query)
+            after_siege_exclusion_count = queryset.count()
+            logger.debug(
+                f"Count after siege exclusion: {after_siege_exclusion_count}")
+
+        # Exclude specific DOTs if provided
+        if exclude_dots:
+            if isinstance(exclude_dots, str):
+                exclude_dots = [exclude_dots]
+                logger.debug(
+                    f"Converted single DOT string to list: {exclude_dots}")
+
+            logger.debug(f"Processing DOT exclusions: {exclude_dots}")
+
+            # Create a Q object for the exclusions
+            exclude_q = Q()
+            for dot_code in exclude_dots:
+                logger.debug(f"Processing exclusion for DOT code: {dot_code}")
+                # Handle both foreign key and legacy code exclusions with exact matching
+                dot_exclusion = (
+                    # Exact match for foreign key name
+                    Q(dot__name__exact=dot_code) |
+                    # Exact match for legacy code
+                    Q(dot_code__exact=dot_code)
+                )
+                exclude_q |= dot_exclusion
+                logger.debug(f"Added exclusion query for DOT code: {dot_code}")
+
+            if exclude_q:
+                queryset = queryset.exclude(exclude_q)
+                after_dot_exclusion_count = queryset.count()
+                logger.debug(
+                    f"Count after DOT exclusions: {after_dot_exclusion_count}")
+
+        final_count = queryset.count()
+        logger.debug(f"Final queryset count: {final_count}")
+
+        return queryset
 
 
 class CreancesNGBSS(models.Model):
@@ -834,7 +933,8 @@ class CANonPeriodique(models.Model):
     channel = models.CharField(max_length=50, blank=True, null=True)  # CHANNEL
 
     # Constants for filtering
-    VALID_DOT = "Siège"
+    VALID_DOT = "Siege"
+    VALID_PRODUCT = "Specialized Line"
 
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
@@ -855,19 +955,20 @@ class CANonPeriodique(models.Model):
     @classmethod
     def get_filtered_queryset(cls, queryset=None):
         """
-        Apply standard filtering rules to the queryset
+        Apply standard filtering rules to the queryset:
+        - Keep records where DOT is "Siège" OR product is "Specialized Line"
         """
         if queryset is None:
             queryset = cls.objects.all()
 
         return queryset.filter(
-            Q(dot__name=cls.VALID_DOT) | Q(dot_code=cls.VALID_DOT)
+            Q(dot__name=cls.VALID_DOT) |
+            Q(dot_code=cls.VALID_DOT) |
+            Q(product__icontains=cls.VALID_PRODUCT)
         )
 
     def check_empty_fields(self):
-        """
-        Check for empty fields and return a list of empty field names
-        """
+        """Check for empty fields and return a list of empty field names"""
         empty_fields = []
         fields_to_check = [
             'dot', 'product', 'amount_pre_tax', 'tax_amount',
@@ -883,11 +984,17 @@ class CANonPeriodique(models.Model):
 
     def is_valid_record(self):
         """
-        Check if the record meets all filtering criteria
+        Check if the record meets filtering criteria:
+        - DOT is "Siège" OR
+        - Product contains "Specialized Line"
         """
-        if hasattr(self.dot, 'name'):
-            return self.dot.name == self.VALID_DOT
-        return self.dot_code == self.VALID_DOT
+        if hasattr(self.dot, 'name') and self.dot.name == self.VALID_DOT:
+            return True
+        if self.dot_code == self.VALID_DOT:
+            return True
+        if self.product and self.VALID_PRODUCT.lower() in self.product.lower():
+            return True
+        return False
 
     def get_anomalies(self):
         """
@@ -1227,6 +1334,14 @@ class Anomaly(models.Model):
         ('invalid_data', 'Invalid Data'),
         ('outlier', 'Outlier'),
         ('inconsistent_data', 'Inconsistent Data'),
+        ('empty_field', 'Empty Field'),
+        ('zero_value', 'Zero Value'),
+        ('invalid_dot', 'Invalid DOT'),
+        ('missing_record', 'Missing Record'),
+        ('temporal_pattern', 'Temporal Pattern'),
+        ('invalid_amount', 'Invalid Amount'),
+        ('amount_mismatch', 'Amount Mismatch'),
+        ('dot_mismatch', 'DOT Mismatch'),
         ('other', 'Other')
     ]
 
@@ -1537,7 +1652,5 @@ def sync_dot_fields(sender, instance, **kwargs):
             instance.dot = dot
         except DOT.DoesNotExist:
             # Just log the issue but don't block the save
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(
                 f"Could not find DOT with code '{instance.dot_code}' when saving {sender.__name__}")

@@ -6,6 +6,7 @@ import logging
 import traceback
 from datetime import datetime
 import chardet
+from .utils import clean_dot_value
 logger = logging.getLogger(__name__)
 
 # Load from JSON/YAML config file
@@ -17,8 +18,8 @@ FILE_TYPE_PATTERNS = {
     "ca_rfd": ["ca rfd", "ca_rfd"],
     "ca_cnt": ["ca cnt", "ca_cnt"],
     "parc_corporate": ["parc corporate", "parc_corporate"],
-    "creances_ngbss": ["creances ngbss", "creances_ngbss"],
-    "etat_facture": ["etat facture", "etat_facture", "factures ar et encaissements", "etat_de_facture_et_encaissement"],
+    "creances_ngbss": ["creances ngbss", "creances_ngbss", "créances ngbss", "créances_ngbss", "creances", "créances"],
+    "etat_facture": ["etat facture", "etat_facture", "factures ar et encaissements", "etat_de_facture_et_encaissement", "etat de facture et encaissement"],
     "journal_ventes": ["journal", "ventes", "chiffre d affaire"]
 }
 
@@ -85,7 +86,8 @@ class FileTypeDetector:
                         try:
                             df = pd.read_excel(
                                 file_path, nrows=5, skiprows=skip_rows)
-                            columns = [str(col).lower() for col in df.columns]
+                            columns = [str(col).lower().strip()
+                                       for col in df.columns]
 
                             # Check for Facturation Manuelle patterns
                             facturation_keywords = [
@@ -106,6 +108,14 @@ class FileTypeDetector:
                             # Check for Creances NGBSS patterns
                             if any("invoice_amt" in col for col in columns) and any("open_amt" in col for col in columns):
                                 return "creances_ngbss", 0.8, "process_creances_ngbss"
+
+                            # Additional check for Creances NGBSS with different column patterns
+                            creances_keywords = [
+                                "dot", "actel", "invoice_amt", "open_amt", "creance", "tax_amt"]
+                            creances_matches = sum(1 for kw in creances_keywords if any(
+                                kw in col for col in columns))
+                            if creances_matches >= 3:  # If at least 3 keywords match
+                                return "creances_ngbss", 0.7, "process_creances_ngbss"
 
                             # Check for Etat de facture patterns
                             if any("montant ht" in col for col in columns) and any("encaissement" in col for col in columns):
@@ -131,7 +141,8 @@ class FileTypeDetector:
                         df = pd.read_csv(
                             file_path, delimiter=delimiter, nrows=5, dtype=str)
                         if len(df.columns) > 1:  # If we got more than one column, it worked
-                            columns = [str(col).lower() for col in df.columns]
+                            columns = [str(col).lower().strip()
+                                       for col in df.columns]
 
                             # Check for CA DNT patterns
                             if any("trans_type" in col for col in columns) and any("dnt" in col for col in columns):
@@ -1198,6 +1209,8 @@ class FileProcessor:
     def process_parc_corporate(file_path):
         """Process Parc Corporate NGBSS CSV files"""
         try:
+            from .utils import clean_dot_value
+
             df = pd.read_csv(file_path, delimiter=';',
                              dtype=str)  # Specify dtype
 
@@ -1219,7 +1232,11 @@ class FileProcessor:
                 'SUBSCRIBER_STATUS': 'subscriber_status',
                 'CREATION_DATE': 'creation_date',
                 'STATE': 'state',
-                'CUSTOMER_FULL_NAME': 'customer_full_name'
+                'CUSTOMER_FULL_NAME': 'customer_full_name',
+                'DOT': 'dot_code',
+                'DOT_CODE': 'dot_code',
+                'DO': 'dot_code'
+
             }
 
             # Rename columns based on mapping
@@ -1229,6 +1246,9 @@ class FileProcessor:
             processed_data = []
 
             for _, row in df.iterrows():
+                # Clean the DOT value
+                dot_code = clean_dot_value(row.get('dot_code', ''))
+
                 item = {
                     'actel_code': row.get('actel_code', ''),
                     'customer_l1_code': row.get('customer_l1_code', ''),
@@ -1243,7 +1263,8 @@ class FileProcessor:
                     'subscriber_status': row.get('subscriber_status', ''),
                     'creation_date': row.get('creation_date', ''),
                     'state': row.get('state', ''),
-                    'customer_full_name': row.get('customer_full_name', '')
+                    'customer_full_name': row.get('customer_full_name', ''),
+                    'dot_code': dot_code
                 }
                 processed_data.append(item)
 
@@ -1258,10 +1279,32 @@ class FileProcessor:
         """Process Créances NGBSS CSV files"""
         try:
             # Read the CSV file with semicolon delimiter
-            df = pd.read_csv(file_path, delimiter=';', dtype=str)
+            df = pd.read_csv(file_path, delimiter=';',
+                             dtype=str, low_memory=False)
 
-            # Clean up column names - strip spaces
+            # Clean up column names - strip spaces and normalize case
             df.columns = [col.strip() for col in df.columns]
+
+            # Create a mapping of similar column names to standard names
+            column_mapping = {
+                'INVOICE_AMT': ['INVOICE_AMT', 'INVOICE AMT', 'MONTANT_FACTURE', 'MONTANT FACTURE'],
+                'OPEN_AMT': ['OPEN_AMT', 'OPEN AMT', 'MONTANT_OUVERT', 'MONTANT OUVERT'],
+                'TAX_AMT': ['TAX_AMT', 'TAX AMT', 'MONTANT_TAXE', 'MONTANT TAXE'],
+                'INVOICE_AMT_HT': ['INVOICE_AMT_HT', 'INVOICE AMT HT', 'MONTANT_FACTURE_HT', 'MONTANT FACTURE HT'],
+                'CREANCE_BRUT': ['CREANCE_BRUT', 'CREANCE BRUT', 'CREANCEBRUT'],
+                'CREANCE_NET': ['CREANCE_NET', 'CREANCE NET', 'CREANCENET']
+            }
+
+            # Standardize column names if possible
+            renamed_columns = {}
+            for standard_name, variations in column_mapping.items():
+                for col in df.columns:
+                    if col.upper() in [v.upper() for v in variations]:
+                        renamed_columns[col] = standard_name
+
+            # Apply renaming if any matches found
+            if renamed_columns:
+                df = df.rename(columns=renamed_columns)
 
             # List of expected numeric columns
             expected_numeric_cols = [
@@ -1270,10 +1313,9 @@ class FileProcessor:
                 'CREANCE_BRUT', 'CREANCE_NET', 'CREANCE_HT'
             ]
 
-            # Convert numeric columns
-            for col in df.columns:
-                # Check if this column is one of our numeric columns
-                if col in expected_numeric_cols:
+            # Convert numeric columns - only process columns that actually exist
+            for col in expected_numeric_cols:
+                if col in df.columns:
                     # Replace tab characters and spaces, then replace commas with dots
                     df[col] = df[col].astype(str).str.replace(
                         '\t', '').str.replace(' ', '').str.replace(',', '.')
@@ -1345,26 +1387,80 @@ class FileProcessor:
     def process_etat_facture(file_path):
         """Process Etat de facture et encaissement Excel files"""
         try:
-            # Skip the header rows
-            df = pd.read_excel(file_path, skiprows=11, engine='openpyxl')
+            logger.info(f"Processing Etat de facture file: {file_path}")
+
+            # Try several skiprows values to find the headers
+            df = None
+            used_skiprows = 11  # Default, but we'll try multiple options
+
+            # List of expected headers (partial matches)
+            expected_headers = ['organisation', 'n fact',
+                                'montant ht', 'montant ttc', 'encaissement']
+
+            # Try different skiprows values to find the proper header row
+            for skiprows in [0, 1, 2, 5, 8, 11, 15]:
+                try:
+                    temp_df = pd.read_excel(
+                        file_path, skiprows=skiprows, engine='openpyxl')
+
+                    # Convert column names to lowercase for comparison
+                    cols_lower = [str(col).lower().strip()
+                                  for col in temp_df.columns]
+
+                    # Check if we find at least 2 of our expected headers
+                    matches = sum(1 for header in expected_headers if any(
+                        header in col for col in cols_lower))
+                    logger.info(
+                        f"Found {matches} matching headers with skiprows={skiprows}")
+
+                    if matches >= 2:  # At least 2 header matches
+                        df = temp_df
+                        used_skiprows = skiprows
+                        logger.info(
+                            f"Using skiprows={skiprows} for Etat facture file")
+                        break
+                except Exception as e:
+                    logger.warning(f"Error with skiprows={skiprows}: {str(e)}")
+                    continue
+
+            # If we couldn't find a good header row, use the default
+            if df is None:
+                logger.warning(
+                    "Could not find good headers, using default skiprows=11")
+                df = pd.read_excel(file_path, skiprows=11, engine='openpyxl')
+
+            # Log the columns we found
+            logger.info(
+                f"Etat facture columns: {[str(col) for col in df.columns]}")
 
             # Clean up column names
             df.columns = [col.strip() for col in df.columns]
 
-            # Define the expected column names
+            # Define the expected column names - try both French and English variations
             expected_numeric_cols = [
-                'Montant Ht', 'Montant Taxe', 'Montant Ttc',
-                'Chiffre Aff Exe', 'Encaissement', 'Facture Avoir / Annulation'
+                # French variations
+                'Montant Ht', 'Montant HT', 'MONTANT HT', 'MONTANT_HT',
+                'Montant Taxe', 'Montant Ttc', 'Montant TTC', 'MONTANT TTC', 'MONTANT_TTC',
+                'Chiffre Aff Exe', 'Encaissement', 'ENCAISSEMENT',
+                'Facture Avoir / Annulation',
+
+                # English variations
+                'Amount Pre Tax', 'Pre-Tax Amount', 'Pre Tax Amount',
+                'Tax Amount', 'Total Amount', 'Revenue Amount',
+                'Collection Amount', 'Invoice Credit Amount'
             ]
 
             # Map to actual column names (with or without spaces)
             numeric_cols = []
             for col in df.columns:
-                col_stripped = col.strip()
-                for expected_col in expected_numeric_cols:
-                    if expected_col in col_stripped:
-                        numeric_cols.append(col)
-                        break
+                col_str = str(col).lower().strip()
+                if any(expected.lower() in col_str for expected in expected_numeric_cols):
+                    numeric_cols.append(col)
+                    logger.info(f"Found numeric column: {col}")
+                elif any(keyword in col_str for keyword in ['montant', 'amount', 'tax', 'encaissement', 'collection']):
+                    numeric_cols.append(col)
+                    logger.info(
+                        f"Found potential numeric column by keyword: {col}")
 
             # Convert numeric columns
             for col in numeric_cols:
@@ -1380,37 +1476,101 @@ class FileProcessor:
                         # If conversion fails, set to NaN
                         df[col] = pd.NA
 
-            # Create a mapping from French to English column names
+            # Create a comprehensive mapping from various column names to standardized names
             column_mapping = {
-                'Organisation': 'organization',
-                'Source': 'source',
-                'N Fact': 'invoice_number',
-                'Typ Fact': 'invoice_type',
-                'Date Fact': 'invoice_date',
-                'Client': 'client',
-                'Obj Fact': 'invoice_object',
-                'Periode': 'period',
-                'Termine Flag': 'terminated_flag',
-                'Montant Ht': 'amount_pre_tax',
-                'Montant Taxe': 'tax_amount',
-                'Montant Ttc': 'total_amount',
-                'Chiffre Aff Exe': 'revenue_amount',
-                'Encaissement': 'collection_amount',
-                'Date Rglt': 'payment_date',
-                'Facture Avoir / Annulation': 'invoice_credit_amount'
+                # Organization variations
+                'Organisation': 'organization', 'ORGANISATION': 'organization',
+                'Organization': 'organization', 'ORG': 'organization',
+
+                # Source variations
+                'Source': 'source', 'SOURCE': 'source',
+
+                # Invoice number variations
+                'N Fact': 'invoice_number', 'N_FACT': 'invoice_number',
+                'N° Fact': 'invoice_number', 'Numéro Facture': 'invoice_number',
+                'Invoice Number': 'invoice_number', 'INVOICE_NUMBER': 'invoice_number',
+
+                # Invoice type variations
+                'Typ Fact': 'invoice_type', 'Type Facture': 'invoice_type',
+                'Invoice Type': 'invoice_type',
+
+                # Date variations
+                'Date Fact': 'invoice_date', 'Date Facture': 'invoice_date',
+                'Invoice Date': 'invoice_date',
+
+                # Client variations
+                'Client': 'client', 'CLIENT': 'client', 'Customer': 'client',
+
+                # Object variations
+                'Obj Fact': 'invoice_object', 'Objet Facture': 'invoice_object',
+                'Invoice Object': 'invoice_object',
+
+                # Period variations
+                'Periode': 'period', 'Période': 'period', 'PERIODE': 'period',
+                'Period': 'period',
+
+                # Flag variations
+                'Termine Flag': 'terminated_flag', 'TERMINE_FLAG': 'terminated_flag',
+
+                # Amount pre-tax variations
+                'Montant Ht': 'amount_pre_tax', 'MONTANT_HT': 'amount_pre_tax',
+                'Amount Pre Tax': 'amount_pre_tax', 'Pre-Tax Amount': 'amount_pre_tax',
+
+                # Tax amount variations
+                'Montant Taxe': 'tax_amount', 'MONTANT_TAXE': 'tax_amount',
+                'Tax Amount': 'tax_amount',
+
+                # Total amount variations
+                'Montant Ttc': 'total_amount', 'MONTANT_TTC': 'total_amount',
+                'Total Amount': 'total_amount',
+
+                # Revenue amount variations
+                'Chiffre Aff Exe': 'revenue_amount', 'CHIFFRE_AFF_EXE': 'revenue_amount',
+                'Revenue Amount': 'revenue_amount',
+
+                # Collection amount variations
+                'Encaissement': 'collection_amount', 'ENCAISSEMENT': 'collection_amount',
+                'Collection Amount': 'collection_amount',
+
+                # Payment date variations
+                'Date Rglt': 'payment_date', 'DATE_RGLT': 'payment_date',
+                'Payment Date': 'payment_date',
+
+                # Credit amount variations
+                'Facture Avoir / Annulation': 'invoice_credit_amount',
+                'Invoice Credit Amount': 'invoice_credit_amount'
             }
 
             # Rename columns based on mapping
             renamed_columns = {}
             for col in df.columns:
-                col_stripped = col.strip()
-                for fr_col, en_col in column_mapping.items():
-                    if fr_col in col_stripped:
-                        renamed_columns[col] = en_col
+                col_str = str(col).strip()
+
+                # Direct match
+                if col_str in column_mapping:
+                    renamed_columns[col] = column_mapping[col_str]
+                    continue
+
+                # Case-insensitive match
+                col_lower = col_str.lower()
+                for orig_col, mapped_col in column_mapping.items():
+                    if orig_col.lower() == col_lower:
+                        renamed_columns[col] = mapped_col
                         break
 
+                # Partial match (if direct and case-insensitive fail)
+                if col not in renamed_columns:
+                    for orig_col, mapped_col in column_mapping.items():
+                        if orig_col.lower() in col_lower:
+                            renamed_columns[col] = mapped_col
+                            break
+
             # Apply the renaming
+            logger.info(f"Renaming columns: {renamed_columns}")
             df = df.rename(columns=renamed_columns)
+
+            # Log the renamed columns
+            logger.info(f"Columns after renaming: {df.columns.tolist()}")
 
             # Calculate totals by organization
             org_summary = None
@@ -1698,17 +1858,21 @@ class FileProcessor:
 
         valid_items = []
         for item in processed_data:
-            is_valid = all(field in item and item[field]
-                           for field in required_fields)
+            # Check if all required fields exist in the item, even if some have empty values
+            is_valid = all(field in item for field in required_fields)
             if is_valid:
                 valid_items.append(item)
             else:
-                logger.warning(f"Missing fields in item: {item}")
+                missing_fields = [
+                    field for field in required_fields if field not in item]
+                logger.warning(
+                    f"Missing required fields in item: {missing_fields}. Item: {item}")
 
-                if not valid_items:
-                    return False, f"No items with all required fields: {required_fields}"
-
-        return True, valid_items
+        # If we have at least one valid item, consider the validation successful
+        if valid_items:
+            return True, valid_items
+        else:
+            return False, f"No items with all required fields: {required_fields}"
 
     @staticmethod
     def _find_data_sheet(xls, keywords):

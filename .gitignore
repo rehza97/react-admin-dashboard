@@ -51,14 +51,31 @@ backend/media/invoices/CA_RFD.csv
 backend/media/invoices/CA_periodique.csv
 backend/media/invoices/Parc_Corporate_NGBSS.csv
 backend/db copy.sqlite3
-  # Add these lines to your .gitignore
-   backend/db - Copy.sqlite3
-   backend/new_db.sqlite3
-   *.sqlite3
-backend/db - Copy.sqlite3
-backend/new_db.sqlite3
-fix_views.bat
-update_script.py
-update_anomaly_stats.py
-fix_views2.py
-fix_views.py
+media/
+youcef dashboard.rar
+*.xlsx
+*.xls
+*.csv
+*.json
+*.txt
+*.pdf
+*.docx
+*.doc
+*.pptx
+*.ppt
+*.odt
+*.ods
+*.odp
+*.sqlite3
+export/
+backend/truncate_dot_codes.sql
+migrations/
+__pycache__/
+.gitignore
+backend/auth/__pycache__/__init__.cpython-312.pyc
+backend/auth/__pycache__/settings.cpython-312.pyc
+backend/auth/__pycache__/wsgi.cpython-312.pyc
+backend/auth/__pycache__/urls.cpython-312.pyc
+*.pyc
+admin-dashbaord.rar
+backend.rar

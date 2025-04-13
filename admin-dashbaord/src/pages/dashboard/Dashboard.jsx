@@ -23,13 +23,28 @@ import Row1 from "./Row1";
 import Row2 from "./Row2";
 import { useTranslation } from "react-i18next";
 import kpiService from "../../services/kpiService";
+import { useAuth } from "../../context/AuthContext";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  Legend,
+  LabelList,
+} from "recharts";
 
 const Dashboard = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [summaryData, setSummaryData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [customerL2Data, setCustomerL2Data] = useState([]);
+  const [loadingCustomerData, setLoadingCustomerData] = useState(true);
+
+  const isAdmin = currentUser?.role === "admin";
 
   useEffect(() => {
     let isMounted = true;
@@ -48,7 +63,7 @@ const Dashboard = () => {
       } catch (error) {
         if (error.name !== "AbortError" && isMounted) {
           console.error("Error fetching dashboard summary:", error);
-          setError(error.message || "Failed to load dashboard data");
+          setError(error.message || t("common.error"));
         }
       } finally {
         if (isMounted) {
@@ -63,8 +78,62 @@ const Dashboard = () => {
       isMounted = false;
       controller.abort();
     };
+  }, [t]);
+
+  // Add new effect to fetch customer L2 distribution data
+  useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+
+    const fetchCustomerL2Data = async () => {
+      try {
+        setLoadingCustomerData(true);
+        const response = await kpiService.getCorporateParkKPIs({
+          signal: controller.signal,
+        });
+
+        if (isMounted && response && response.subscribers_by_customer) {
+          // Group by customer_l2_code and sum counts
+          const groupedData = {};
+          response.subscribers_by_customer.forEach((item) => {
+            if (!item.customer_l2_code) return;
+
+            if (!groupedData[item.customer_l2_code]) {
+              groupedData[item.customer_l2_code] = {
+                name: item.customer_l2_code,
+                value: 0,
+              };
+            }
+            groupedData[item.customer_l2_code].value += item.count;
+          });
+
+          // Convert to array and sort by count (descending)
+          const chartData = Object.values(groupedData)
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 8); // Take top 8 for better visualization
+
+          setCustomerL2Data(chartData);
+        }
+      } catch (error) {
+        if (error.name !== "AbortError" && isMounted) {
+          console.error("Error fetching customer L2 data:", error);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingCustomerData(false);
+        }
+      }
+    };
+
+    fetchCustomerL2Data();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
   }, []);
 
+  // Define KPI cards with role-based access
   const kpiCards = [
     {
       title: t("dashboard.revenueAnalysis"),
@@ -74,6 +143,7 @@ const Dashboard = () => {
       value: summaryData?.total_revenue || 0,
       change: summaryData?.revenue_change || 0,
       format: "currency",
+      allowedRoles: ["admin"],
     },
     {
       title: t("dashboard.collectionsAnalysis"),
@@ -83,6 +153,7 @@ const Dashboard = () => {
       value: summaryData?.total_collection || 0,
       change: summaryData?.collection_rate || 0,
       format: "currency",
+      allowedRoles: ["admin"],
     },
     {
       title: t("dashboard.receivablesAnalysis"),
@@ -92,6 +163,7 @@ const Dashboard = () => {
       value: summaryData?.total_receivables || 0,
       change: summaryData?.receivables_change || 0,
       format: "currency",
+      allowedRoles: ["admin"],
     },
     {
       title: t("dashboard.corporatePark"),
@@ -101,6 +173,7 @@ const Dashboard = () => {
       value: summaryData?.total_subscribers || 0,
       change: summaryData?.subscribers_change || 0,
       format: "number",
+      allowedRoles: ["admin", "viewer"],
     },
     {
       title: t("dashboard.unfinishedInvoices"),
@@ -110,22 +183,42 @@ const Dashboard = () => {
       value: summaryData?.unfinished_invoices?.total || 0,
       change: summaryData?.unfinished_invoices?.change || 0,
       format: "number",
+      allowedRoles: ["admin"],
     },
   ];
 
+  // Filter KPI cards based on user role
+  const filteredKpiCards = kpiCards.filter(card =>
+    card.allowedRoles.includes(currentUser?.role)
+  );
+
   const formatValue = (value, format) => {
-    if (value === undefined || value === null) return "N/A";
+    if (value === undefined || value === null) return t("common.noData");
 
     if (format === "currency") {
-      return new Intl.NumberFormat("fr-DZ", {
+      return new Intl.NumberFormat("fr-FR", {
         style: "currency",
         currency: "DZD",
         maximumFractionDigits: 0,
       }).format(value);
     }
 
-    return new Intl.NumberFormat("fr-DZ").format(value);
+    return new Intl.NumberFormat("fr-FR").format(value);
   };
+
+  // Colors for the pie chart
+  const COLORS = [
+    "#0088FE",
+    "#00C49F",
+    "#FFBB28",
+    "#FF8042",
+    "#8884d8",
+    "#82ca9d",
+    "#ffc658",
+    "#8dd1e1",
+    "#a4de6c",
+    "#d0ed57",
+  ];
 
   return (
     <Box sx={{ flexGrow: 1, p: 3 }}>
@@ -148,7 +241,7 @@ const Dashboard = () => {
       {/* KPI Navigation Cards */}
       {!loading && !error && (
         <Grid container spacing={3} sx={{ mb: 4 }}>
-          {kpiCards.map((card, index) => (
+          {filteredKpiCards.map((card, index) => (
             <Grid item xs={12} sm={6} md={4} key={index}>
               <Card
                 sx={{
@@ -174,11 +267,13 @@ const Dashboard = () => {
                     >
                       <Box
                         sx={{
-                          p: 1,
-                          borderRadius: 1,
+                          borderRadius: "50%",
                           bgcolor: card.color,
-                          color: "white",
+                          p: 1,
                           mr: 2,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
                         }}
                       >
                         {card.icon}
@@ -187,18 +282,19 @@ const Dashboard = () => {
                         {card.title}
                       </Typography>
                     </Box>
-                    <Typography variant="h4" color="text.primary" gutterBottom>
+                    <Typography variant="h4" gutterBottom>
                       {formatValue(card.value, card.format)}
                     </Typography>
-                    {card.change !== undefined && (
-                      <Typography
-                        variant="body2"
-                        color={card.change >= 0 ? "success.main" : "error.main"}
-                      >
-                        {card.change >= 0 ? "+" : ""}
-                        {card.change.toFixed(2)}%
-                      </Typography>
-                    )}
+                    <Typography
+                      variant="body2"
+                      color={card.change >= 0 ? "success.main" : "error.main"}
+                    >
+                      {card.change >= 0 ? "+" : ""}
+                      {card.change.toFixed(2)}%{" "}
+                      {card.change >= 0
+                        ? t("common.increase")
+                        : t("common.decrease")}
+                    </Typography>
                   </CardContent>
                 </CardActionArea>
               </Card>
@@ -207,9 +303,117 @@ const Dashboard = () => {
         </Grid>
       )}
 
-      {/* Overview Rows */}
-      <Row1 />
-      <Row2 />
+      <Grid container spacing={3}>
+        {/* Only show Row1 and Row2 for admin users */}
+        {isAdmin && (
+          <>
+            <Grid item xs={12}>
+              <Row1 />
+            </Grid>
+
+            <Grid item xs={12}>
+              <Row2 />
+            </Grid>
+          </>
+        )}
+
+        {/* Customer L2 Distribution Pie Chart - visible to both admin and viewer */}
+        <Grid item xs={12} md={6}>
+          <Paper
+            sx={{
+              p: 3,
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <Typography variant="h6" gutterBottom>
+              {t("dashboard.corporateParkDistribution")}
+            </Typography>
+            {loadingCustomerData ? (
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  flexGrow: 1,
+                }}
+              >
+                <CircularProgress />
+              </Box>
+            ) : customerL2Data.length > 0 ? (
+              <Box sx={{ height: 300, mt: 2 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={customerL2Data}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                      label={({ name, percent }) =>
+                        `${name}: ${(percent * 100).toFixed(0)}%`
+                      }
+                    >
+                      {customerL2Data.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={COLORS[index % COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value) => [
+                        new Intl.NumberFormat("fr-FR").format(value),
+                        t("dashboard.subscribers"),
+                      ]}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </Box>
+            ) : (
+              <Typography variant="body2" sx={{ mt: 2 }}>
+                {t("common.noData")}
+              </Typography>
+            )}
+          </Paper>
+        </Grid>
+
+        {/* Only show the KPI dashboard section for admin users */}
+        {isAdmin && (
+          <Grid item xs={12} md={6}>
+            <Paper
+              sx={{
+                p: 3,
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <Typography variant="h6" gutterBottom>
+                {t("dashboard.kpiDashboard")}
+              </Typography>
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  flexGrow: 1,
+                }}
+              >
+                <Assessment sx={{ fontSize: 60, color: "primary.main", mb: 2 }} />
+                <Typography variant="body1" textAlign="center">
+                  {t("dashboard.moreComingSoon")}
+                </Typography>
+              </Box>
+            </Paper>
+          </Grid>
+        )}
+      </Grid>
     </Box>
   );
 };

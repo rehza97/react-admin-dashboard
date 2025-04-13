@@ -3,19 +3,22 @@ import { Box, Paper, Button } from "@mui/material";
 import NGBSSCollectionKPI from "../../components/kpi/NGBSSCollectionKPI";
 import PageLayout from "../../components/PageLayout";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
+import { useTranslation } from "react-i18next";
 
 const CollectionPage = () => {
+  const { t } = useTranslation();
+
   return (
     <PageLayout
-      title="Collections Analysis"
-      subtitle="Monitor and analyze collection performance"
+      title={t("collections.title")}
+      subtitle={t("collections.subtitle")}
       headerAction={
         <Button
           variant="outlined"
           startIcon={<FileDownloadIcon />}
           size="medium"
         >
-          Export
+          {t("common.export")}
         </Button>
       }
     >

@@ -184,23 +184,350 @@ const kpiService = {
     }
   },
 
-  // Corporate Park KPIs
-  getCorporateParkKPIs: async (filters = {}) => {
+  // DCISIT Revenue KPIs
+  getDCISITRevenueKPIs: async (filters = {}) => {
     try {
       // Build query parameters
       const queryParams = new URLSearchParams();
 
-      // Add parameters that match what the component sends
-      if (filters.state && filters.state !== "") {
-        queryParams.append("state", filters.state);
+      // Only add parameters that have values
+      if (filters.year && filters.year !== "") {
+        queryParams.append("year", filters.year);
       }
-      if (filters.telecom_type && filters.telecom_type !== "") {
-        queryParams.append("telecom_type", filters.telecom_type);
+      if (filters.month && filters.month !== "") {
+        queryParams.append("month", filters.month);
       }
-      if (filters.offer_name && filters.offer_name !== "") {
-        queryParams.append("offer_name", filters.offer_name);
+      if (filters.department && filters.department !== "") {
+        queryParams.append("department", filters.department);
       }
-      // For backward compatibility, still support year/month/dot
+      if (filters.product && filters.product !== "") {
+        queryParams.append("product", filters.product);
+      }
+
+      console.log("[DEBUG] Fetching DCISIT Revenue with params:", filters);
+      const apiUrl = `/data/kpi/revenue/dcisit/?${queryParams.toString()}`;
+      console.log("[DEBUG] API URL:", apiUrl);
+
+      const response = await api.get(apiUrl);
+      console.log("[DEBUG] DCISIT Revenue Response:", response.data);
+
+      return response.data;
+    } catch (error) {
+      console.error("[DEBUG] Error in getDCISITRevenueKPIs:", error);
+
+      // In development mode with connection issues, provide mock data
+      if (
+        isDevelopment() &&
+        (!error.response || error.response.status >= 500)
+      ) {
+        console.warn("Using mock data for DCISIT revenue");
+        // Generate simple mock data structure
+        return {
+          summary: {
+            total_revenue: 7580000,
+            total_collection: 5680000,
+            collection_rate: 74.9,
+            journal_count: 120,
+            etat_count: 85,
+          },
+          departments: [
+            { name: "Direction Commercial IT", count: 45, total: 3250000 },
+            { name: "Direction Technical Support", count: 35, total: 2150000 },
+            { name: "Direction Infrastructure", count: 25, total: 1500000 },
+            { name: "Direction Development", count: 15, total: 680000 },
+          ],
+          products: [
+            { name: "LTE", count: 40, total: 3000000 },
+            { name: "Specialized Line", count: 35, total: 2600000 },
+            { name: "VOIP", count: 25, total: 1200000 },
+            { name: "FTTx", count: 20, total: 780000 },
+          ],
+          monthly_trends: Array.from({ length: 12 }, (_, i) => ({
+            month: i + 1,
+            revenue: Math.floor(Math.random() * 1000000) + 500000,
+            collection: Math.floor(Math.random() * 800000) + 400000,
+          })),
+          anomalies: {
+            empty_invoice_number: 3,
+            empty_client: 5,
+            empty_revenue: 7,
+            duplicates: 2,
+          },
+          applied_filters: filters,
+        };
+      }
+
+      return handleKpiApiError(error, "DCISIT revenue");
+    }
+  },
+
+  // Siège Revenue KPIs
+  getSiegeRevenueKPIs: async (filters = {}) => {
+    try {
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+
+      // Only add parameters that have values
+      if (filters.year && filters.year !== "") {
+        queryParams.append("year", filters.year);
+      }
+      if (filters.month && filters.month !== "") {
+        queryParams.append("month", filters.month);
+      }
+      if (filters.department && filters.department !== "") {
+        queryParams.append("department", filters.department);
+      }
+      if (filters.product && filters.product !== "") {
+        queryParams.append("product", filters.product);
+      }
+
+      console.log("[DEBUG] Fetching Siège Revenue with params:", filters);
+      const apiUrl = `/data/kpi/revenue/siege/?${queryParams.toString()}`;
+      console.log("[DEBUG] API URL:", apiUrl);
+
+      const response = await api.get(apiUrl);
+      console.log("[DEBUG] Siège Revenue Response:", response.data);
+
+      return response.data;
+    } catch (error) {
+      console.error("[DEBUG] Error in getSiegeRevenueKPIs:", error);
+
+      // In development mode with connection issues, provide mock data
+      if (
+        isDevelopment() &&
+        (!error.response || error.response.status >= 500)
+      ) {
+        console.warn("Using mock data for Siège revenue");
+        // Generate simple mock data structure
+        return {
+          summary: {
+            total_revenue: 12450000,
+            total_collection: 9850000,
+            collection_rate: 79.1,
+            journal_count: 185,
+            etat_count: 140,
+          },
+          departments: [
+            {
+              name: "Direction Commerciale Corporate",
+              count: 60,
+              total: 4800000,
+            },
+            { name: "Direction Grands Comptes", count: 45, total: 3600000 },
+            { name: "Direction Marketing", count: 35, total: 2100000 },
+            { name: "Direction Stratégie", count: 25, total: 1200000 },
+            { name: "Direction Financière", count: 20, total: 750000 },
+          ],
+          products: [
+            { name: "Specialized Line", count: 55, total: 5500000 },
+            { name: "LTE", count: 45, total: 3800000 },
+            { name: "VOIP Corporate", count: 35, total: 1800000 },
+            { name: "FTTx Corporate", count: 30, total: 1350000 },
+          ],
+          monthly_trends: Array.from({ length: 12 }, (_, i) => ({
+            month: i + 1,
+            revenue: Math.floor(Math.random() * 1200000) + 900000,
+            collection: Math.floor(Math.random() * 1000000) + 700000,
+          })),
+          anomalies: {
+            empty_invoice_number: 4,
+            empty_client: 7,
+            empty_revenue: 5,
+            duplicates: 3,
+          },
+          applied_filters: filters,
+        };
+      }
+
+      return handleKpiApiError(error, "Siège revenue");
+    }
+  },
+
+  // DOT Corporate Revenue KPIs
+  getDOTCorporateRevenueKPIs: async (filters = {}) => {
+    try {
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+
+      // Only add parameters that have values
+      if (filters.year && filters.year !== "") {
+        queryParams.append("year", filters.year);
+      }
+      if (filters.month && filters.month !== "") {
+        queryParams.append("month", filters.month);
+      }
+      if (filters.department && filters.department !== "") {
+        queryParams.append("department", filters.department);
+      }
+      if (filters.product && filters.product !== "") {
+        queryParams.append("product", filters.product);
+      }
+
+      console.log(
+        "[DEBUG] Fetching DOT Corporate Revenue with params:",
+        filters
+      );
+      const apiUrl = `/data/kpi/revenue/dot-corporate/?${queryParams.toString()}`;
+      console.log("[DEBUG] API URL:", apiUrl);
+
+      const response = await api.get(apiUrl);
+      console.log("[DEBUG] DOT Corporate Revenue Response:", response.data);
+
+      return response.data;
+    } catch (error) {
+      console.error("[DEBUG] Error in getDOTCorporateRevenueKPIs:", error);
+
+      // In development mode with connection issues, provide mock data
+      if (
+        isDevelopment() &&
+        (!error.response || error.response.status >= 500)
+      ) {
+        console.warn("Using mock data for DOT Corporate revenue");
+        // Generate simple mock data structure
+        return {
+          summary: {
+            total_revenue: 9320000,
+            total_collection: 7250000,
+            collection_rate: 77.8,
+            journal_count: 180,
+            etat_count: 135,
+          },
+          departments: [
+            { name: "DOT Service Corporate", count: 65, total: 4250000 },
+            { name: "DOT Direction Technique", count: 55, total: 3150000 },
+            { name: "DOT Commercial", count: 60, total: 1920000 },
+          ],
+          products: [
+            { name: "VOIP DOT", count: 50, total: 3500000 },
+            { name: "FTTx DOT", count: 45, total: 2600000 },
+            { name: "L2VPN", count: 40, total: 1800000 },
+            { name: "Internet Corporate", count: 45, total: 1420000 },
+          ],
+          monthly_trends: Array.from({ length: 12 }, (_, i) => ({
+            month: i + 1,
+            revenue: Math.floor(Math.random() * 1200000) + 700000,
+            collection: Math.floor(Math.random() * 1000000) + 600000,
+          })),
+          anomalies: {
+            empty_invoice_number: 15,
+            empty_client: 12,
+            empty_revenue: 8,
+            duplicates: 5,
+          },
+          applied_filters: {
+            year: filters.year || "",
+            month: filters.month || "",
+            department: filters.department || "",
+            product: filters.product || "",
+          },
+        };
+      }
+
+      throw error;
+    }
+  },
+
+  // DOT Corporate Collection KPIs
+  getDOTCorporateCollectionKPIs: async (filters = {}) => {
+    try {
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+
+      // Only add parameters that have values
+      if (filters.year && filters.year !== "") {
+        queryParams.append("year", filters.year);
+      }
+      if (filters.month && filters.month !== "") {
+        queryParams.append("month", filters.month);
+      }
+      if (filters.department && filters.department !== "") {
+        queryParams.append("department", filters.department);
+      }
+      if (filters.product && filters.product !== "") {
+        queryParams.append("product", filters.product);
+      }
+
+      console.log(
+        "[DEBUG] Fetching DOT Corporate Collection with params:",
+        filters
+      );
+      const apiUrl = `/data/kpi/collections/dot-corporate/?${queryParams.toString()}`;
+      console.log("[DEBUG] API URL:", apiUrl);
+
+      const response = await api.get(apiUrl);
+      console.log("[DEBUG] DOT Corporate Collection Response:", response.data);
+
+      return response.data;
+    } catch (error) {
+      console.error("[DEBUG] Error in getDOTCorporateCollectionKPIs:", error);
+
+      // In development mode with connection issues, provide mock data
+      if (
+        isDevelopment() &&
+        (!error.response || error.response.status >= 500)
+      ) {
+        console.warn("Using mock data for DOT Corporate collection");
+        // Generate simple mock data structure
+        return {
+          summary: {
+            total_collection: 8250000,
+            total_invoiced: 10320000,
+            collection_rate: 79.9,
+            etat_count: 165,
+            journal_count: 195,
+          },
+          departments: [
+            { name: "DOT Service Corporate", count: 70, total: 3850000 },
+            { name: "DOT Direction Technique", count: 60, total: 2950000 },
+            { name: "DOT Commercial", count: 55, total: 1450000 },
+          ],
+          products: [
+            { name: "VOIP DOT", count: 55, total: 3200000 },
+            { name: "FTTx DOT", count: 50, total: 2400000 },
+            { name: "L2VPN", count: 45, total: 1500000 },
+            { name: "Internet Corporate", count: 40, total: 1150000 },
+          ],
+          monthly_trends: Array.from({ length: 12 }, (_, i) => ({
+            month: i + 1,
+            collection: Math.floor(Math.random() * 800000) + 600000,
+            invoiced: Math.floor(Math.random() * 1000000) + 700000,
+          })),
+          aging: [
+            { period: "Current", amount: 2100000 },
+            { period: "1-30 days", amount: 1450000 },
+            { period: "31-60 days", amount: 920000 },
+            { period: "61-90 days", amount: 670000 },
+            { period: "91-180 days", amount: 530000 },
+            { period: "181-365 days", amount: 340000 },
+            { period: "> 365 days", amount: 260000 },
+          ],
+          anomalies: {
+            empty_invoice_number: 12,
+            empty_client: 9,
+            zero_amounts: 6,
+            duplicates: 4,
+          },
+          applied_filters: {
+            year: filters.year || "",
+            month: filters.month || "",
+            department: filters.department || "",
+            product: filters.product || "",
+          },
+        };
+      }
+
+      throw error;
+    }
+  },
+
+  // Corporate Park KPIs
+  getCorporateParkKPIs: async (filters = {}) => {
+    try {
+      console.log("[DEBUG] Initial filters received:", filters);
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+
+      // Handle basic parameters
       if (filters.year) {
         queryParams.append("year", filters.year);
       }
@@ -210,17 +537,62 @@ const kpiService = {
       if (filters.dot && filters.dot !== "") {
         queryParams.append("dot", filters.dot);
       }
+      if (filters.exclude_dot && filters.exclude_dot.length > 0) {
+        queryParams.append("exclude_dot", filters.exclude_dot.join(","));
+      }
+      if (filters.include_creation_date) {
+        queryParams.append(
+          "include_creation_date",
+          filters.include_creation_date
+        );
+      }
 
-      console.log("Fetching corporate park data with filters:", filters);
-      console.log("Query parameters:", queryParams.toString());
+      // Debug Actel code handling
+      console.log("[DEBUG] Checking actelCode:", {
+        hasActelCode: "actelCode" in filters,
+        actelCodeValue: filters.actelCode,
+        isArray: Array.isArray(filters.actelCode),
+        length: filters.actelCode ? filters.actelCode.length : 0,
+      });
+
+      // Handle Actel codes - process both actelCode and actel_code
+      const actelCodes = filters.actelCode || filters.actel_code;
+      if (actelCodes && Array.isArray(actelCodes)) {
+        console.log("[DEBUG] Processing Actel codes:", actelCodes);
+        actelCodes.forEach((code) => {
+          queryParams.append("actel_code", code);
+        });
+      }
+
+      // Handle array parameters
+      const arrayParams = {
+        telecom_type: "telecom_type",
+        offer_name: "offer_name",
+        customer_l2: "customer_l2",
+        customer_l3: "customer_l3",
+        subscriber_status: "subscriber_status",
+      };
+
+      Object.entries(arrayParams).forEach(([filterKey, paramKey]) => {
+        if (filters[filterKey] && Array.isArray(filters[filterKey])) {
+          filters[filterKey].forEach((value) => {
+            if (value) queryParams.append(paramKey, value);
+          });
+        }
+      });
+
+      // Debug final query parameters
+      console.log("[DEBUG] Final query parameters:", {
+        rawString: queryParams.toString(),
+        paramsList: Array.from(queryParams.entries()),
+      });
 
       const response = await api.get(
         `/data/kpi/corporate-park/?${queryParams.toString()}`
       );
-
-      console.log("Corporate park data response:", response.data);
       return response.data;
     } catch (error) {
+      console.error("[DEBUG] Error in getCorporateParkKPIs:", error);
       return handleKpiApiError(error, "corporate park");
     }
   },
@@ -228,9 +600,104 @@ const kpiService = {
   // Periodic Revenue KPIs
   getPeriodicRevenueKPIs: async (params = {}) => {
     try {
-      const response = await api.get("/data/kpi/periodic-revenue/", { params });
-      return response.data;
+      console.log("[DEBUG] Fetching Periodic Revenue with params:", params);
+
+      // Convert array parameters to the format expected by the backend
+      const queryParams = new URLSearchParams();
+
+      // Handle dot parameter
+      if (params.dot) {
+        if (Array.isArray(params.dot)) {
+          params.dot.forEach((dot) => queryParams.append("dot", dot));
+        } else {
+          queryParams.append("dot", params.dot);
+        }
+      }
+
+      // Handle product parameter
+      if (params.product) {
+        if (Array.isArray(params.product)) {
+          params.product.forEach((product) =>
+            queryParams.append("product", product)
+          );
+        } else {
+          queryParams.append("product", params.product);
+        }
+      }
+
+      // Handle operation parameter
+      if (params.operation) {
+        if (Array.isArray(params.operation)) {
+          params.operation.forEach((operation) =>
+            queryParams.append("operation", operation)
+          );
+        } else {
+          queryParams.append("operation", params.operation);
+        }
+      }
+
+      const apiUrl = `/data/kpi/ca-periodique/?${queryParams.toString()}`;
+      console.log("[DEBUG] API URL:", apiUrl);
+
+      const response = await api.get(apiUrl);
+      console.log("[DEBUG] Periodic Revenue Response:", response.data);
+
+      // Transform the backend response to match the frontend expectations
+      const responseData = response.data;
+
+      // Format the data for the UI
+      const formattedData = {
+        // Total revenue values
+        total: responseData.total_revenue?.total_amount || 0,
+        pre_tax: responseData.total_revenue?.total_pre_tax || 0,
+        tax: responseData.total_revenue?.total_tax || 0,
+        discount: responseData.total_revenue?.total_discount || 0,
+
+        // Components breakdown
+        main_periodic:
+          responseData.breakdown_by_component?.periodique?.total_amount || 0,
+        dnt: responseData.breakdown_by_component?.dnt?.total_amount || 0,
+        rfd: responseData.breakdown_by_component?.rfd?.total_amount || 0,
+        cnt: responseData.breakdown_by_component?.cnt?.total_amount || 0,
+
+        // Breakdowns for charts
+        by_dot: responseData.revenue_by_dot?.reduce((acc, item) => {
+          if (item.dot && item.total) {
+            acc[item.dot] = item.total;
+          }
+          return acc;
+        }, {}),
+
+        // Convert to array format expected by charts
+        by_product:
+          responseData.revenue_by_product?.map((item) => ({
+            product: item.product || "Unknown",
+            total: item.total || 0,
+            pre_tax: item.pre_tax || item.total || 0,
+            tax: item.tax || 0,
+          })) || [],
+
+        // Add operations data for the Operations tab
+        by_operation:
+          responseData.revenue_by_operation?.map((item) => ({
+            operation: item.operation || "Unknown",
+            total: item.total || 0,
+            pre_tax: item.pre_tax || 0,
+            tax: item.tax || 0,
+          })) || [],
+
+        // Include counts for debugging
+        counts: responseData.counts,
+
+        // Include anomalies
+        anomalies: responseData.anomalies,
+      };
+
+      console.log("[DEBUG] Formatted Periodic Revenue Data:", formattedData);
+      return formattedData;
     } catch (error) {
+      console.error("[DEBUG] Error in getPeriodicRevenueKPIs:", error);
+
       // For specific revenue types, use the special structure from mock data
       if (
         isDevelopment() &&
@@ -254,33 +721,212 @@ const kpiService = {
   },
 
   // Non-Periodic Revenue KPIs
-  getNonPeriodicRevenueKPIs: async (params = {}) => {
-    try {
-      const response = await api.get("/data/kpi/non-periodic-revenue/", {
-        params,
-      });
-      return response.data;
-    } catch (error) {
-      // For specific revenue types, use the special structure from mock data
-      if (
-        isDevelopment() &&
-        (!error.response || error.response.status >= 500)
-      ) {
-        console.warn("Using mock data for non-periodic revenue");
-        return {
-          total: mockData.kpiData.revenue.non_periodic,
-          by_dot: Object.entries(mockData.kpiData.revenue.by_dot || {}).reduce(
-            (acc, [key, value]) => {
-              acc[key] = value * 0.4; // Simulate that non-periodic is ~40% of revenue
-              return acc;
-            },
-            {}
-          ),
-          growth: mockData.kpiData.revenue.growth * 1.2,
-        };
+  getNonPeriodicRevenueKPIs: async (filters = {}) => {
+    // Set a maximum number of retries
+    const MAX_RETRIES = 2;
+    let retryCount = 0;
+    let lastError = null;
+
+    // Retry loop
+    while (retryCount <= MAX_RETRIES) {
+      try {
+        // Build query parameters
+        const queryParams = new URLSearchParams();
+
+        // Only add parameters that have values
+        if (filters.year) {
+          queryParams.append("year", filters.year);
+        }
+        if (filters.dot) {
+          if (Array.isArray(filters.dot)) {
+            filters.dot.forEach((dot) => queryParams.append("dot", dot));
+          } else {
+            queryParams.append("dot", filters.dot);
+          }
+        }
+        if (filters.product) {
+          if (Array.isArray(filters.product)) {
+            filters.product.forEach((product) =>
+              queryParams.append("product", product)
+            );
+          } else {
+            queryParams.append("product", filters.product);
+          }
+        }
+        if (filters.sale_type) {
+          if (Array.isArray(filters.sale_type)) {
+            filters.sale_type.forEach((saleType) =>
+              queryParams.append("sale_type", saleType)
+            );
+          } else {
+            queryParams.append("sale_type", filters.sale_type);
+          }
+        }
+        if (filters.channel) {
+          if (Array.isArray(filters.channel)) {
+            filters.channel.forEach((channel) =>
+              queryParams.append("channel", channel)
+            );
+          } else {
+            queryParams.append("channel", filters.channel);
+          }
+        }
+
+        // Include entity details for detailed KPIs
+        queryParams.append("include_entity_details", "true");
+
+        console.log(
+          "[DEBUG] KPI Service - Non-Periodic filter params:",
+          queryParams.toString()
+        );
+
+        // Log the API URL being called
+        const apiUrl = `/data/kpi/ca-non-periodique/?${queryParams.toString()}`;
+        console.log("[DEBUG] API Request URL:", apiUrl);
+
+        // Set a timeout for the request (10 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        try {
+          // Make the API request with timeout
+          const response = await api.get(apiUrl, {
+            signal: controller.signal,
+          });
+
+          // Clear the timeout since request completed
+          clearTimeout(timeoutId);
+
+          // Log the raw API response for debugging
+          console.log("[DEBUG] Raw API Response:", response);
+          console.log(
+            "[DEBUG] KPI Service - Non-Periodic response data:",
+            response.data
+          );
+
+          // Format the response to match what the frontend expects
+          // Check if we have the new response format or not
+          if (response.data && response.data.summary) {
+            // Transform to expected format
+            const formattedData = {
+              total_revenue: response.data.summary.total_revenue.total || 0,
+              pre_tax: response.data.summary.total_revenue.pre_tax || 0,
+              tax: response.data.summary.total_revenue.tax || 0,
+              total_records: response.data.summary.total_records || 0,
+              anomalies: response.data.summary.anomaly_stats || {},
+              by_product: response.data.by_product || [],
+              by_channel: response.data.by_channel || [],
+              by_sale_type: response.data.by_sale_type || [],
+              monthly_trends: response.data.monthly_trends || [],
+              applied_filters: response.data.summary.applied_filters || {},
+            };
+
+            console.log("[DEBUG] Formatted response data:", formattedData);
+            return formattedData;
+          }
+
+          // Return the original response if it doesn't match the expected structure
+          return response.data;
+        } catch (timeoutError) {
+          // Clear the timeout to prevent memory leaks
+          clearTimeout(timeoutId);
+
+          // Handle timeout separately
+          if (timeoutError.name === "AbortError") {
+            console.error("[DEBUG] API Request timed out");
+            throw new Error("Request timed out. Please try again.");
+          }
+
+          // Re-throw other errors
+          throw timeoutError;
+        }
+      } catch (error) {
+        lastError = error;
+
+        // Check if we should retry
+        if (retryCount < MAX_RETRIES) {
+          console.warn(
+            `[DEBUG] API Request failed, retrying (${
+              retryCount + 1
+            }/${MAX_RETRIES})...`
+          );
+          retryCount++;
+
+          // Wait before retrying (exponential backoff)
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * retryCount)
+          );
+        } else {
+          // Log error after all retries failed
+          console.error("[DEBUG] API Error Details after all retries:", {
+            message: error.message,
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            responseData: error.response?.data,
+          });
+
+          // We've exhausted all retries
+          break;
+        }
       }
-      return handleKpiApiError(error, "non-periodic revenue KPIs");
     }
+
+    // If we get here, all retries failed
+    return handleKpiApiError(lastError, "non-periodic revenue");
+  },
+
+  // Helper method to generate mock entity data for development
+  generateEntityMockData: (filters = {}) => {
+    const products = [
+      "VOIP",
+      "Modem",
+      "LTE",
+      "FTTx",
+      "ADSL",
+      "Specialized Line",
+    ];
+    const channels = ["9", "eSpace Client", "ATPOST", "Agence"];
+
+    // Filter products and channels if filters are provided
+    const filteredProducts =
+      filters.product && filters.product.length > 0
+        ? products.filter((p) => filters.product.includes(p))
+        : products;
+
+    const filteredChannels =
+      filters.channel && filters.channel.length > 0
+        ? channels.filter((c) => filters.channel.includes(c))
+        : channels;
+
+    const entityData = [];
+
+    // Generate product entity data
+    filteredProducts.forEach((product) => {
+      entityData.push({
+        name: product,
+        type: "product",
+        total_revenue: Math.floor(Math.random() * 5000000) + 500000,
+        growth: Math.random() * 20 - 10, // -10% to +10%
+        avg_transaction: Math.floor(Math.random() * 10000) + 1000,
+        transaction_count: Math.floor(Math.random() * 1000) + 100,
+        tax_percentage: Math.random() * 0.2 + 0.1, // 10% to 30%
+      });
+    });
+
+    // Generate channel entity data
+    filteredChannels.forEach((channel) => {
+      entityData.push({
+        name: channel,
+        type: "channel",
+        total_revenue: Math.floor(Math.random() * 3000000) + 300000,
+        growth: Math.random() * 20 - 10, // -10% to +10%
+        avg_transaction: Math.floor(Math.random() * 8000) + 800,
+        transaction_count: Math.floor(Math.random() * 800) + 80,
+        conversion_rate: Math.random() * 0.4 + 0.3, // 30% to 70%
+      });
+    });
+
+    return entityData;
   },
 
   // Special Revenue KPIs (DNT, RFD, CNT)
@@ -640,24 +1286,166 @@ const kpiService = {
       return handleKpiApiError(error, "unfinished invoice");
     }
   },
-};
 
-// Helper function to generate month data for mock data
-const generatePastMonths = (count) => {
-  const result = [];
-  const currentDate = new Date();
+  // Get list of DOTs
+  getDots: async () => {
+    try {
+      console.log("[DEBUG] Fetching DOTs");
+      const response = await api.get("/data/dots/");
+      console.log("[DEBUG] DOTs response:", response.data);
 
-  for (let i = count - 1; i >= 0; i--) {
-    const pastDate = new Date(currentDate);
-    pastDate.setMonth(currentDate.getMonth() - i);
+      // Extract the dots array from the response
+      let dotsArray = [];
 
-    result.push({
-      month: pastDate.toLocaleString("default", { month: "long" }),
-      year: pastDate.getFullYear(),
-    });
-  }
+      if (Array.isArray(response.data)) {
+        dotsArray = response.data;
+      } else if (response.data?.dots && Array.isArray(response.data.dots)) {
+        dotsArray = response.data.dots;
+      } else {
+        console.warn(
+          "[DEBUG] DOTs response is not in expected format:",
+          response.data
+        );
+        return [];
+      }
 
-  return result;
+      // Normalize the dots array to ensure each item is an object with id, name, and code properties
+      return dotsArray.map((dot) => {
+        // If dot is already an object with id property, use it
+        if (typeof dot === "object" && dot !== null) {
+          // Ensure the object has all required properties
+          return {
+            id: dot.id || dot.code || JSON.stringify(dot),
+            name: dot.name || dot.code || dot.id || JSON.stringify(dot),
+            code: dot.code || dot.id || "",
+          };
+        }
+
+        // If dot is a string, convert it to object format
+        if (typeof dot === "string") {
+          return {
+            id: dot,
+            name: dot,
+            code: dot,
+          };
+        }
+
+        // Fallback for unexpected format
+        const stringValue = String(dot);
+        return {
+          id: stringValue,
+          name: stringValue,
+          code: stringValue,
+        };
+      });
+    } catch (error) {
+      console.error("[DEBUG] Error fetching DOTs:", error);
+      // Return empty array in case of error
+      return [];
+    }
+  },
+
+  // Fetch detailed corporate park data for table view
+  getParcCorporateDetails: async (params) => {
+    try {
+      // Use the /data/parc-corporate/ endpoint to get detailed records
+      const response = await api.get("/data/parc-corporate/", { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching corporate park details:", error);
+      throw error;
+    }
+  },
+
+  // Fetch corporate park preview data with filters applied
+  getCorporateParkPreview: async (params = {}, page = 1, pageSize = 50) => {
+    try {
+      const queryParams = new URLSearchParams();
+
+      // Add pagination parameters
+      queryParams.append("page", params.page || page);
+      queryParams.append("page_size", params.page_size || pageSize);
+
+      // Add filters
+      if (params.year) {
+        queryParams.append("year", params.year);
+      }
+
+      if (params.month) {
+        queryParams.append("month", params.month);
+      }
+
+      // Handle DOT filters
+      if (params.dot && Array.isArray(params.dot)) {
+        params.dot.forEach((dot) => queryParams.append("dot", dot));
+      }
+
+      // Handle telecom type filter
+      if (params.telecom_type && Array.isArray(params.telecom_type)) {
+        params.telecom_type.forEach((type) =>
+          queryParams.append("telecom_type", type)
+        );
+      }
+
+      // Handle offer name filter
+      if (params.offer_name && Array.isArray(params.offer_name)) {
+        params.offer_name.forEach((name) =>
+          queryParams.append("offer_name", name)
+        );
+      }
+
+      // Handle customer L2 filter
+      if (params.customer_l2 && Array.isArray(params.customer_l2)) {
+        params.customer_l2.forEach((code) =>
+          queryParams.append("customer_l2", code)
+        );
+      }
+
+      // Handle customer L3 filter
+      if (params.customer_l3 && Array.isArray(params.customer_l3)) {
+        params.customer_l3.forEach((code) =>
+          queryParams.append("customer_l3", code)
+        );
+      }
+
+      // Handle subscriber status filter
+      if (params.subscriber_status && Array.isArray(params.subscriber_status)) {
+        params.subscriber_status.forEach((status) =>
+          queryParams.append("subscriber_status", status)
+        );
+      }
+
+      // Handle Actel code filter
+      if (params.actelCode && Array.isArray(params.actelCode)) {
+        params.actelCode.forEach((code) => {
+          console.log("Appending actel_code:", code);
+          queryParams.append("actel_code", code);
+        });
+      }
+
+      console.log("Fetching preview data with params:", queryParams.toString());
+      const response = await api.get(
+        `/data/preview/corporate-park/?${queryParams.toString()}`
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching corporate park preview data:", error);
+      throw error;
+    }
+  },
+
+  async getCorporateParkYears() {
+    try {
+      console.log("[KPI DEBUG] Fetching corporate park years");
+      const response = await api.get("/data/kpi/corporate-park/years/");
+      console.log("[KPI DEBUG] Years response:", response.data);
+      return response.data.years;
+    } catch (error) {
+      console.error("[KPI DEBUG] Error fetching years:", error);
+      handleKpiApiError(error);
+      return [];
+    }
+  },
 };
 
 export default kpiService;

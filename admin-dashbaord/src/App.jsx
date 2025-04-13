@@ -29,13 +29,20 @@ import UserDOTPermissions from "./pages/user-management/UserDOTPermissions";
 import AnomalyScanPage from "./pages/anomaly-scan/AnomalyScanPage";
 import ReportPage from "./pages/reports/ReportPage";
 import DOTManagement from "./pages/dot-management/DOTManagement";
-// Import KPI pages
+import AnomalyDashboard from "./pages/anomaly-dashboard/AnomalyDashboard";
 import {
-  RevenuePage,
-  CollectionPage,
-  ReceivablesPage,
   CorporateParkPage,
-  UnfinishedInvoicePage,
+  RevenueDCISITPage,
+  RevenueSiegePage,
+  RevenueDOTCorporatePage,
+  RevenuePeriodicPage,
+  RevenueNonPeriodicPage,
+  CollectionsDOTCorporatePage,
+  ReceivablesDCISITPage,
+  ReceivablesSiegePage,
+  ReceivablesDOTCorporatePage,
+  ReceivablesPeriodicPage,
+  ReceivablesNonPeriodicPage,
 } from "./pages/kpi";
 import PropTypes from "prop-types";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -371,6 +378,14 @@ function App() {
                 }
               />
               <Route
+                path="/anomaly-dashboard"
+                element={
+                  <ProtectedRoute>
+                    <AnomalyDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/reports"
                 element={
                   <ProtectedRoute>
@@ -395,26 +410,10 @@ function App() {
                 }
               />
               <Route
-                path="/kpi/revenue"
+                path="/data-cleanup"
                 element={
                   <ProtectedRoute>
-                    <RevenuePage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/kpi/collections"
-                element={
-                  <ProtectedRoute>
-                    <CollectionPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/kpi/receivables"
-                element={
-                  <ProtectedRoute>
-                    <ReceivablesPage />
+                    <DataCleanupTool />
                   </ProtectedRoute>
                 }
               />
@@ -427,10 +426,90 @@ function App() {
                 }
               />
               <Route
-                path="/kpi/unfinished-invoices"
+                path="/kpi/revenue/dcisit"
                 element={
                   <ProtectedRoute>
-                    <UnfinishedInvoicePage />
+                    <RevenueDCISITPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/revenue/siege"
+                element={
+                  <ProtectedRoute>
+                    <RevenueSiegePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/revenue/dot-corporate"
+                element={
+                  <ProtectedRoute>
+                    <RevenueDOTCorporatePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/revenue/periodic"
+                element={
+                  <ProtectedRoute>
+                    <RevenuePeriodicPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/revenue/non-periodic"
+                element={
+                  <ProtectedRoute>
+                    <RevenueNonPeriodicPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/collections/dot-corporate"
+                element={
+                  <ProtectedRoute>
+                    <CollectionsDOTCorporatePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/receivables/dcisit"
+                element={
+                  <ProtectedRoute>
+                    <ReceivablesDCISITPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/receivables/siege"
+                element={
+                  <ProtectedRoute>
+                    <ReceivablesSiegePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/receivables/dot-corporate"
+                element={
+                  <ProtectedRoute>
+                    <ReceivablesDOTCorporatePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/receivables/periodic"
+                element={
+                  <ProtectedRoute>
+                    <ReceivablesPeriodicPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kpi/receivables/non-periodic"
+                element={
+                  <ProtectedRoute>
+                    <ReceivablesNonPeriodicPage />
                   </ProtectedRoute>
                 }
               />
@@ -447,14 +526,6 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <DataValidationPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/data-cleanup"
-                element={
-                  <ProtectedRoute>
-                    <DataCleanupTool />
                   </ProtectedRoute>
                 }
               />

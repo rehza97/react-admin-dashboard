@@ -10,75 +10,8 @@ from .models import (
     ParcCorporate, CreancesNGBSS, CANonPeriodique, CAPeriodique,
     CACNT, CADNT, CARFD, JournalVentes, EtatFacture
 )
-import re
-import unicodedata
 
 logger = logging.getLogger(__name__)
-
-
-def standardize_dot_name(dot_name):
-    """
-    Standardize DOT names by:
-    1. Removing hyphens
-    2. Converting underscores to spaces or removing them
-    3. Making case-insensitive comparisons
-    4. Handling specific name variations
-    """
-    if not dot_name:
-        return dot_name
-
-    # Convert to lowercase
-    dot_name = str(dot_name).lower().strip()
-
-    # Remove diacritics (accents)
-    dot_name = unicodedata.normalize('NFKD', dot_name).encode(
-        'ASCII', 'ignore').decode('utf-8')
-
-    # Remove special characters and standardize spacing
-    dot_name = re.sub(r'[^a-z0-9]', '', dot_name)
-
-    # Map specific variations to standard names
-    dot_map = {
-        'siege': 'siege',  # Note: Use without accent to match database
-        'siège': 'siege',  # Map accented version to non-accented as in DB
-        'algeroest': 'algerouest',
-        'algerest': 'algerest',
-        'algercentre': 'algercentre',
-        'algere': 'algerest',  # Handle potential abbreviation
-        'algero': 'algerouest',  # Handle potential abbreviation
-        'sidbel': 'sidibelabbes',
-        'sidibel': 'sidibelabbes',
-        'sidibelabbes': 'sidibelabbes',
-        'bordjbou': 'bordjbouarreridj',
-        'inad': 'inguezzam',  # If "In Guezzam" might be abbreviated
-        'inagm': 'inguezzam',
-    }
-
-    return dot_map.get(dot_name, dot_name)
-
-
-def get_standardized_dot_conditions(field_name="dot", legacy_field_name="dot_code", target_value="Siege"):
-    """
-    Creates a more robust DOT filtering query that handles variations in spelling, 
-    foreign keys and text fields.
-    """
-    conditions = Q()
-
-    # Clean the target value for consistent matching
-    target_value_clean = standardize_dot_name(target_value)
-
-    # Match by foreign key (needs __name to access the related model's name field)
-    conditions |= Q(**{f"{field_name}__name__iexact": target_value})
-    conditions |= Q(**{f"{field_name}__code__iexact": target_value})
-
-    # Match by legacy text field
-    conditions |= Q(**{f"{legacy_field_name}__iexact": target_value})
-
-    # Match standardized versions
-    conditions |= Q(**{f"{field_name}__name__iexact": target_value_clean})
-    conditions |= Q(**{f"{legacy_field_name}__iexact": target_value_clean})
-
-    return conditions
 
 
 def clean_parc_corporate():
@@ -123,7 +56,11 @@ def clean_parc_corporate():
 
 def clean_creances_ngbss():
     """
-    Cleans CreancesNGBSS data according to client requirements
+    Cleans CreancesNGBSS data according to client requirements:
+    - Keep only records with product in ['Specialized Line', 'LTE']
+    - Keep only records with customer_lev1 in ['Corporate', 'Corporate Group']
+    - Remove records with customer_lev2 = 'Client professionnelConventionné'
+    - Keep only records with customer_lev3 in specific exploitation lines
     """
     logger.info("Cleaning CreancesNGBSS data")
     result = {
@@ -134,22 +71,16 @@ def clean_creances_ngbss():
     }
 
     try:
-        # Get valid records that match filtering criteria
-        valid_products = ['Specialized Line', 'LTE']
-        valid_customer_lev1 = ['Corporate', 'Corporate Group']
-        valid_customer_lev3 = [
-            "Ligne d'exploitation AP",
-            "Ligne d'exploitation ATMobilis",
-            "Ligne d'exploitation ATS"
-        ]
-        excluded_customer_lev2 = ['Client professionnelConventionné']
-
-        # Find records that don't match client requirements using case-insensitive matching
+        # Find records that don't match the client's requirements
         records_to_delete = CreancesNGBSS.objects.filter(
-            ~Q(product__in=valid_products) |
-            ~Q(customer_lev1__in=valid_customer_lev1) |
-            ~Q(customer_lev3__in=valid_customer_lev3) |
-            Q(customer_lev2__in=excluded_customer_lev2)
+            Q(~Q(product__in=['Specialized Line', 'LTE'])) |
+            Q(~Q(customer_lev1__in=['Corporate', 'Corporate Group'])) |
+            Q(customer_lev2='Client professionnelConventionné') |
+            Q(~Q(customer_lev3__in=[
+                "Ligne d'exploitation AP",
+                "Ligne d'exploitation ATMobilis",
+                "Ligne d'exploitation ATS"
+            ]))
         )
 
         # Count and delete the invalid records
@@ -171,7 +102,7 @@ def clean_creances_ngbss():
 def clean_ca_non_periodique():
     """
     Cleans CANonPeriodique data according to client requirements:
-    - Keep only records with DOT = "Siege"
+    - Keep only records with DOT = "Siège"
     """
     logger.info("Cleaning CANonPeriodique data")
     result = {
@@ -182,16 +113,10 @@ def clean_ca_non_periodique():
     }
 
     try:
-        # Create conditions for matching valid DOTs
-        valid_dot_conditions = get_standardized_dot_conditions(
-            field_name="dot",
-            legacy_field_name="dot_code",
-            target_value="Siege"
+        # Find records that don't match the client's requirements
+        records_to_delete = CANonPeriodique.objects.filter(
+            ~Q(dot__name='Siège')
         )
-
-        # Find records that DON'T meet the valid DOT conditions
-        records_to_delete = CANonPeriodique.objects.exclude(
-            valid_dot_conditions)
 
         # Count and delete the invalid records
         deletion_count = records_to_delete.count()
@@ -212,8 +137,7 @@ def clean_ca_non_periodique():
 def clean_ca_periodique():
     """
     Cleans CAPeriodique data according to client requirements:
-    - For Siege DOT: keep all products
-    - For other DOTs: keep only "Specialized Line" and "LTE" products
+    - For non-Siège DOTs, keep only records with product in ['Specialized Line', 'LTE']
     """
     logger.info("Cleaning CAPeriodique data")
     result = {
@@ -224,25 +148,11 @@ def clean_ca_periodique():
     }
 
     try:
-        # Define valid products for non-Siege DOTs
-        valid_products = ['Specialized Line', 'LTE']
-
-        # Create conditions for matching Siege DOT
-        siege_dot_conditions = get_standardized_dot_conditions(
-            field_name="dot",
-            legacy_field_name="dot_code",
-            target_value="Siege"
-        )
-
-        # Valid product condition
-        valid_product_condition = Q(product__in=valid_products)
-
-        # Find records that don't match client requirements
-        # Records must either:
-        # 1. Have Siege DOT (keep all products for Siege), OR
-        # 2. Have a valid product (for non-Siege DOTs)
-        records_to_delete = CAPeriodique.objects.exclude(
-            siege_dot_conditions | valid_product_condition
+        # Find records that don't match the client's requirements
+        # For non-Siège DOTs, keep only records with product in ['Specialized Line', 'LTE']
+        records_to_delete = CAPeriodique.objects.filter(
+            ~Q(dot__name='Siège') &
+            ~Q(product__in=['Specialized Line', 'LTE'])
         )
 
         # Count and delete the invalid records
@@ -261,36 +171,23 @@ def clean_ca_periodique():
     return result
 
 
-def clean_ca_corporate_base(model_class, model_name):
+def clean_ca_cnt():
     """
-    Base cleaning method for Corporate CA models (CACNT, CADNT, CARFD)
-    - Keep only records with DOT = "Siege" 
-    - Keep only records with department = "Direction Commerciale Corporate"
+    Cleans CACNT data according to client requirements:
+    - Keep only records with department = 'Direction Commerciale Corporate'
     """
-    logger.info(f"Cleaning {model_name} data")
+    logger.info("Cleaning CACNT data")
     result = {
-        'total_before': model_class.objects.count(),
+        'total_before': CACNT.objects.count(),
         'total_deleted': 0,
         'total_after': 0,
         'anomalies_created': 0
     }
 
     try:
-        # Create standardized DOT conditions
-        valid_dot_conditions = get_standardized_dot_conditions(
-            field_name="dot",
-            legacy_field_name="dot_code",
-            target_value="Siege"
-        )
-
-        # Department condition - case insensitive
-        valid_dept_condition = Q(
-            department__iexact="Direction Commerciale Corporate")
-
-        # Find records that don't meet BOTH criteria
-        # (records must have both valid DOT AND valid department)
-        records_to_delete = model_class.objects.exclude(
-            valid_dot_conditions & valid_dept_condition
+        # Find records that don't match the client's requirements
+        records_to_delete = CACNT.objects.filter(
+            ~Q(department='Direction Commerciale Corporate')
         )
 
         # Count and delete the invalid records
@@ -298,30 +195,82 @@ def clean_ca_corporate_base(model_class, model_name):
         records_to_delete.delete()
 
         result['total_deleted'] = deletion_count
-        result['total_after'] = model_class.objects.count()
+        result['total_after'] = CACNT.objects.count()
 
-        logger.info(
-            f"Cleaned {deletion_count} invalid records from {model_name}")
+        logger.info(f"Cleaned {deletion_count} invalid records from CACNT")
     except Exception as e:
-        logger.error(f"Error cleaning {model_name} data: {str(e)}")
+        logger.error(f"Error cleaning CACNT data: {str(e)}")
         result['error'] = str(e)
 
     return result
 
 
-def clean_ca_cnt():
-    """Cleans CACNT data according to client requirements"""
-    return clean_ca_corporate_base(CACNT, "CACNT")
-
-
 def clean_ca_dnt():
-    """Cleans CADNT data according to client requirements"""
-    return clean_ca_corporate_base(CADNT, "CADNT")
+    """
+    Cleans CADNT data according to client requirements:
+    - Keep only records with department = 'Direction Commerciale Corporate'
+    """
+    logger.info("Cleaning CADNT data")
+    result = {
+        'total_before': CADNT.objects.count(),
+        'total_deleted': 0,
+        'total_after': 0,
+        'anomalies_created': 0
+    }
+
+    try:
+        # Find records that don't match the client's requirements
+        records_to_delete = CADNT.objects.filter(
+            ~Q(department='Direction Commerciale Corporate')
+        )
+
+        # Count and delete the invalid records
+        deletion_count = records_to_delete.count()
+        records_to_delete.delete()
+
+        result['total_deleted'] = deletion_count
+        result['total_after'] = CADNT.objects.count()
+
+        logger.info(f"Cleaned {deletion_count} invalid records from CADNT")
+    except Exception as e:
+        logger.error(f"Error cleaning CADNT data: {str(e)}")
+        result['error'] = str(e)
+
+    return result
 
 
 def clean_ca_rfd():
-    """Cleans CARFD data according to client requirements"""
-    return clean_ca_corporate_base(CARFD, "CARFD")
+    """
+    Cleans CARFD data according to client requirements:
+    - Keep only records with department = 'Direction Commerciale Corporate'
+    """
+    logger.info("Cleaning CARFD data")
+    result = {
+        'total_before': CARFD.objects.count(),
+        'total_deleted': 0,
+        'total_after': 0,
+        'anomalies_created': 0
+    }
+
+    try:
+        # Find records that don't match the client's requirements
+        records_to_delete = CARFD.objects.filter(
+            ~Q(department='Direction Commerciale Corporate')
+        )
+
+        # Count and delete the invalid records
+        deletion_count = records_to_delete.count()
+        records_to_delete.delete()
+
+        result['total_deleted'] = deletion_count
+        result['total_after'] = CARFD.objects.count()
+
+        logger.info(f"Cleaned {deletion_count} invalid records from CARFD")
+    except Exception as e:
+        logger.error(f"Error cleaning CARFD data: {str(e)}")
+        result['error'] = str(e)
+
+    return result
 
 
 def clean_journal_ventes():
@@ -633,27 +582,3 @@ def clean_etat_facture():
         result['error'] = str(e)
 
     return result
-
-
-def fix_dot_inconsistencies():
-    """Batch fix DOT inconsistencies by updating legacy dot_code fields to match FK values"""
-    dot_field_models = [CreancesNGBSS, CAPeriodique,
-                        CANonPeriodique, CADNT, CARFD, CACNT]
-    results = {}
-
-    for model in dot_field_models:
-        # Find records with mismatches
-        updated_count = 0
-        for record in model.objects.filter(dot__isnull=False):
-            dot_fk = getattr(record, 'dot', None)
-            dot_code = getattr(record, 'dot_code', '')
-
-            if dot_fk and dot_code and dot_fk.code != dot_code:
-                # Update legacy field to match FK
-                record.dot_code = dot_fk.code
-                record.save(update_fields=['dot_code'])
-                updated_count += 1
-
-        results[model.__name__] = updated_count
-
-    return results

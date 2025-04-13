@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { styled, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import MuiDrawer from "@mui/material/Drawer";
 import List from "@mui/material/List";
 import Divider from "@mui/material/Divider";
@@ -12,33 +12,21 @@ import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import Avatar from "@mui/material/Avatar";
 import { NavLink } from "react-router-dom";
-import BarChartIcon from "@mui/icons-material/BarChart";
-import PieChartIcon from "@mui/icons-material/PieChart";
-import LineChartIcon from "@mui/icons-material/ShowChart";
-import RadarChartIcon from "@mui/icons-material/Radar";
 import PropTypes from "prop-types";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import PeopleOutlinedIcon from "@mui/icons-material/PeopleOutlined";
-import ContactsOutlinedIcon from "@mui/icons-material/ContactsOutlined";
-import ReceiptOutlinedIcon from "@mui/icons-material/ReceiptOutlined";
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined";
 import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
 import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
-import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
-import TimelineOutlinedIcon from "@mui/icons-material/TimelineOutlined";
-import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import TableChartIcon from "@mui/icons-material/TableChart";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
-import BusinessIcon from "@mui/icons-material/Business";
-import StorageIcon from "@mui/icons-material/Storage";
-import VerifiedIcon from "@mui/icons-material/Verified";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import InsightsIcon from "@mui/icons-material/Insights";
 import { useAuth } from "../context/AuthContext";
 import { Box, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 import { styled as muiStyled } from "@mui/material/styles";
-import CleaningServicesIcon from "@mui/icons-material/CleaningServices";
 
 const drawerWidth = 260;
 
@@ -72,9 +60,7 @@ const DrawerHeader = muiStyled("div")(({ theme }) => ({
   ...theme.mixins.toolbar,
 }));
 
-const StyledDrawer = muiStyled(MuiDrawer, {
-  shouldForwardProp: (prop) => prop !== "open",
-})(({ theme, open }) => ({
+const StyledDrawer = muiStyled(MuiDrawer)(({ theme, open }) => ({
   width: drawerWidth,
   flexShrink: 0,
   whiteSpace: "nowrap",
@@ -184,114 +170,168 @@ export default function Drawer({ open, handleDrawerClose }) {
   const { t } = useTranslation();
   const [openSubmenu, setOpenSubmenu] = useState(null);
 
-  // Define menu items with translation keys
+  // Check if user is admin
+  const isAdmin = currentUser?.role === "admin";
+
+  // Define menu items with translation keys and role-based access
   const Array1 = [
     {
       text: t("common.dashboard"),
       icon: <HomeOutlinedIcon />,
       path: "/",
+      allowedRoles: ["admin", "viewer"], // Both admin and viewer can see dashboard
     },
     {
-      title: "KPI Analysis",
+      title: t("kpi.analysis"),
       icon: <BarChartOutlinedIcon />,
       items: [
         {
-          title: "Revenue Analysis",
-          path: "/kpi/revenue",
-        },
-        {
-          title: "Collections Analysis",
-          path: "/kpi/collections",
-        },
-        {
-          title: "Receivables Analysis",
-          path: "/kpi/receivables",
-        },
-        {
-          title: "Corporate Park",
+          title: t("common.parcCorporate"),
           path: "/kpi/corporate-park",
+          allowedRoles: ["admin", "viewer"],
         },
         {
-          title: "Unfinished Invoices",
-          path: "/kpi/unfinished-invoices",
+          title: t("kpi.revenueDCISIT"),
+          path: "/kpi/revenue/dcisit",
+          allowedRoles: ["admin", "viewer"],
+        },
+        {
+          title: t("kpi.revenueSiege"),
+          path: "/kpi/revenue/siege",
+          allowedRoles: ["admin", "viewer"],
+        },
+        {
+          title: t("kpi.revenueDOTCorporate"),
+          path: "/kpi/revenue/dot-corporate",
+          allowedRoles: ["admin", "viewer"],
+        },
+        {
+          title: t("kpi.revenuePeriodic"),
+          path: "/kpi/revenue/periodic",
+          allowedRoles: ["admin", "viewer"],
+        },
+        {
+          title: t("kpi.revenueNonPeriodic"),
+          path: "/kpi/revenue/non-periodic",
+          allowedRoles: ["admin", "viewer"],
+        },
+        {
+          title: t("kpi.collectionsDOTCorporate"),
+          path: "/kpi/collections/dot-corporate",
+          allowedRoles: ["admin", "viewer"],
+        },
+        {
+          title: t("kpi.receivablesDCISIT"),
+          path: "/kpi/receivables/dcisit",
+          allowedRoles: ["admin", "viewer"],
+        },
+        {
+          title: t("kpi.receivablesSiege"),
+          path: "/kpi/receivables/siege",
+          allowedRoles: ["admin", "viewer"],
+        },
+        {
+          title: t("kpi.receivablesDOTCorporate"),
+          path: "/kpi/receivables/dot-corporate",
+          allowedRoles: ["admin", "viewer"],
+        },
+        {
+          title: t("kpi.receivablesPeriodic"),
+          path: "/kpi/receivables/periodic",
+          allowedRoles: ["admin", "viewer"],
+        },
+        {
+          title: t("kpi.receivablesNonPeriodic"),
+          path: "/kpi/receivables/non-periodic",
+          allowedRoles: ["admin", "viewer"],
         },
       ],
+      allowedRoles: ["admin", "viewer"], // Only admin and viewer can see KPI analysis
     },
     {
-      title: "User Management",
+      title: t("users.manageUsers"),
       icon: <PeopleOutlinedIcon />,
       path: "/manage-users",
       items: [
         {
-          title: "Manage Users",
+          title: t("users.manageUsers"),
           path: "/manage-users",
+          allowedRoles: ["admin"],
         },
         {
-          title: "DOT Permissions",
+          title: t("permissions.dotPermissions"),
           path: "/user-dot-permissions",
+          allowedRoles: ["admin"],
         },
         {
-          title: "DOT Management",
+          title: t("dots.manageDOTs"),
           path: "/dot-management",
+          allowedRoles: ["admin"],
         },
       ],
+      allowedRoles: ["admin"], // Only admin can see user management
     },
     {
-      text: t("common.reports"),
-      icon: <BarChartOutlinedIcon />,
-      path: "/reports",
+      title: t("anomalyScan.title"),
+      icon: <WarningAmberIcon />,
+      items: [
+        {
+          title: t("anomalyScan.analyticsTitle"),
+          path: "/anomaly-dashboard",
+          icon: <InsightsIcon />,
+          allowedRoles: ["admin"],
+        },
+      ],
+      allowedRoles: ["admin"], // Only admin can see anomaly scan
     },
     {
       text: t("common.profile"),
       icon: <PersonOutlinedIcon />,
       path: "/form",
+      allowedRoles: ["admin", "viewer"], // Both roles can see their profile
     },
     {
       text: t("common.calendar"),
       icon: <CalendarTodayOutlinedIcon />,
       path: "/calendar",
+      allowedRoles: ["admin", "viewer"], // Both roles can see calendar
     },
     {
       text: t("common.fileUpload"),
       icon: <CloudUploadIcon />,
       path: "/file-upload",
-    },
-    {
-      text: t("common.anomalyScan"),
-      icon: <BarChartOutlinedIcon />,
-      path: "/anomaly-scan",
-    },
-    {
-      title: "Data Tools",
-      icon: <StorageIcon />,
-      items: [
-        {
-          title: "Data Management",
-          path: "/data-management",
-        },
-        {
-          title: "Data Validation",
-          path: "/data-validation",
-        },
-      ],
+      allowedRoles: ["admin"], // Only admin can upload files
     },
     {
       text: t("common.pivot"),
       icon: <TableChartIcon />,
       path: "/pivot-table",
+      allowedRoles: ["admin"], // Only admin can see pivot table
     },
     {
       text: t("common.faq"),
       icon: <HelpOutlineOutlinedIcon />,
       path: "/faq",
-    },
-    {
-      title: "Data Cleanup",
-      icon: <CleaningServicesIcon />,
-      path: "/data-cleanup",
-      allowedRoles: ["admin"],
+      allowedRoles: ["admin", "viewer"], // Both roles can see FAQ
     },
   ];
+
+  // Filter menu items based on user role
+  const filteredArray1 = Array1.filter((item) => {
+    // Check if user has permission to see this item
+    const hasPermission = item.allowedRoles?.includes(currentUser?.role);
+
+    // If it's a menu with subitems, filter the subitems as well
+    if (item.items) {
+      item.items = item.items.filter((subItem) =>
+        subItem.allowedRoles?.includes(currentUser?.role)
+      );
+      // Only show the menu if it has at least one visible subitem
+      return hasPermission && item.items.length > 0;
+    }
+
+    return hasPermission;
+  });
 
   return (
     <StyledDrawer variant="permanent" open={open}>
@@ -312,7 +352,7 @@ export default function Drawer({ open, handleDrawerClose }) {
       <Divider sx={{ mb: 2 }} />
 
       <List sx={{ px: 1 }}>
-        {Array1.map((item) => (
+        {filteredArray1.map((item) => (
           <React.Fragment key={item.path || item.title}>
             <ListItem sx={listItemStyles} disablePadding>
               {item.items ? (
@@ -362,10 +402,15 @@ export default function Drawer({ open, handleDrawerClose }) {
                   </ListItemIcon>
                   <ListItemText
                     primary={item.text}
+                    secondary={open ? item.description : null}
                     sx={{
                       opacity: open ? 1 : 0,
                       "& .MuiTypography-root": {
                         fontWeight: 500,
+                      },
+                      "& .MuiTypography-secondary": {
+                        fontSize: "0.75rem",
+                        opacity: 0.7,
                       },
                     }}
                   />

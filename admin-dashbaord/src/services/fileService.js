@@ -25,6 +25,104 @@ const fileService = {
     }
   },
 
+  uploadMultipleFiles: async (files, options = {}) => {
+    try {
+      const totalFiles = files.length;
+      let completedFiles = 0;
+      const MAX_CONCURRENT_UPLOADS = 5;
+      const results = [];
+      const fileProgress = {};
+
+      // Process files in chunks of MAX_CONCURRENT_UPLOADS
+      for (let i = 0; i < totalFiles; i += MAX_CONCURRENT_UPLOADS) {
+        const chunk = files.slice(i, i + MAX_CONCURRENT_UPLOADS);
+
+        console.log(
+          `Processing chunk of ${chunk.length} files (${i + 1} to ${Math.min(
+            i + MAX_CONCURRENT_UPLOADS,
+            totalFiles
+          )} of ${totalFiles})`
+        );
+
+        // Create upload promises for this chunk
+        const chunkPromises = chunk.map(async (file, chunkIndex) => {
+          const fileIndex = i + chunkIndex;
+          fileProgress[file.name] = 0;
+
+          try {
+            const response = await fileService.uploadFile(
+              file,
+              options.invoiceNumbers[fileIndex],
+              options.fileTypes[fileIndex] || ""
+            );
+
+            // Update progress for this file
+            fileProgress[file.name] = 100;
+            completedFiles++;
+
+            // Calculate and report overall progress
+            if (options.onProgress) {
+              const overallProgress = Math.round(
+                (completedFiles * 100) / totalFiles
+              );
+              options.onProgress(overallProgress, {
+                fileName: file.name,
+                fileProgress: 100,
+                completedFiles,
+                totalFiles,
+                filesProgressMap: fileProgress,
+              });
+            }
+
+            return response;
+          } catch (error) {
+            console.error(`Error uploading file ${file.name}:`, error);
+            completedFiles++;
+
+            // Even on error, update progress
+            if (options.onProgress) {
+              const overallProgress = Math.round(
+                (completedFiles * 100) / totalFiles
+              );
+              options.onProgress(overallProgress, {
+                fileName: file.name,
+                fileProgress: 0,
+                completedFiles,
+                totalFiles,
+                filesProgressMap: fileProgress,
+                error: error,
+              });
+            }
+
+            throw error;
+          }
+        });
+
+        // Wait for all files in this chunk to complete
+        const chunkResults = await Promise.allSettled(chunkPromises);
+
+        // Process results, keeping successful uploads and marking failed ones
+        chunkResults.forEach((result, index) => {
+          if (result.status === "fulfilled") {
+            results.push(result.value);
+          } else {
+            // For rejected promises, add an error result
+            results.push({
+              success: false,
+              file_name: chunk[index].name,
+              error: result.reason.message || "Upload failed",
+            });
+          }
+        });
+      }
+
+      return results;
+    } catch (error) {
+      console.error("Error uploading multiple files:", error);
+      throw error;
+    }
+  },
+
   getUploadedFiles: async () => {
     const response = await api.get("/data/invoices/");
     return response.data;
@@ -484,6 +582,19 @@ const fileService = {
       return { data: response.data }; // Wrap the data to match the expected format
     } catch (error) {
       console.error(`Error fetching pivot data for ${dataSource}:`, error);
+      throw error;
+    }
+  },
+
+  // Track multiple upload progress
+  getMultipleUploadProgress: async (uploadIds) => {
+    try {
+      const response = await api.post("/data/invoices/upload-progress/", {
+        upload_ids: uploadIds,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error getting upload progress:", error);
       throw error;
     }
   },

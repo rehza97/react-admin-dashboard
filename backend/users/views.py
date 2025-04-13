@@ -572,28 +572,7 @@ class DOTListView(APIView):
             return Response(formatted_dots)
         except Exception as e:
             # If there's an error (e.g., DOT model doesn't exist yet), return default DOTs
-            default_dots = [
-                {"dot_code": "ALG", "dot_name": "Alger",
-                    "code": "ALG", "name": "Alger"},
-                {"dot_code": "ORA", "dot_name": "Oran",
-                    "code": "ORA", "name": "Oran"},
-                {"dot_code": "CON", "dot_name": "Constantine",
-                    "code": "CON", "name": "Constantine"},
-                {"dot_code": "ANN", "dot_name": "Annaba",
-                    "code": "ANN", "name": "Annaba"},
-                {"dot_code": "SET", "dot_name": "Setif",
-                    "code": "SET", "name": "Setif"},
-                {"dot_code": "BLI", "dot_name": "Blida",
-                    "code": "BLI", "name": "Blida"},
-                {"dot_code": "TIZ", "dot_name": "Tizi Ouzou",
-                    "code": "TIZ", "name": "Tizi Ouzou"},
-                {"dot_code": "BEJ", "dot_name": "Bejaia",
-                    "code": "BEJ", "name": "Bejaia"},
-                {"dot_code": "BAT", "dot_name": "Batna",
-                    "code": "BAT", "name": "Batna"},
-                {"dot_code": "SKI", "dot_name": "Skikda",
-                    "code": "SKI", "name": "Skikda"}
-            ]
+            default_dots = []
             return Response(default_dots)
 
     def post(self, request):
@@ -635,19 +614,7 @@ class DOTListView(APIView):
         try:
             # Add default DOTs
             default_dots = {
-                "ALG": "Alger",
-                "ORA": "Oran",
-                "CON": "Constantine",
-                "ANN": "Annaba",
-                "SET": "Setif",
-                "BLI": "Blida",
-                "TIZ": "Tizi Ouzou",
-                "BEJ": "Bejaia",
-                "BAT": "Batna",
-                "SKI": "Skikda",
-                "SIE": "Siège",
-                "DCC": "DCC",
-                "DCGC": "DCGC"
+              
             }
 
             for code, name in default_dots.items():
