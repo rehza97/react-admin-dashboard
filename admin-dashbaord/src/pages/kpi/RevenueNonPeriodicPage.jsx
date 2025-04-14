@@ -512,16 +512,7 @@ const RevenueNonPeriodicPage = () => {
         >
           {t("revenueNonPeriodic.export.exportCSV")}
         </Button>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<FileDownloadIcon />}
-          onClick={() => handleExport("pdf")}
-          disabled={loading}
-          sx={{ ml: 1 }}
-        >
-          {t("revenueNonPeriodic.export.exportPDF")}
-        </Button>
+
       </Box>
 
       {/* Tabs navigation */}

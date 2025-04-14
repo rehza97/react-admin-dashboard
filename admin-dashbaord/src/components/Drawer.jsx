@@ -220,31 +220,7 @@ export default function Drawer({ open, handleDrawerClose }) {
           path: "/kpi/collections/dot-corporate",
           allowedRoles: ["admin", "viewer"],
         },
-        {
-          title: t("kpi.receivablesDCISIT"),
-          path: "/kpi/receivables/dcisit",
-          allowedRoles: ["admin", "viewer"],
-        },
-        {
-          title: t("kpi.receivablesSiege"),
-          path: "/kpi/receivables/siege",
-          allowedRoles: ["admin", "viewer"],
-        },
-        {
-          title: t("kpi.receivablesDOTCorporate"),
-          path: "/kpi/receivables/dot-corporate",
-          allowedRoles: ["admin", "viewer"],
-        },
-        {
-          title: t("kpi.receivablesPeriodic"),
-          path: "/kpi/receivables/periodic",
-          allowedRoles: ["admin", "viewer"],
-        },
-        {
-          title: t("kpi.receivablesNonPeriodic"),
-          path: "/kpi/receivables/non-periodic",
-          allowedRoles: ["admin", "viewer"],
-        },
+
       ],
       allowedRoles: ["admin", "viewer"], // Only admin and viewer can see KPI analysis
     },

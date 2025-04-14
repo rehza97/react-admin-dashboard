@@ -1313,19 +1313,25 @@ const kpiService = {
       return dotsArray.map((dot) => {
         // If dot is already an object with id property, use it
         if (typeof dot === "object" && dot !== null) {
-          // Ensure the object has all required properties
+          // Ensure the object has all required properties with proper priority
+          // For name field, prioritize name if available
+          const name =
+            dot.name || (dot.code && `DOT ${dot.code}`) || `DOT ${dot.id}`;
+
           return {
-            id: dot.id || dot.code || JSON.stringify(dot),
-            name: dot.name || dot.code || dot.id || JSON.stringify(dot),
+            id: dot.id || dot.code || "",
+            name: name, // Use the prioritized name
             code: dot.code || dot.id || "",
+            // Store the raw object for debugging
+            _raw: dot,
           };
         }
 
-        // If dot is a string, convert it to object format
+        // If dot is a string, convert it to object format with better naming
         if (typeof dot === "string") {
           return {
             id: dot,
-            name: dot,
+            name: `DOT ${dot}`,
             code: dot,
           };
         }
@@ -1334,7 +1340,7 @@ const kpiService = {
         const stringValue = String(dot);
         return {
           id: stringValue,
-          name: stringValue,
+          name: `DOT ${stringValue}`,
           code: stringValue,
         };
       });

@@ -765,11 +765,91 @@
     "revenueDOTCorporate": "Revenus DOT Corporate",
     "revenuePeriodic": "Revenus Périodiques",
     "revenueNonPeriodic": "Revenus Non-Périodiques",
-    "collectionsDOTCorporate": "Recouvrements DOT Corporate",
+    "collectionsDOTCorporate": "Collections DOT Corporate",
     "receivablesDCISIT": "Créances DCISIT",
     "receivablesSiege": "Créances Siège",
     "receivablesDOTCorporate": "Créances DOT Corporate",
     "receivablesPeriodic": "Créances Périodiques",
     "receivablesNonPeriodic": "Créances Non-Périodiques"
+  },
+  "revenuePeriodic": {
+    "title": "C.A Périodique",
+    "subtitle": "Analyse des revenus périodiques",
+    "filters": {
+      "dot": "DOT",
+      "product": "Produit",
+      "operation": "Opération",
+      "apply": "Appliquer Filtres",
+      "reset": "Réinitialiser Filtres"
+    },
+    "tabs": {
+      "overview": "Aperçu",
+      "products": "Produits",
+      "operations": "Opérations",
+      "processing": "Traitement"
+    },
+    "charts": {
+      "revenueByDOT": "Revenus par DOT",
+      "componentBreakdown": "Répartition des Composants",
+      "componentBreakdownInfo": "C.A Périodique = C.A Périodique (Main) + C.A DNT (Ajustement) + C.A RFD (Remboursement) + C.A CNT (Annulation)",
+      "amount": "Montant",
+      "revenueByProduct": "Répartition par Produit",
+      "revenueByOperation": "Répartition par Opération"
+    },
+    "components": {
+      "main": "C.A Périodique (Main)",
+      "dnt": "C.A DNT (Ajustement)",
+      "rfd": "C.A RFD (Remboursement)",
+      "cnt": "C.A CNT (Annulation)",
+      "total": "Total"
+    },
+    "cards": {
+      "totalRevenue": "C.A Périodique Total",
+      "totalRevenueDescription": "Total de tous les composants (Main + DNT + RFD + CNT)",
+      "periodicRevenue": "C.A Périodique (Main)",
+      "dntRevenue": "C.A DNT (Ajustement)",
+      "rfdRevenue": "C.A RFD (Remboursement)",
+      "cntRevenue": "C.A CNT (Annulation)",
+      "ofTotal": "du total"
+    },
+    "tables": {
+      "product": "Produit",
+      "preTax": "C.A HT",
+      "tax": "TVA",
+      "totalRevenue": "C.A TTC",
+      "percentageOfTotal": "% du Total",
+      "operation": "Opération"
+    },
+    "processing": {
+      "title": "Traitement des Données C.A Périodique",
+      "composition": "Composition",
+      "compositionDescription": "C.A Périodique = C.A Périodique + C.A DNT + C.A RFD + C.A CNT",
+      "componentDescription": "(DNT = Ajustement, RFD = Remboursement, CNT = Annulation)",
+      "dataFilter": "Filtre de Données",
+      "dataFilterDescription": "Filtre par DOT, Produit, Opération",
+      "filesDescription": "(18 fichiers Périodique, CNT, RFD, DNT)",
+      "exportation": "Exportation de 4 fichiers: 18 Fichiers Périodique en 1 seul fichier + fichier RFD + fichier CNT + fichier DNT",
+      "periodicFilesProcessing": "Traitement des 18 fichiers Périodique",
+      "periodicFilesDescription": "Colonne DO on prend siège + le reste Colonne Produit on prend LTE, Specialized Line et X25",
+      "rfdCntDntProcessing": "Traitement fichier RFD, CNT et DNT",
+      "rfdCntDntDescription": "Colonne DOT: Siège, Colonne DEPARTEMENT: Direction Commerciale Corporate, Colonne CUST_LEV2: tout sauf 302",
+      "productIdentifiers": "Identifiants de Produit",
+      "productIdentifiersDescription": "Une fois les fichiers RFD, CNT et DNT traités, Colonne PRI_IDENTITY: A = ADSL, F = FTTX, LS = Specialized Line, PART = Specialized Line"
+    },
+    "export": {
+      "startingExport": "Démarrage de l'exportation. Cela peut prendre un moment...",
+      "exportSuccess": "Exportation terminée avec succès",
+      "exportFailed": "Échec de l'exportation: ",
+      "excel": "Exporter vers Excel",
+      "csv": "Exporter vers CSV"
+    },
+    "kpi": {
+      "totalRevenue": "Revenu Total",
+      "ofTotal": "du total",
+      "periodicRevenue": "Revenu Périodique",
+      "adjustments": "Ajustements (DNT)",
+      "refunds": "Remboursements (RFD)",
+      "cancellations": "Annulations (CNT)"
+    }
   }
 }

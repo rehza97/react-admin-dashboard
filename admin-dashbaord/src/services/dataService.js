@@ -150,10 +150,47 @@ const dataService = {
       console.log("DOTs API response:", response.data);
 
       // Handle the response format provided by the backend
+      let dotsArray = [];
       if (response.data && response.data.dots) {
-        return response.data.dots;
+        dotsArray = response.data.dots;
+      } else if (Array.isArray(response.data)) {
+        dotsArray = response.data;
+      } else {
+        console.warn("DOTs response is not in expected format:", response.data);
+        return [];
       }
-      return [];
+
+      // Transform the DOT data to ensure proper display
+      return dotsArray.map((dot) => {
+        if (typeof dot === "object" && dot !== null) {
+          // Format the name properly
+          const name =
+            dot.name || (dot.code && `DOT ${dot.code}`) || `DOT ${dot.id}`;
+
+          return {
+            id: dot.id || dot.code || "",
+            name: name,
+            code: dot.code || dot.id || "",
+          };
+        }
+
+        // Handle string DOTs
+        if (typeof dot === "string") {
+          return {
+            id: dot,
+            name: `DOT ${dot}`,
+            code: dot,
+          };
+        }
+
+        // Fallback
+        const stringValue = String(dot);
+        return {
+          id: stringValue,
+          name: `DOT ${stringValue}`,
+          code: stringValue,
+        };
+      });
     } catch (error) {
       console.error("Error fetching DOTs:", error);
       return handleApiError(error, "fetching DOTs");

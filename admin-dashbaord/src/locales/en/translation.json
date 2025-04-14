@@ -667,5 +667,95 @@
       "processFailed": "Cleanup process failed",
       "saveFailed": "Failed to save changes"
     }
+  },
+  "kpi": {
+    "analysis": "KPI Analysis",
+    "revenueDCISIT": "DCISIT Revenue",
+    "revenueSiege": "Headquarters Revenue",
+    "revenueDOTCorporate": "DOT Corporate Revenue",
+    "revenuePeriodic": "Periodic Revenue",
+    "revenueNonPeriodic": "Non-Periodic Revenue",
+    "collectionsDOTCorporate": "DOT Corporate Collections",
+    "receivablesDCISIT": "DCISIT Receivables"
+  },
+  "revenuePeriodic": {
+    "title": "Periodic Revenue",
+    "subtitle": "Periodic revenue analysis",
+    "filters": {
+      "dot": "DOT",
+      "product": "Product",
+      "operation": "Operation",
+      "apply": "Apply Filters",
+      "reset": "Reset Filters"
+    },
+    "tabs": {
+      "overview": "Overview",
+      "products": "Products",
+      "operations": "Operations",
+      "processing": "Processing"
+    },
+    "charts": {
+      "revenueByDOT": "Revenue by DOT",
+      "componentBreakdown": "Component Breakdown",
+      "componentBreakdownInfo": "Periodic Revenue = Periodic Revenue (Main) + DNT Revenue (Adjustment) + RFD Revenue (Refund) + CNT Revenue (Cancellation)",
+      "amount": "Amount",
+      "revenueByProduct": "Revenue by Product",
+      "revenueByOperation": "Revenue by Operation"
+    },
+    "components": {
+      "main": "Periodic Revenue (Main)",
+      "dnt": "DNT Revenue (Adjustment)",
+      "rfd": "RFD Revenue (Refund)",
+      "cnt": "CNT Revenue (Cancellation)",
+      "total": "Total"
+    },
+    "cards": {
+      "totalRevenue": "Total Periodic Revenue",
+      "totalRevenueDescription": "Total of all components (Main + DNT + RFD + CNT)",
+      "periodicRevenue": "Periodic Revenue (Main)",
+      "dntRevenue": "DNT Revenue (Adjustment)",
+      "rfdRevenue": "RFD Revenue (Refund)",
+      "cntRevenue": "CNT Revenue (Cancellation)",
+      "ofTotal": "of total"
+    },
+    "tables": {
+      "product": "Product",
+      "preTax": "Pre-Tax Revenue",
+      "tax": "Tax",
+      "totalRevenue": "Total Revenue",
+      "percentageOfTotal": "% of Total",
+      "operation": "Operation"
+    },
+    "processing": {
+      "title": "Periodic Revenue Data Processing",
+      "composition": "Composition",
+      "compositionDescription": "Periodic Revenue = Periodic Revenue + DNT Revenue + RFD Revenue + CNT Revenue",
+      "componentDescription": "(DNT = Adjustment, RFD = Refund, CNT = Cancellation)",
+      "dataFilter": "Data Filter",
+      "dataFilterDescription": "Filter by DOT, Product, Operation",
+      "filesDescription": "(18 Periodic files, CNT, RFD, DNT)",
+      "exportation": "Export of 4 files: 18 Periodic Files into 1 single file + RFD file + CNT file + DNT file",
+      "periodicFilesProcessing": "Processing of 18 Periodic Files",
+      "periodicFilesDescription": "DO column we take headquarters + the rest Product column we take LTE, Specialized Line and X25",
+      "rfdCntDntProcessing": "RFD, CNT and DNT File Processing",
+      "rfdCntDntDescription": "DOT Column: Headquarters, DEPARTMENT Column: Corporate Commercial Department, CUST_LEV2 Column: all except 302",
+      "productIdentifiers": "Product Identifiers",
+      "productIdentifiersDescription": "Once the RFD, CNT and DNT files are processed, PRI_IDENTITY Column: A = ADSL, F = FTTX, LS = Specialized Line, PART = Specialized Line"
+    },
+    "export": {
+      "startingExport": "Starting export. This may take a moment...",
+      "exportSuccess": "Export completed successfully",
+      "exportFailed": "Export failed: ",
+      "excel": "Export to Excel",
+      "csv": "Export to CSV"
+    },
+    "kpi": {
+      "totalRevenue": "Total Revenue",
+      "ofTotal": "of total",
+      "periodicRevenue": "Periodic Revenue",
+      "adjustments": "Adjustments (DNT)",
+      "refunds": "Refunds (RFD)",
+      "cancellations": "Cancellations (CNT)"
+    }
   }
 }

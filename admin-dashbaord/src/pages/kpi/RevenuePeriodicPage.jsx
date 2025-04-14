@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Box,
   Grid,
@@ -42,14 +42,11 @@ import {
   PieChart,
   Pie,
   Cell,
-  LineChart,
-  Line,
 } from "recharts";
 import PageLayout from "../../components/PageLayout";
 import kpiService from "../../services/kpiService";
 import { exportPeriodicRevenue } from "../../services/exportService";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
-import FilterListIcon from "@mui/icons-material/FilterList";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import CancelIcon from "@mui/icons-material/Cancel";
 import InfoIcon from "@mui/icons-material/Info";
@@ -76,7 +73,7 @@ const MenuProps = {
 };
 
 const RevenuePeriodicPage = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -113,10 +110,12 @@ const RevenuePeriodicPage = () => {
       // Fetch data to get DOT, product, and operation options
       const initialData = await kpiService.getPeriodicRevenueKPIs();
 
-      // Extract unique DOTs if available
-      if (initialData?.by_dot) {
-        const uniqueDots = Object.keys(initialData.by_dot);
-        setDots(uniqueDots.filter(Boolean));
+      // Fetch DOTs directly from the service
+      const dotsData = await kpiService.getDots();
+      if (dotsData && dotsData.length > 0) {
+        // Set the dots array with the formatted data
+        setDots(dotsData);
+        console.log("Fetched DOTs:", dotsData);
       }
 
       // Extract unique products from by_product
@@ -144,22 +143,22 @@ const RevenuePeriodicPage = () => {
     // Generate component breakdown (Main, DNT, RFD, CNT)
     const componentsData = [
       {
-        name: "C.A Périodique (Main)",
+        name: t("revenuePeriodic.components.main"),
         value: data?.main_periodic || 0,
         color: COMPONENT_COLORS.main,
       },
       {
-        name: "C.A DNT (Ajustement)",
+        name: t("revenuePeriodic.components.dnt"),
         value: data?.dnt || 0,
         color: COMPONENT_COLORS.dnt,
       },
       {
-        name: "C.A RFD (Remboursement)",
+        name: t("revenuePeriodic.components.rfd"),
         value: data?.rfd || 0,
         color: COMPONENT_COLORS.rfd,
       },
       {
-        name: "C.A CNT (Annulation)",
+        name: t("revenuePeriodic.components.cnt"),
         value: data?.cnt || 0,
         color: COMPONENT_COLORS.cnt,
       },
@@ -210,6 +209,16 @@ const RevenuePeriodicPage = () => {
 
       // Generate detailed entity data
       setEntityData(generateDetailedEntityData(response));
+
+      // Log applied filters for debugging
+      console.log("Applied filters:", {
+        dots: selectedDots.map((dotId) => {
+          const dot = dots.find((d) => d.id === dotId);
+          return dot ? `${dot.name} (${dotId})` : dotId;
+        }),
+        products: selectedProducts,
+        operations: selectedOperations,
+      });
     } catch (err) {
       setError("Failed to fetch KPI data");
       console.error("Error fetching KPI data:", err);
@@ -230,10 +239,12 @@ const RevenuePeriodicPage = () => {
     try {
       // Create filters object from all selected filters
       const filters = {
-        dot: Array.from(selectedDots),
+        dot: Array.from(selectedDots), // These are already DOT IDs
         product: Array.from(selectedProducts),
         operation: Array.from(selectedOperations),
       };
+
+      console.log("Exporting with filters:", filters);
 
       // Call the exportService function
       await exportPeriodicRevenue(format, filters);
@@ -295,21 +306,27 @@ const RevenuePeriodicPage = () => {
     return validSeverities.includes(severity) ? severity : "info";
   };
 
-  // Format currency with 2 decimal places
+  // Format currency according to the current language
   const formatCurrency = (value) => {
-    if (value === undefined || value === null) return "N/A";
-    return new Intl.NumberFormat("fr-DZ", {
+    if (value === undefined || value === null) return "-";
+
+    // Get locale based on current language
+    const locale = i18n.language === "fr" ? "fr-DZ" : "en-US";
+
+    return new Intl.NumberFormat(locale, {
       style: "currency",
       currency: "DZD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: 0,
     }).format(value);
   };
 
-  // Format percentage with 2 decimal places
+  // Format percentage according to the current language
   const formatPercentage = (value) => {
-    if (value === undefined || value === null) return "N/A";
-    return `${value.toFixed(2)}%`;
+    if (value === undefined || value === null) return "-";
+    const locale = i18n.language === "fr" ? "fr-FR" : "en-US";
+    return `${new Intl.NumberFormat(locale, {
+      maximumFractionDigits: 1,
+    }).format(value)}%`;
   };
 
   const handleTabChange = (event, newValue) => {
@@ -331,9 +348,9 @@ const RevenuePeriodicPage = () => {
           }}
         >
           <Typography variant="h6">
-            Répartition des Composantes C.A Périodique
+            {t("revenuePeriodic.charts.componentBreakdown")}
           </Typography>
-          <Tooltip title="C.A Périodique = C.A Périodique (Main) + C.A DNT (Ajustement) + C.A RFD (Remboursement) + C.A CNT (Annulation)">
+          <Tooltip title={t("revenuePeriodic.charts.componentBreakdownInfo")}>
             <IconButton size="small">
               <InfoIcon />
             </IconButton>
@@ -400,13 +417,13 @@ const RevenuePeriodicPage = () => {
           >
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                C.A Périodique Total
+                {t("revenuePeriodic.cards.totalRevenue")}
               </Typography>
-              <Typography variant="h4" component="div" fontWeight="bold">
+              <Typography variant="h6" component="div" fontWeight="bold">
                 {formatCurrency(totalRevenue)}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Total de tous les composants (Main + DNT + RFD + CNT)
+                {t("revenuePeriodic.cards.totalRevenueDescription")}
               </Typography>
             </CardContent>
           </Card>
@@ -418,13 +435,14 @@ const RevenuePeriodicPage = () => {
           >
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                C.A Périodique (Main)
+                {t("revenuePeriodic.cards.periodicRevenue")}
               </Typography>
-              <Typography variant="h4" component="div" fontWeight="bold">
+              <Typography variant="h5" component="div" fontWeight="bold">
                 {formatCurrency(periodicRevenue)}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {formatPercentage(periodicPercentage)} du total
+                {formatPercentage(periodicPercentage)}{" "}
+                {t("revenuePeriodic.cards.ofTotal")}
               </Typography>
             </CardContent>
           </Card>
@@ -436,13 +454,14 @@ const RevenuePeriodicPage = () => {
           >
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                C.A DNT (Ajustement)
+                {t("revenuePeriodic.cards.dntRevenue")}
               </Typography>
-              <Typography variant="h4" component="div" fontWeight="bold">
+              <Typography variant="h5" component="div" fontWeight="bold">
                 {formatCurrency(dntRevenue)}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {formatPercentage(dntPercentage)} du total
+                {formatPercentage(dntPercentage)}{" "}
+                {t("revenuePeriodic.cards.ofTotal")}
               </Typography>
             </CardContent>
           </Card>
@@ -454,13 +473,14 @@ const RevenuePeriodicPage = () => {
           >
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                C.A RFD (Remboursement)
+                {t("revenuePeriodic.cards.rfdRevenue")}
               </Typography>
-              <Typography variant="h4" component="div" fontWeight="bold">
+              <Typography variant="h5" component="div" fontWeight="bold">
                 {formatCurrency(rfdRevenue)}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {formatPercentage(rfdPercentage)} du total
+                {formatPercentage(rfdPercentage)}{" "}
+                {t("revenuePeriodic.cards.ofTotal")}
               </Typography>
             </CardContent>
           </Card>
@@ -472,13 +492,14 @@ const RevenuePeriodicPage = () => {
           >
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                C.A CNT (Annulation)
+                {t("revenuePeriodic.cards.cntRevenue")}
               </Typography>
-              <Typography variant="h4" component="div" fontWeight="bold">
+              <Typography variant="h5" component="div" fontWeight="bold">
                 {formatCurrency(cntRevenue)}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {formatPercentage(cntPercentage)} du total
+                {formatPercentage(cntPercentage)}{" "}
+                {t("revenuePeriodic.cards.ofTotal")}
               </Typography>
             </CardContent>
           </Card>
@@ -496,11 +517,19 @@ const RevenuePeriodicPage = () => {
         <Table aria-label="product data table">
           <TableHead>
             <TableRow>
-              <TableCell>Produit</TableCell>
-              <TableCell align="right">C.A HT</TableCell>
-              <TableCell align="right">TVA</TableCell>
-              <TableCell align="right">C.A TTC</TableCell>
-              <TableCell align="right">% du Total</TableCell>
+              <TableCell>{t("revenuePeriodic.tables.product")}</TableCell>
+              <TableCell align="right">
+                {t("revenuePeriodic.tables.preTax")}
+              </TableCell>
+              <TableCell align="right">
+                {t("revenuePeriodic.tables.tax")}
+              </TableCell>
+              <TableCell align="right">
+                {t("revenuePeriodic.tables.totalRevenue")}
+              </TableCell>
+              <TableCell align="right">
+                {t("revenuePeriodic.tables.percentageOfTotal")}
+              </TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -538,11 +567,19 @@ const RevenuePeriodicPage = () => {
         <Table aria-label="operation data table">
           <TableHead>
             <TableRow>
-              <TableCell>Opération</TableCell>
-              <TableCell align="right">C.A HT</TableCell>
-              <TableCell align="right">TVA</TableCell>
-              <TableCell align="right">C.A TTC</TableCell>
-              <TableCell align="right">% du Total</TableCell>
+              <TableCell>{t("revenuePeriodic.tables.operation")}</TableCell>
+              <TableCell align="right">
+                {t("revenuePeriodic.tables.preTax")}
+              </TableCell>
+              <TableCell align="right">
+                {t("revenuePeriodic.tables.tax")}
+              </TableCell>
+              <TableCell align="right">
+                {t("revenuePeriodic.tables.totalRevenue")}
+              </TableCell>
+              <TableCell align="right">
+                {t("revenuePeriodic.tables.percentageOfTotal")}
+              </TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -576,81 +613,101 @@ const RevenuePeriodicPage = () => {
     return (
       <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
-          Traitement des Données C.A Périodique
+          {t("revenuePeriodic.processing.title")}
         </Typography>
         <Divider sx={{ mb: 2 }} />
         <Box sx={{ mb: 2 }}>
           <Typography variant="subtitle1" fontWeight="bold">
-            Composition
+            {t("revenuePeriodic.processing.composition")}
           </Typography>
           <Typography variant="body1">
-            C.A Périodique = C.A Périodique + C.A DNT + C.A RFD + C.A CNT
+            {t("revenuePeriodic.processing.compositionDescription")}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            (DNT = Ajustement, RFD = Remboursement, CNT = Annulation)
+            {t("revenuePeriodic.processing.componentDescription")}
           </Typography>
         </Box>
 
         <Box sx={{ mb: 2 }}>
           <Typography variant="subtitle1" fontWeight="bold">
-            Filtre de Données
+            {t("revenuePeriodic.processing.dataFilter")}
           </Typography>
           <Typography variant="body1">
-            Filtre par DOT, Produit, Opération
+            {t("revenuePeriodic.processing.dataFilterDescription")}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            (18 fichiers Périodique, CNT, RFD, DNT)
+            {t("revenuePeriodic.processing.filesDescription")}
           </Typography>
         </Box>
 
         <Box sx={{ mb: 2 }}>
           <Typography variant="subtitle1" fontWeight="bold">
-            Exportation
+            {t("common.export")}
           </Typography>
           <Typography variant="body1">
-            Exportation de 4 fichiers: 18 Fichiers Périodique en 1 seul fichier
-            + fichier RFD + fichier CNT + fichier DNT
+            {t("revenuePeriodic.processing.exportation")}
           </Typography>
         </Box>
 
         <Box sx={{ mb: 2 }}>
           <Typography variant="subtitle1" fontWeight="bold">
-            Traitement des 18 fichiers Périodique
+            {t("revenuePeriodic.processing.periodicFilesProcessing")}
           </Typography>
           <Typography variant="body1">
-            Colonne DO on prend siège + le reste Colonne Produit on prend LTE,
-            Specialized Line et X25
+            {t("revenuePeriodic.processing.periodicFilesDescription")}
           </Typography>
         </Box>
 
         <Box sx={{ mb: 2 }}>
           <Typography variant="subtitle1" fontWeight="bold">
-            Traitement fichier RFD, CNT et DNT
+            {t("revenuePeriodic.processing.rfdCntDntProcessing")}
           </Typography>
           <Typography variant="body1">
-            Colonne DOT: Siège, Colonne DEPARTEMENT: Direction Commerciale
-            Corporate, Colonne CUST_LEV2: tout sauf 302
+            {t("revenuePeriodic.processing.rfdCntDntDescription")}
           </Typography>
         </Box>
 
         <Box>
           <Typography variant="subtitle1" fontWeight="bold">
-            Identifiants de Produit
+            {t("revenuePeriodic.processing.productIdentifiers")}
           </Typography>
           <Typography variant="body1">
-            Une fois les fichiers RFD, CNT et DNT traités, Colonne PRI_IDENTITY:
-            A = ADSL, F = FTTX, LS = Specialized Line, PART = Specialized Line
+            {t("revenuePeriodic.processing.productIdentifiersDescription")}
           </Typography>
         </Box>
       </Paper>
     );
   };
 
+  // Create header actions with export buttons
+  const headerAction = (
+    <Box sx={{ display: "flex", gap: 1 }}>
+      <Button
+        variant="outlined"
+        startIcon={<FileDownloadIcon />}
+        onClick={() => handleExport("excel")}
+        disabled={exportLoading || loading}
+        size="small"
+      >
+        {t("revenuePeriodic.export.excel")}
+      </Button>
+      <Button
+        variant="outlined"
+        startIcon={<FileDownloadIcon />}
+        onClick={() => handleExport("csv")}
+        disabled={exportLoading || loading}
+        size="small"
+      >
+        {t("revenuePeriodic.export.csv")}
+      </Button>
+    </Box>
+  );
+
   if (loading) {
     return (
       <PageLayout
-        title="C.A Périodique"
-        subtitle="Analyse des revenus périodiques"
+        title={t("revenuePeriodic.title")}
+        subtitle={t("revenuePeriodic.subtitle")}
         headerAction={null}
       >
         <Box
@@ -668,8 +725,8 @@ const RevenuePeriodicPage = () => {
   if (error) {
     return (
       <PageLayout
-        title="C.A Périodique"
-        subtitle="Analyse des revenus périodiques"
+        title={t("revenuePeriodic.title")}
+        subtitle={t("revenuePeriodic.subtitle")}
         headerAction={null}
       >
         <Box
@@ -686,9 +743,9 @@ const RevenuePeriodicPage = () => {
 
   return (
     <PageLayout
-      title="C.A Périodique"
-      subtitle="Analyse des revenus périodiques"
-      headerAction={null}
+      title={t("revenuePeriodic.title")}
+      subtitle={t("revenuePeriodic.subtitle")}
+      headerAction={headerAction}
     >
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -699,27 +756,37 @@ const RevenuePeriodicPage = () => {
       <Box sx={{ mb: 2, display: "flex", flexWrap: "wrap", gap: 1 }}>
         {/* DOT filter */}
         <FormControl size="small" sx={{ minWidth: 150, flexGrow: 1 }}>
-          <InputLabel id="dot-filter-label">DOT</InputLabel>
+          <InputLabel id="dot-filter-label">
+            {t("revenuePeriodic.filters.dot")}
+          </InputLabel>
           <Select
             labelId="dot-filter-label"
             id="dot-filter"
             multiple
             value={selectedDots}
             onChange={handleDotChange}
-            input={<OutlinedInput label="DOT" />}
+            input={<OutlinedInput label={t("revenuePeriodic.filters.dot")} />}
             renderValue={(selected) => (
               <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                {selected.map((value) => (
-                  <Chip key={value} label={value} size="small" />
-                ))}
+                {selected.map((value) => {
+                  // Find the DOT object to get its name for display
+                  const dotObj = dots.find((d) => d.id === value);
+                  return (
+                    <Chip
+                      key={value}
+                      label={dotObj ? dotObj.name : value}
+                      size="small"
+                    />
+                  );
+                })}
               </Box>
             )}
             MenuProps={MenuProps}
           >
             {dots.map((dot) => (
-              <MenuItem key={dot} value={dot}>
-                <Checkbox checked={selectedDots.indexOf(dot) > -1} />
-                <ListItemText primary={dot} />
+              <MenuItem key={dot.id} value={dot.id}>
+                <Checkbox checked={selectedDots.indexOf(dot.id) > -1} />
+                <ListItemText primary={dot.name} />
               </MenuItem>
             ))}
           </Select>
@@ -727,14 +794,18 @@ const RevenuePeriodicPage = () => {
 
         {/* Product filter */}
         <FormControl size="small" sx={{ minWidth: 150, flexGrow: 1 }}>
-          <InputLabel id="product-filter-label">Produit</InputLabel>
+          <InputLabel id="product-filter-label">
+            {t("revenuePeriodic.filters.product")}
+          </InputLabel>
           <Select
             labelId="product-filter-label"
             id="product-filter"
             multiple
             value={selectedProducts}
             onChange={handleProductChange}
-            input={<OutlinedInput label="Produit" />}
+            input={
+              <OutlinedInput label={t("revenuePeriodic.filters.product")} />
+            }
             renderValue={(selected) => (
               <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
                 {selected.map((value) => (
@@ -755,14 +826,18 @@ const RevenuePeriodicPage = () => {
 
         {/* Operation filter */}
         <FormControl size="small" sx={{ minWidth: 150, flexGrow: 1 }}>
-          <InputLabel id="operation-filter-label">Opération</InputLabel>
+          <InputLabel id="operation-filter-label">
+            {t("revenuePeriodic.filters.operation")}
+          </InputLabel>
           <Select
             labelId="operation-filter-label"
             id="operation-filter"
             multiple
             value={selectedOperations}
             onChange={handleOperationChange}
-            input={<OutlinedInput label="Opération" />}
+            input={
+              <OutlinedInput label={t("revenuePeriodic.filters.operation")} />
+            }
             renderValue={(selected) => (
               <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
                 {selected.map((value) => (
@@ -792,7 +867,7 @@ const RevenuePeriodicPage = () => {
             disabled={loading}
             size="medium"
           >
-            Appliquer Filtres
+            {t("revenuePeriodic.filters.apply")}
           </Button>
 
           <Button
@@ -807,31 +882,9 @@ const RevenuePeriodicPage = () => {
             disabled={loading}
             size="medium"
           >
-            Réinitialiser Filtres
+            {t("revenuePeriodic.filters.reset")}
           </Button>
         </Box>
-      </Box>
-
-      {/* Export buttons */}
-      <Box sx={{ mb: 3, display: "flex", gap: 1 }}>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<FileDownloadIcon />}
-          onClick={() => handleExport("csv")}
-          disabled={exportLoading}
-        >
-          Exporter CSV
-        </Button>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<FileDownloadIcon />}
-          onClick={() => handleExport("excel")}
-          disabled={exportLoading}
-        >
-          Exporter Excel
-        </Button>
       </Box>
 
       {/* Tab navigation */}
@@ -844,10 +897,16 @@ const RevenuePeriodicPage = () => {
           variant="scrollable"
           scrollButtons="auto"
         >
-          <Tab value="overview" label="Aperçu" />
-          <Tab value="products" label="Produits" />
-          <Tab value="operations" label="Opérations" />
-          <Tab value="processing" label="Traitement" />
+          <Tab value="overview" label={t("revenuePeriodic.tabs.overview")} />
+          <Tab value="products" label={t("revenuePeriodic.tabs.products")} />
+          <Tab
+            value="operations"
+            label={t("revenuePeriodic.tabs.operations")}
+          />
+          <Tab
+            value="processing"
+            label={t("revenuePeriodic.tabs.processing")}
+          />
         </Tabs>
       </Paper>
 
@@ -863,16 +922,21 @@ const RevenuePeriodicPage = () => {
             <Grid item xs={12} md={6}>
               <Paper elevation={3} sx={{ p: 3, mb: 3, height: "100%" }}>
                 <Typography variant="h6" gutterBottom>
-                  Revenus par DOT
+                  {t("revenuePeriodic.charts.revenueByDOT")}
                 </Typography>
                 <Box sx={{ height: 300 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={Object.entries(data?.by_dot || {}).map(
-                        ([key, value]) => ({
-                          name: key,
-                          value: value,
-                        })
+                        ([key, value]) => {
+                          // Find the DOT object to get the name
+                          const dotObj = dots.find((d) => d.id === key);
+                          return {
+                            id: key,
+                            name: dotObj ? dotObj.name : `DOT ${key}`,
+                            value: value,
+                          };
+                        }
                       )}
                       margin={{ top: 20, right: 30, left: 20, bottom: 70 }}
                     >
@@ -911,7 +975,7 @@ const RevenuePeriodicPage = () => {
 
           <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
             <Typography variant="h6" gutterBottom>
-              Répartition par Produit
+              {t("revenuePeriodic.charts.revenueByProduct")}
             </Typography>
             <Box sx={{ height: 400 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -951,7 +1015,7 @@ const RevenuePeriodicPage = () => {
 
           <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
             <Typography variant="h6" gutterBottom>
-              Répartition par Opération
+              {t("revenuePeriodic.charts.revenueByOperation")}
             </Typography>
             <Box sx={{ height: 400 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -996,7 +1060,7 @@ const RevenuePeriodicPage = () => {
         <Alert
           onClose={handleCloseSnackbar}
           severity={getValidSeverity(snackbar.severity)}
-          variant="filled"
+          sx={{ width: "100%" }}
         >
           {snackbar.message}
         </Alert>

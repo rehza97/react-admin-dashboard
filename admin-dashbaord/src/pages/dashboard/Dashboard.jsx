@@ -54,11 +54,67 @@ const Dashboard = () => {
       try {
         setLoading(true);
         setError(null);
+
+        // Fetch main dashboard summary
         const data = await kpiService.getDashboardSummary({
           signal: controller.signal,
         });
+
+        // Fetch additional KPI data
+        const [
+          dotCorporateRevenueData,
+          dotCorporateCollectionData,
+          siegeRevenueData,
+          receivablesDCISITData,
+        ] = await Promise.allSettled([
+          kpiService.getDOTCorporateRevenueKPIs(),
+          kpiService.getDOTCorporateCollectionKPIs(),
+          kpiService.getSiegeRevenueKPIs(),
+          kpiService.getReceivablesKPIs({ customer_lev1: "DCISIT" }),
+        ]);
+
         if (isMounted) {
-          setSummaryData(data);
+          // Combine all data
+          const combinedData = {
+            ...data,
+            total_revenue_dot_corporate:
+              dotCorporateRevenueData.status === "fulfilled"
+                ? dotCorporateRevenueData.value?.summary?.total_revenue || 0
+                : 0,
+            revenue_dot_corporate_change:
+              dotCorporateRevenueData.status === "fulfilled"
+                ? ((dotCorporateRevenueData.value?.summary?.total_revenue ||
+                    0) /
+                    (data.total_revenue || 1)) *
+                    100 -
+                  100
+                : 0,
+
+            total_collection_dot_corporate:
+              dotCorporateCollectionData.status === "fulfilled"
+                ? dotCorporateCollectionData.value?.summary?.total_collection ||
+                  0
+                : 0,
+            collection_dot_corporate_rate:
+              dotCorporateCollectionData.status === "fulfilled"
+                ? dotCorporateCollectionData.value?.summary?.collection_rate ||
+                  0
+                : 0,
+
+            total_revenue_siege:
+              siegeRevenueData.status === "fulfilled"
+                ? siegeRevenueData.value?.summary?.total_revenue || 0
+                : 0,
+            revenue_siege_change:
+              siegeRevenueData.status === "fulfilled"
+                ? ((siegeRevenueData.value?.summary?.total_revenue || 0) /
+                    (data.total_revenue || 1)) *
+                    100 -
+                  100
+                : 0,
+          };
+
+          setSummaryData(combinedData);
         }
       } catch (error) {
         if (error.name !== "AbortError" && isMounted) {
@@ -136,39 +192,49 @@ const Dashboard = () => {
   // Define KPI cards with role-based access
   const kpiCards = [
     {
-      title: t("dashboard.revenueAnalysis"),
+      title: t("kpi.revenueDCISIT"),
       icon: <AttachMoney sx={{ fontSize: 40 }} />,
       color: "primary.main",
-      path: "/kpi/revenue",
+      path: "/kpi/revenue/dcisit",
       value: summaryData?.total_revenue || 0,
       change: summaryData?.revenue_change || 0,
       format: "currency",
-      allowedRoles: ["admin"],
+      allowedRoles: ["admin", "viewer"],
     },
     {
-      title: t("dashboard.collectionsAnalysis"),
+      title: t("kpi.revenueSiege"),
+      icon: <AttachMoney sx={{ fontSize: 40 }} />,
+      color: "#4caf50",
+      path: "/kpi/revenue/siege",
+      value: summaryData?.total_revenue_siege || 0,
+      change: summaryData?.revenue_siege_change || 0,
+      format: "currency",
+      allowedRoles: ["admin", "viewer"],
+    },
+    {
+      title: t("kpi.revenueDOTCorporate"),
+      icon: <AttachMoney sx={{ fontSize: 40 }} />,
+      color: "#2196f3",
+      path: "/kpi/revenue/dot-corporate",
+      value: summaryData?.total_revenue_dot_corporate || 0,
+      change: summaryData?.revenue_dot_corporate_change || 0,
+      format: "currency",
+      allowedRoles: ["admin", "viewer"],
+    },
+    {
+      title: t("kpi.collectionsDOTCorporate"),
       icon: <TrendingUp sx={{ fontSize: 40 }} />,
-      color: "success.main",
-      path: "/kpi/collections",
-      value: summaryData?.total_collection || 0,
-      change: summaryData?.collection_rate || 0,
+      color: "#ff9800",
+      path: "/kpi/collections/dot-corporate",
+      value: summaryData?.total_collection_dot_corporate || 0,
+      change: summaryData?.collection_dot_corporate_rate || 0,
       format: "currency",
-      allowedRoles: ["admin"],
+      allowedRoles: ["admin", "viewer"],
     },
     {
-      title: t("dashboard.receivablesAnalysis"),
-      icon: <AccountBalance sx={{ fontSize: 40 }} />,
-      color: "warning.main",
-      path: "/kpi/receivables",
-      value: summaryData?.total_receivables || 0,
-      change: summaryData?.receivables_change || 0,
-      format: "currency",
-      allowedRoles: ["admin"],
-    },
-    {
-      title: t("dashboard.corporatePark"),
+      title: t("common.parcCorporate"),
       icon: <Business sx={{ fontSize: 40 }} />,
-      color: "info.main",
+      color: "#9c27b0",
       path: "/kpi/corporate-park",
       value: summaryData?.total_subscribers || 0,
       change: summaryData?.subscribers_change || 0,
@@ -176,19 +242,19 @@ const Dashboard = () => {
       allowedRoles: ["admin", "viewer"],
     },
     {
-      title: t("dashboard.unfinishedInvoices"),
-      icon: <Receipt sx={{ fontSize: 40 }} />,
-      color: "error.main",
-      path: "/kpi/unfinished-invoices",
-      value: summaryData?.unfinished_invoices?.total || 0,
-      change: summaryData?.unfinished_invoices?.change || 0,
-      format: "number",
-      allowedRoles: ["admin"],
+      title: t("kpi.receivablesDCISIT"),
+      icon: <AccountBalance sx={{ fontSize: 40 }} />,
+      color: "#e91e63",
+      path: "/kpi/receivables/dcisit",
+      value: summaryData?.total_receivables || 0,
+      change: summaryData?.receivables_change || 0,
+      format: "currency",
+      allowedRoles: ["admin", "viewer"],
     },
   ];
 
   // Filter KPI cards based on user role
-  const filteredKpiCards = kpiCards.filter(card =>
+  const filteredKpiCards = kpiCards.filter((card) =>
     card.allowedRoles.includes(currentUser?.role)
   );
 
@@ -318,7 +384,7 @@ const Dashboard = () => {
         )}
 
         {/* Customer L2 Distribution Pie Chart - visible to both admin and viewer */}
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={12}>
           <Paper
             sx={{
               p: 3,
@@ -383,36 +449,6 @@ const Dashboard = () => {
         </Grid>
 
         {/* Only show the KPI dashboard section for admin users */}
-        {isAdmin && (
-          <Grid item xs={12} md={6}>
-            <Paper
-              sx={{
-                p: 3,
-                height: "100%",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              <Typography variant="h6" gutterBottom>
-                {t("dashboard.kpiDashboard")}
-              </Typography>
-              <Box
-                sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  flexGrow: 1,
-                }}
-              >
-                <Assessment sx={{ fontSize: 60, color: "primary.main", mb: 2 }} />
-                <Typography variant="body1" textAlign="center">
-                  {t("dashboard.moreComingSoon")}
-                </Typography>
-              </Box>
-            </Paper>
-          </Grid>
-        )}
       </Grid>
     </Box>
   );
